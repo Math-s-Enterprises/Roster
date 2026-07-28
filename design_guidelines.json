@@ -1,0 +1,112 @@
+{
+  "theme": "Dark Glassmorphism with Neon Accents",
+  "typography": {
+    "primary_heading": {
+      "family": "Outfit",
+      "weights": ["300", "500", "700"],
+      "usage": "Use for all H1-H3 headings. Apply tracking-tight for a sleek, futuristic look."
+    },
+    "body": {
+      "family": "IBM Plex Sans",
+      "weights": ["400", "500"],
+      "usage": "Standard body text, forms, and general UI elements."
+    },
+    "monospace": {
+      "family": "JetBrains Mono",
+      "weights": ["400"],
+      "usage": "Use exclusively for times, hours, labor cost numbers, and compliance metrics to ensure tabular alignment."
+    }
+  },
+  "colors": {
+    "background": {
+      "main": "#05050A",
+      "surface_solid": "#0A0B10",
+      "surface_glass": "rgba(255, 255, 255, 0.03)"
+    },
+    "accent_gradients": {
+      "primary": "bg-gradient-to-r from-[#00E5FF] to-[#7C4DFF]",
+      "text_gradient": "bg-clip-text text-transparent bg-gradient-to-r from-[#00E5FF] to-[#7C4DFF]"
+    },
+    "role_chips": {
+      "manager": "bg-fuchsia-500/10 border-fuchsia-500/30 text-fuchsia-400",
+      "supervisor": "bg-violet-500/10 border-violet-500/30 text-violet-400",
+      "cashier": "bg-cyan-500/10 border-cyan-500/30 text-cyan-400",
+      "floor_assistant": "bg-blue-500/10 border-blue-500/30 text-blue-400",
+      "stocker": "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+    },
+    "status": {
+      "conflict": "bg-red-500/20 border border-red-500/50 text-red-400",
+      "resolved": "bg-emerald-500/20 border border-emerald-500/50 text-emerald-400",
+      "warning_under_16": "bg-amber-500/20 border border-amber-500/50 text-amber-400"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "muted": "#71717A"
+    }
+  },
+  "visual_enhancers": {
+    "glassmorphism": "Apply 'backdrop-blur-xl bg-white/[0.03] border border-white/10 shadow-2xl' for top-level cards, sidebars, and navs. CRITICAL: DO NOT use complete 'transparent' background in header, overlays, or any surface that has content under it (e.g., Dropdown).",
+    "glow_effects": "Use subtle drop shadows on neon accents: 'drop-shadow-[0_0_8px_rgba(0,229,255,0.5)]' for active states or the 1-click Generate button.",
+    "borders": "1px inner borders 'border-white/10' on all glass elements to define edges against the dark background."
+  },
+  "grids_and_layouts": {
+    "dashboard_overview": "Use 'High Density Grid' (Bento grid style). Base grid: 'grid-cols-1 md:grid-cols-3 lg:grid-cols-4' with 'gap-6'.",
+    "roster_timeline": "Horizontal scrolling overflow container. Solid background cells (not glass) for the Mon-Sun grid to ensure high data legibility. Fixed left column for employee names/avatars.",
+    "spacing": "Generous spacing. Use 'p-6' or 'p-8' inside dashboard widget cards. Use 'gap-4' for list items."
+  },
+  "component_rules": {
+    "buttons": "Pill-shaped ('rounded-full'). Primary buttons must use the neon accent gradient with hover scale 'hover:scale-105 transition-transform'. Secondary buttons: glass effect with white text.",
+    "inputs_and_forms": "Solid dark backgrounds ('bg-[#0A0B10]') with 'border-white/10'. DO NOT use glassmorphism for inputs to prevent text refraction and readability loss.",
+    "roster_chips": "Small, rounded ('rounded-md'), utilizing the 'role_chips' color scheme. Must include clear typography.",
+    "modals": "Use Shadcn dialogs customized with dark glassmorphism backgrounds ('bg-[#05050A]/80 backdrop-blur-2xl border-white/10').",
+    "dropdowns": "Must have a solid or highly opaque blurred background ('bg-[#0A0B10]/95 backdrop-blur-xl'). NEVER fully transparent."
+  },
+  "motion": {
+    "micro_interactions": "Hover states on roster chips (slight lift '-translate-y-0.5' and increased border opacity).",
+    "success_state": "Trigger 'canvas-confetti' on successful roster publish/dispatch.",
+    "toasts": "Use 'sonner' for email dispatch simulation and conflict resolution feedback. Style toasts with dark glass."
+  },
+  "accessibility": {
+    "contrast": "Ensure minimum 4.5:1 contrast for all text. Use text shadow if placing text over any varied background.",
+    "reduced_motion": "Respect 'prefers-reduced-motion' for confetti and hover lifts.",
+    "testing": "All interactive and key informational elements MUST include a 'data-testid' attribute."
+  },
+  "media": {
+    "image_urls": {
+      "employee_avatars": [
+        "https://images.unsplash.com/photo-1610721193651-e6aca85b45aa?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHw0fHxwcm9mZXNzaW9uYWwlMjBhdmF0YXIlMjBwb3J0cmFpdCUyMGJsYWNrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODUyNzM0MTB8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1673830719944-7bf527816dae?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBhdmF0YXIlMjBwb3J0cmFpdCUyMGJsYWNrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODUyNzM0MTB8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1673830718731-39d6542835c8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwyfHxwcm9mZXNzaW9uYWwlMjBhdmF0YXIlMjBwb3J0cmFpdCUyMGJsYWNrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODUyNzM0MTB8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1641311280728-bec9ba3f221f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwzfHxwcm9mZXNzaW9uYWwlMjBhdmF0YXIlMjBwb3J0cmFpdCUyMGJsYWNrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODUyNzM0MTB8MA&ixlib=rb-4.1.0&q=85"
+      ],
+      "background_ambience": [
+        "https://images.unsplash.com/photo-1552925766-63ab07391e02?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2ODl8MHwxfHNlYXJjaHwxfHxmdXR1cmlzdGljJTIwcmV0YWlsJTIwc3RvcmUlMjBkYXJrfGVufDB8fHx8MTc4NTI3MzQxMHww&ixlib=rb-4.1.0&q=85"
+      ],
+      "usage_instructions": "Use avatars for employee management list, roster row headers, and email dispatch modal. Use background_ambience with a heavy black overlay (e.g., 'bg-black/80') for the login/signup screen."
+    }
+  },
+  "instructions_to_main_agent": [
+    "Build a hybrid fullstack SaaS dashboard. Use standard React .js syntax, NOT .tsx. Provide the implementation in .js files.",
+    "Implement the UI using a dark glassmorphism aesthetic. Do not make the entire app transparent; anchor it with a dark #05050A base.",
+    "For the Weekly Roster Timeline: Construct a dense, horizontally scrollable data grid. Use solid backgrounds for cells, and colored pills/chips for shifts.",
+    "Implement a 1-click 'Generate Roster' button that uses a neon gradient and shows a simulated progress state before revealing the roster.",
+    "Ensure the Conflict Badge is distinct and catches attention immediately (e.g., pulsating dot or high-contrast red badge).",
+    "Install and use 'canvas-confetti' for the successful dispatch micro-interaction.",
+    "Install 'sonner' for toast notifications and trigger it on 'Publish' or 'Email Dispatch'.",
+    "All interactive elements MUST have a 'data-testid' attribute for testing. Example: 'data-testid=\"login-button\"'."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Avoid generic, 'on distribution' outputs. Do not use Inter for headings.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur) combined with subtle 1px white/10 borders.",
+    "Do NOT apply universal transitions (e.g., 'transition: all'). Add transitions specifically for interactive elements.",
+    "Do NOT center align the app container. Preserve human reading flow (left-aligned).",
+    "Use modern button styles (pill-shaped) with interaction animations (hover scale, brightness).",
+    "NEVER use AI assistant emojis like bot, brain, or stars as icons. Use Lucide React icons.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Never use placeholder URLs. Use the provided image URLs.",
+    "CRITICAL: DO NOT use complete 'transparent' background in header, overlays, any surface that has content under it. Example: Dropdown with transparent background.",
+    "Prioritize using pre-existing components from src/components/ui when applicable."
+  ]
+}
