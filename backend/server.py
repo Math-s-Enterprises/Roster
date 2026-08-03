@@ -1,89 +1,669 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, Cookie, Header
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-import os
-import logging
+import os, logging, uuid, jwt, bcrypt, httpx, stripe
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
-import uuid
-from datetime import datetime, timezone
-
+from pydantic import BaseModel, EmailStr, Field
+from typing import List, Optional, Dict, Any
+from datetime import datetime, timezone, timedelta
+from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
 mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+mclient = AsyncIOMotorClient(mongo_url)
+db = mclient[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
+JWT_SECRET = os.environ['JWT_SECRET']
+EMERGENT_LLM_KEY = os.environ['EMERGENT_LLM_KEY']
+EMERGENT_EMAIL_KEY = os.environ['EMERGENT_EMAIL_KEY']
+EMAIL_FROM_NAME = os.environ['EMAIL_FROM_NAME']
+OWNER_EMAIL = os.environ['OWNER_EMAIL']
+EMAIL_BASE_URL = "https://integrations.emergentagent.com"
+
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY") or "sk_test_emergent"
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
 app = FastAPI()
+api = APIRouter(prefix="/api")
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("roster")
 
-# Create a router with the /api prefix
-api_router = APIRouter(prefix="/api")
+
+class SignupReq(BaseModel):
+    email: EmailStr
+    password: str
+    name: str
+    shop_name: Optional[str] = None
+
+class LoginReq(BaseModel):
+    email: EmailStr
+    password: str
+
+class ShopHours(BaseModel):
+    day: str
+    open: str
+    close: str
+    closed: bool = False
+
+class ShopUpdate(BaseModel):
+    name: Optional[str] = None
+    hours: Optional[List[ShopHours]] = None
+    min_shift_hours: Optional[float] = None
+    max_shift_hours: Optional[float] = None
+    roles: Optional[List[str]] = None
+    onboarded: Optional[bool] = None
+
+class EmployeeIn(BaseModel):
+    name: str
+    email: EmailStr
+    role: str
+    age: int
+    hourly_rate: float
+    max_weekly_hours: float = 40
+    avatar: Optional[str] = None
+    preferred_days_off: List[str] = []
+
+class HolidayIn(BaseModel):
+    date: str
+    label: str
+    scope: str = "shop"
+    employee_id: Optional[str] = None
+
+class FixedShiftIn(BaseModel):
+    employee_id: str
+    days: List[str]
+    start: str
+    end: str
+
+class AIRuleIn(BaseModel):
+    title: str
+    description: str
+    enabled: bool = True
+    category: str = "custom"
+
+class RosterGenReq(BaseModel):
+    week_start: str
+
+class ShiftIn(BaseModel):
+    employee_id: str
+    day: str
+    start: str
+    end: str
+
+class RosterUpdate(BaseModel):
+    shifts: List[ShiftIn]
 
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+def hash_pw(pw): return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+def check_pw(pw, h):
+    try: return bcrypt.checkpw(pw.encode(), h.encode())
+    except: return False
+def make_jwt(uid): return jwt.encode({"user_id": uid, "exp": datetime.now(timezone.utc) + timedelta(days=7)}, JWT_SECRET, algorithm="HS256")
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
 
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
-async def root():
-    return {"message": "Hello World"}
+async def get_current_user(authorization: Optional[str] = Header(None), session_token: Optional[str] = Cookie(None)):
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            payload = jwt.decode(authorization.replace("Bearer ", ""), JWT_SECRET, algorithms=["HS256"])
+            u = await db.users.find_one({"user_id": payload.get("user_id")}, {"_id": 0})
+            if u: return u
+        except: pass
+    if session_token:
+        s = await db.user_sessions.find_one({"session_token": session_token}, {"_id": 0})
+        if s:
+            exp = s["expires_at"]
+            if isinstance(exp, str): exp = datetime.fromisoformat(exp)
+            if exp.tzinfo is None: exp = exp.replace(tzinfo=timezone.utc)
+            if exp >= datetime.now(timezone.utc):
+                u = await db.users.find_one({"user_id": s["user_id"]}, {"_id": 0})
+                if u: return u
+    raise HTTPException(401, "Not authenticated")
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+DEFAULT_HOURS = [{"day": d, "open": "09:00", "close": "21:00", "closed": False} for d in ["mon","tue","wed","thu","fri","sat"]] + [{"day": "sun", "open": "10:00", "close": "18:00", "closed": False}]
+DEFAULT_ROLES = ["Manager", "Supervisor", "Cashier", "Floor Assistant", "Stocker"]
+DEFAULT_AI_RULES = [
+    {"title": "Under-16 curfew", "description": "Employees under 16 cannot work past 19:00 or before 08:00.", "enabled": True, "category": "legal"},
+    {"title": "Weekly hour cap", "description": "No employee may exceed their max_weekly_hours setting.", "enabled": True, "category": "legal"},
+    {"title": "Rest between shifts", "description": "At least 11 hours between shifts for the same employee.", "enabled": True, "category": "safety"},
+    {"title": "Manager coverage", "description": "At least one Manager or Supervisor scheduled during opening hours.", "enabled": True, "category": "safety"},
+]
 
-# Include the router in the main app
-app.include_router(api_router)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+async def ensure_shop(user):
+    ex = await db.shops.find_one({"owner_id": user["user_id"]}, {"_id": 0})
+    if ex: return ex
+    shop = {
+        "shop_id": f"shop_{uuid.uuid4().hex[:12]}", "owner_id": user["user_id"],
+        "name": user.get("shop_name") or f"{user['name'].split()[0]}'s Shop",
+        "hours": DEFAULT_HOURS, "min_shift_hours": 4, "max_shift_hours": 9,
+        "roles": DEFAULT_ROLES, "onboarded": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.shops.insert_one(shop.copy())
+    for r in DEFAULT_AI_RULES:
+        await db.ai_rules.insert_one({"rule_id": f"rule_{uuid.uuid4().hex[:12]}", "shop_id": shop["shop_id"], **r})
+    return await db.shops.find_one({"shop_id": shop["shop_id"]}, {"_id": 0})
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+
+@api.post("/auth/signup")
+async def signup(req: SignupReq):
+    if await db.users.find_one({"email": req.email.lower()}, {"_id": 0}):
+        raise HTTPException(400, "Email already registered")
+    uid = f"user_{uuid.uuid4().hex[:12]}"
+    user = {"user_id": uid, "email": req.email.lower(), "name": req.name, "password_hash": hash_pw(req.password),
+            "shop_name": req.shop_name, "created_at": datetime.now(timezone.utc).isoformat()}
+    await db.users.insert_one(user.copy())
+    await ensure_shop(user)
+    return {"token": make_jwt(uid), "user": {"user_id": uid, "email": user["email"], "name": user["name"]}}
+
+
+@api.post("/auth/login")
+async def login(req: LoginReq):
+    u = await db.users.find_one({"email": req.email.lower()}, {"_id": 0})
+    if not u or not u.get("password_hash") or not check_pw(req.password, u["password_hash"]):
+        raise HTTPException(401, "Invalid credentials")
+    await ensure_shop(u)
+    return {"token": make_jwt(u["user_id"]), "user": {"user_id": u["user_id"], "email": u["email"], "name": u["name"]}}
+
+
+@api.post("/auth/google/session")
+async def google_session(request: Request, response: Response):
+    body = await request.json()
+    sid = body.get("session_id")
+    if not sid: raise HTTPException(400, "Missing session_id")
+    async with httpx.AsyncClient(timeout=15) as h:
+        r = await h.get("https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data", headers={"X-Session-ID": sid})
+    if r.status_code != 200: raise HTTPException(401, "Invalid session")
+    data = r.json()
+    email = data["email"].lower()
+    ex = await db.users.find_one({"email": email}, {"_id": 0})
+    if ex:
+        uid = ex["user_id"]
+    else:
+        uid = f"user_{uuid.uuid4().hex[:12]}"
+        await db.users.insert_one({"user_id": uid, "email": email, "name": data.get("name") or email.split("@")[0],
+                                    "picture": data.get("picture"), "created_at": datetime.now(timezone.utc).isoformat()})
+    u = await db.users.find_one({"user_id": uid}, {"_id": 0})
+    await ensure_shop(u)
+    tok = data["session_token"]
+    await db.user_sessions.insert_one({"user_id": uid, "session_token": tok,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat()})
+    response.set_cookie("session_token", tok, httponly=True, secure=True, samesite="none", path="/", max_age=7*24*3600)
+    return {"user": {"user_id": uid, "email": u["email"], "name": u["name"], "picture": u.get("picture")}}
+
+
+@api.get("/auth/me")
+async def me(u=Depends(get_current_user)):
+    return {"user_id": u["user_id"], "email": u["email"], "name": u["name"], "picture": u.get("picture"), "pro": bool(u.get("pro", False))}
+
+
+@api.post("/auth/logout")
+async def logout(response: Response, session_token: Optional[str] = Cookie(None)):
+    if session_token: await db.user_sessions.delete_one({"session_token": session_token})
+    response.delete_cookie("session_token", path="/")
+    return {"ok": True}
+
+
+@api.get("/shop")
+async def get_shop(u=Depends(get_current_user)):
+    return await ensure_shop(u)
+
+
+@api.put("/shop")
+async def update_shop(p: ShopUpdate, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    upd = {k: v for k, v in p.model_dump(exclude_unset=True).items() if v is not None}
+    if upd: await db.shops.update_one({"shop_id": s["shop_id"]}, {"$set": upd})
+    return await db.shops.find_one({"shop_id": s["shop_id"]}, {"_id": 0})
+
+
+AVATARS = [
+    "https://images.unsplash.com/photo-1610721193651-e6aca85b45aa?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHw0fHxwcm9mZXNzaW9uYWwlMjBhdmF0YXIlMjBwb3J0cmFpdCUyMGJsYWNrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODUyNzM0MTB8MA&ixlib=rb-4.1.0&q=85",
+    "https://images.unsplash.com/photo-1673830719944-7bf527816dae?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBhdmF0YXIlMjBwb3J0cmFpdCUyMGJsYWNrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODUyNzM0MTB8MA&ixlib=rb-4.1.0&q=85",
+    "https://images.unsplash.com/photo-1673830718731-39d6542835c8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwyfHxwcm9mZXNzaW9uYWwlMjBhdmF0YXIlMjBwb3J0cmFpdCUyMGJsYWNrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODUyNzM0MTB8MA&ixlib=rb-4.1.0&q=85",
+    "https://images.unsplash.com/photo-1641311280728-bec9ba3f221f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwzfHxwcm9mZXNzaW9uYWwlMjBhdmF0YXIlMjBwb3J0cmFpdCUyMGJsYWNrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODUyNzM0MTB8MA&ixlib=rb-4.1.0&q=85",
+]
+
+
+@api.get("/employees")
+async def emp_list(u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    return await db.employees.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
+
+@api.post("/employees")
+async def emp_new(p: EmployeeIn, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    eid = f"emp_{uuid.uuid4().hex[:12]}"
+    c = await db.employees.count_documents({"shop_id": s["shop_id"]})
+    doc = {"employee_id": eid, "shop_id": s["shop_id"], **p.model_dump(),
+           "avatar": p.avatar or AVATARS[c % len(AVATARS)]}
+    await db.employees.insert_one(doc.copy())
+    return await db.employees.find_one({"employee_id": eid}, {"_id": 0})
+
+@api.put("/employees/{eid}")
+async def emp_upd(eid: str, p: EmployeeIn, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    await db.employees.update_one({"employee_id": eid, "shop_id": s["shop_id"]}, {"$set": p.model_dump()})
+    return await db.employees.find_one({"employee_id": eid}, {"_id": 0})
+
+@api.delete("/employees/{eid}")
+async def emp_del(eid: str, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    await db.employees.delete_one({"employee_id": eid, "shop_id": s["shop_id"]})
+    return {"ok": True}
+
+
+@api.get("/holidays")
+async def hol_list(u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    return await db.holidays.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
+
+@api.post("/holidays")
+async def hol_new(p: HolidayIn, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    hid = f"hol_{uuid.uuid4().hex[:10]}"
+    await db.holidays.insert_one({"holiday_id": hid, "shop_id": s["shop_id"], **p.model_dump()})
+    return await db.holidays.find_one({"holiday_id": hid}, {"_id": 0})
+
+@api.delete("/holidays/{hid}")
+async def hol_del(hid: str, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    await db.holidays.delete_one({"holiday_id": hid, "shop_id": s["shop_id"]})
+    return {"ok": True}
+
+
+@api.get("/fixed-shifts")
+async def fs_list(u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    return await db.fixed_shifts.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
+
+@api.post("/fixed-shifts")
+async def fs_new(p: FixedShiftIn, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    fid = f"fs_{uuid.uuid4().hex[:10]}"
+    await db.fixed_shifts.insert_one({"fixed_id": fid, "shop_id": s["shop_id"], **p.model_dump()})
+    return await db.fixed_shifts.find_one({"fixed_id": fid}, {"_id": 0})
+
+@api.delete("/fixed-shifts/{fid}")
+async def fs_del(fid: str, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    await db.fixed_shifts.delete_one({"fixed_id": fid, "shop_id": s["shop_id"]})
+    return {"ok": True}
+
+
+@api.get("/ai-rules")
+async def rules_list(u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    return await db.ai_rules.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
+
+@api.post("/ai-rules")
+async def rules_new(p: AIRuleIn, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    rid = f"rule_{uuid.uuid4().hex[:10]}"
+    await db.ai_rules.insert_one({"rule_id": rid, "shop_id": s["shop_id"], **p.model_dump()})
+    return await db.ai_rules.find_one({"rule_id": rid}, {"_id": 0})
+
+@api.put("/ai-rules/{rid}")
+async def rules_upd(rid: str, p: AIRuleIn, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    await db.ai_rules.update_one({"rule_id": rid, "shop_id": s["shop_id"]}, {"$set": p.model_dump()})
+    return await db.ai_rules.find_one({"rule_id": rid}, {"_id": 0})
+
+@api.delete("/ai-rules/{rid}")
+async def rules_del(rid: str, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    await db.ai_rules.delete_one({"rule_id": rid, "shop_id": s["shop_id"]})
+    return {"ok": True}
+
+
+DAYS = ["mon","tue","wed","thu","fri","sat","sun"]
+def hm(s): h,m = s.split(":"); return int(h)*60+int(m)
+def mh(m): return f"{m//60:02d}:{m%60:02d}"
+
+
+async def solve_roster(shop, employees, holidays, fixed_shifts, ai_rules, week_start, weights):
+    shop_hours = {h["day"]: h for h in shop["hours"]}
+    min_shift = shop["min_shift_hours"] * 60
+    max_shift = shop["max_shift_hours"] * 60
+    shop_off = {h["date"] for h in holidays if h["scope"] == "shop"}
+    emp_off = {}
+    for h in holidays:
+        if h["scope"] == "employee" and h.get("employee_id"):
+            emp_off.setdefault(h["employee_id"], set()).add(h["date"])
+    ws = datetime.strptime(week_start, "%Y-%m-%d").date()
+    day_dates = {DAYS[i]: (ws + timedelta(days=i)).isoformat() for i in range(7)}
+    fixed_map = {}
+    for f in fixed_shifts:
+        for d in f["days"]:
+            fixed_map.setdefault(f["employee_id"], {})[d] = (f["start"], f["end"])
+    shifts, issues = [], []
+    emp_hours = {e["employee_id"]: 0.0 for e in employees}
+    role_priority = {r: i for i, r in enumerate(["Manager","Supervisor","Cashier","Floor Assistant","Stocker"])}
+
+    for d in DAYS:
+        the_date = day_dates[d]
+        if the_date in shop_off: continue
+        sh = shop_hours.get(d, {})
+        if sh.get("closed"): continue
+        open_m, close_m = hm(sh["open"]), hm(sh["close"])
+        if close_m - open_m <= 0: continue
+        target_len = min(max(close_m - open_m, int(min_shift)), int(max_shift))
+        candidates = sorted(employees, key=lambda e: (role_priority.get(e["role"], 99), -weights.get(e["employee_id"], {}).get(d, 0)))
+        assigned_today = set()
+
+        for emp in candidates:
+            fs = fixed_map.get(emp["employee_id"], {}).get(d)
+            if fs:
+                if the_date in emp_off.get(emp["employee_id"], set()):
+                    issues.append(f"{emp['name']} has fixed shift on {d} but is on holiday.")
+                    continue
+                s_m, e_m = hm(fs[0]), hm(fs[1])
+                length_h = (e_m - s_m) / 60
+                if emp_hours[emp["employee_id"]] + length_h > emp["max_weekly_hours"]:
+                    issues.append(f"{emp['name']} fixed shift exceeds max weekly hours.")
+                    continue
+                if emp["age"] < 16 and (s_m < hm("08:00") or e_m > hm("19:00")):
+                    issues.append(f"{emp['name']} (under 16) fixed shift violates curfew.")
+                shifts.append({"shift_id": f"sh_{uuid.uuid4().hex[:8]}", "employee_id": emp["employee_id"], "day": d, "start": fs[0], "end": fs[1], "fixed": True})
+                emp_hours[emp["employee_id"]] += length_h
+                assigned_today.add(emp["employee_id"])
+
+        has_mgr = any(any(s["employee_id"] == emp["employee_id"] and s["day"] == d for s in shifts) for emp in employees if emp["role"] in ("Manager","Supervisor"))
+        needed = max(2, len([e for e in employees if e["role"] in ("Cashier","Floor Assistant")]) // 3 + 1)
+
+        for emp in candidates:
+            if len([s for s in shifts if s["day"] == d]) >= needed and has_mgr: break
+            if emp["employee_id"] in assigned_today: continue
+            if the_date in emp_off.get(emp["employee_id"], set()): continue
+            if d in (emp.get("preferred_days_off") or []): continue
+            s_m, e_m = open_m, min(open_m + target_len, close_m)
+            length_h = (e_m - s_m) / 60
+            if length_h < shop["min_shift_hours"]: continue
+            if emp_hours[emp["employee_id"]] + length_h > emp["max_weekly_hours"]:
+                e_m = s_m + int(shop["min_shift_hours"] * 60)
+                length_h = (e_m - s_m) / 60
+                if emp_hours[emp["employee_id"]] + length_h > emp["max_weekly_hours"]: continue
+            if emp["age"] < 16:
+                if e_m > hm("19:00"): e_m = min(e_m, hm("19:00"))
+                if s_m < hm("08:00"): s_m = hm("08:00")
+                length_h = (e_m - s_m) / 60
+                if length_h < shop["min_shift_hours"]: continue
+            shifts.append({"shift_id": f"sh_{uuid.uuid4().hex[:8]}", "employee_id": emp["employee_id"], "day": d, "start": mh(s_m), "end": mh(e_m), "fixed": False})
+            emp_hours[emp["employee_id"]] += length_h
+            assigned_today.add(emp["employee_id"])
+            if emp["role"] in ("Manager","Supervisor"): has_mgr = True
+
+        if not any(s["day"] == d for s in shifts):
+            issues.append(f"No coverage assigned for {d}.")
+        elif not has_mgr:
+            issues.append(f"No manager/supervisor coverage on {d}.")
+
+    score = max(0, 100 - len(issues) * 8)
+    emp_rate = {e["employee_id"]: e["hourly_rate"] for e in employees}
+    labor_cost = sum(((hm(s["end"]) - hm(s["start"])) / 60) * emp_rate.get(s["employee_id"], 0) for s in shifts)
+    total_hours = sum(emp_hours.values())
+    max_possible = sum(e["max_weekly_hours"] for e in employees) or 1
+    return {"shifts": shifts, "issues": issues, "compliance_score": score,
+            "labor_cost": round(labor_cost, 2), "total_hours": round(total_hours, 1),
+            "utilization": round((total_hours / max_possible) * 100, 1),
+            "per_employee_hours": {k: round(v, 1) for k, v in emp_hours.items()}}
+
+
+async def compute_weights(sid):
+    w = {}
+    async for r in db.rosters.find({"shop_id": sid, "approved": True}, {"_id": 0}):
+        for s in r.get("shifts", []):
+            w.setdefault(s["employee_id"], {}).setdefault(s["day"], 0)
+            w[s["employee_id"]][s["day"]] += 1
+    return w
+
+
+@api.post("/roster/generate")
+async def gen_roster(p: RosterGenReq, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    emps = await db.employees.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
+    if not emps: raise HTTPException(400, "Add employees first")
+    hols = await db.holidays.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
+    fx = await db.fixed_shifts.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
+    rules = await db.ai_rules.find({"shop_id": s["shop_id"], "enabled": True}, {"_id": 0}).to_list(500)
+    weights = await compute_weights(s["shop_id"])
+    result = await solve_roster(s, emps, hols, fx, rules, p.week_start, weights)
+
+    ai_summary = None
+    try:
+        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"roster-{uuid.uuid4().hex[:8]}",
+                       system_message="You are an expert retail workforce planner. Reply in 2 short sentences.").with_model("anthropic", "claude-sonnet-4-5-20250929")
+        prompt = f"Weekly roster: week {p.week_start}. {len(result['shifts'])} shifts. Compliance {result['compliance_score']}. Cost ${result['labor_cost']}. Issues: {result['issues'][:3]}. Give a concise assessment + one optimization tip."
+        ai_summary = str(await chat.send_message(UserMessage(text=prompt)))
+    except Exception as e:
+        log.warning(f"AI summary skipped: {e}")
+
+    latest = await db.rosters.find_one({"shop_id": s["shop_id"], "week_start": p.week_start}, sort=[("created_at", -1)], projection={"_id": 0})
+    version = "v1.0"
+    if latest:
+        try:
+            mj, mn = latest["version"].replace("v", "").split(".")
+            version = f"v{mj}.{int(mn)+1}"
+        except: version = "v1.1"
+    rid = f"rst_{uuid.uuid4().hex[:12]}"
+    doc = {"roster_id": rid, "shop_id": s["shop_id"], "week_start": p.week_start, "version": version,
+           **result, "ai_summary": ai_summary, "approved": False,
+           "created_at": datetime.now(timezone.utc).isoformat()}
+    await db.rosters.insert_one(doc.copy())
+    await db.activity_logs.insert_one({"log_id": f"log_{uuid.uuid4().hex[:10]}", "shop_id": s["shop_id"],
+        "action": "roster_generated", "detail": f"Generated {version} for week {p.week_start}",
+        "created_at": datetime.now(timezone.utc).isoformat()})
+    return doc
+
+
+@api.get("/rosters")
+async def r_list(u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    return await db.rosters.find({"shop_id": s["shop_id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+
+@api.get("/rosters/{rid}")
+async def r_get(rid: str, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    r = await db.rosters.find_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"_id": 0})
+    if not r: raise HTTPException(404, "Not found")
+    return r
+
+@api.put("/rosters/{rid}")
+async def r_upd(rid: str, p: RosterUpdate, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    emps = await db.employees.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
+    er = {e["employee_id"]: e["hourly_rate"] for e in emps}
+    shifts = [{"shift_id": f"sh_{uuid.uuid4().hex[:8]}", **sh.model_dump(), "fixed": False} for sh in p.shifts]
+    lc = sum(((hm(sh["end"]) - hm(sh["start"])) / 60) * er.get(sh["employee_id"], 0) for sh in shifts)
+    th = sum((hm(sh["end"]) - hm(sh["start"])) / 60 for sh in shifts)
+    await db.rosters.update_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"$set": {"shifts": shifts, "labor_cost": round(lc, 2), "total_hours": round(th, 1)}})
+    return await db.rosters.find_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"_id": 0})
+
+@api.post("/rosters/{rid}/approve")
+async def r_approve(rid: str, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    await db.rosters.update_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"$set": {"approved": True}})
+    await db.activity_logs.insert_one({"log_id": f"log_{uuid.uuid4().hex[:10]}", "shop_id": s["shop_id"],
+        "action": "roster_approved", "detail": f"Approved roster {rid}",
+        "created_at": datetime.now(timezone.utc).isoformat()})
+    return {"ok": True}
+
+
+def email_html(name, shop_name, ws, shifts, ver):
+    labels = {"mon":"Mon","tue":"Tue","wed":"Wed","thu":"Thu","fri":"Fri","sat":"Sat","sun":"Sun"}
+    rows = "".join(f'<tr><td style="padding:8px 12px;color:#a1a1aa;font-family:monospace;">{labels.get(s["day"], s["day"])}</td><td style="padding:8px 12px;color:#fff;font-family:monospace;">{s["start"]} – {s["end"]}</td></tr>' for s in shifts)
+    if not rows: rows = '<tr><td colspan="2" style="padding:12px;color:#a1a1aa;">No shifts scheduled this week.</td></tr>'
+    return f"""<div style="background:#05050A;padding:32px;font-family:Arial,sans-serif;color:#fff;"><table width="100%" style="max-width:560px;margin:auto;background:#0A0B10;border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden;"><tr><td style="padding:24px 24px 8px 24px;"><div style="color:#00E5FF;font-size:22px;font-weight:700;">{shop_name}</div><div style="color:#a1a1aa;font-size:13px;margin-top:4px;">Roster {ver} · week of {ws}</div></td></tr><tr><td style="padding:16px 24px;color:#fff;"><p>Hi {name},</p><p>Your shifts for the upcoming week are below.</p></td></tr><tr><td style="padding:0 24px 24px 24px;"><table width="100%" style="background:#05050A;border-radius:12px;border:1px solid rgba(255,255,255,0.08);">{rows}</table></td></tr><tr><td style="padding:0 24px 24px 24px;color:#71717A;font-size:12px;">Sent via Roster AI</td></tr></table></div>"""
+
+
+@api.post("/roster/{rid}/dispatch")
+async def dispatch(rid: str, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    r = await db.rosters.find_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"_id": 0})
+    if not r: raise HTTPException(404, "Not found")
+    emps = await db.employees.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
+    sent, failed = [], []
+    for e in emps:
+        emp_shifts = [sh for sh in r["shifts"] if sh["employee_id"] == e["employee_id"]]
+        html = email_html(e["name"], s["name"], r["week_start"], emp_shifts, r["version"])
+        payload = {"to": [e["email"]], "subject": f"Your schedule · {s['name']} · week of {r['week_start']}", "html": html, "from_name": EMAIL_FROM_NAME}
+        try:
+            async with httpx.AsyncClient(timeout=30) as h:
+                resp = await h.post(f"{EMAIL_BASE_URL}/api/v1/email/send", headers={"X-Email-Key": EMERGENT_EMAIL_KEY}, json=payload)
+                resp.raise_for_status()
+                sent.append({"employee_id": e["employee_id"], "email": e["email"], "name": e["name"]})
+        except Exception as ex:
+            log.error(f"Email failed for {e['email']}: {ex}")
+            failed.append({"employee_id": e["employee_id"], "email": e["email"], "name": e["name"], "error": str(ex)[:100]})
+        await db.activity_logs.insert_one({"log_id": f"log_{uuid.uuid4().hex[:10]}", "shop_id": s["shop_id"],
+            "action": "email_sent" if e["employee_id"] in [x["employee_id"] for x in sent] else "email_failed",
+            "detail": f"Dispatch to {e['name']} <{e['email']}> for {r['version']}",
+            "created_at": datetime.now(timezone.utc).isoformat()})
+    await db.rosters.update_one({"roster_id": rid}, {"$set": {"dispatched_at": datetime.now(timezone.utc).isoformat()}})
+    return {"sent": sent, "failed": failed, "total": len(sent) + len(failed)}
+
+
+@api.get("/activity")
+async def act_list(u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    return await db.activity_logs.find({"shop_id": s["shop_id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
+
+
+@api.post("/seed-demo")
+async def seed_demo(u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    await db.employees.delete_many({"shop_id": s["shop_id"], "demo": True})
+    demo = [
+        {"name":"Aisha Rahman","email":"aisha@demo.co","role":"Manager","age":34,"hourly_rate":28.0,"max_weekly_hours":40,"preferred_days_off":["sun"],"demo":True},
+        {"name":"Marcus Chen","email":"marcus@demo.co","role":"Supervisor","age":28,"hourly_rate":22.0,"max_weekly_hours":40,"preferred_days_off":["mon"],"demo":True},
+        {"name":"Priya Nair","email":"priya@demo.co","role":"Cashier","age":22,"hourly_rate":16.0,"max_weekly_hours":40,"preferred_days_off":["tue"],"demo":True},
+        {"name":"Jordan Lee","email":"jordan@demo.co","role":"Cashier","age":19,"hourly_rate":15.5,"max_weekly_hours":20,"preferred_days_off":["wed"],"demo":True},
+        {"name":"Sofia Diaz","email":"sofia@demo.co","role":"Floor Assistant","age":17,"hourly_rate":14.0,"max_weekly_hours":20,"preferred_days_off":["thu"],"demo":True},
+        {"name":"Ethan Park","email":"ethan@demo.co","role":"Stocker","age":24,"hourly_rate":15.0,"max_weekly_hours":40,"preferred_days_off":["fri"],"demo":True},
+        {"name":"Lena Volkov","email":"lena@demo.co","role":"Floor Assistant","age":15,"hourly_rate":12.5,"max_weekly_hours":20,"preferred_days_off":["sat"],"demo":True},
+    ]
+    for i, e in enumerate(demo):
+        await db.employees.insert_one({"employee_id": f"emp_{uuid.uuid4().hex[:12]}", "shop_id": s["shop_id"], "avatar": AVATARS[i % len(AVATARS)], **e})
+    return {"ok": True, "count": len(demo)}
+
+
+class CheckoutRequest(BaseModel):
+    lookup_key: str
+    quantity: int = Field(1, ge=1, le=100)
+    origin_url: str
+
+
+@api.post("/payments/checkout")
+async def create_checkout(req: CheckoutRequest, u=Depends(get_current_user)):
+    prices = stripe.Price.list(lookup_keys=[req.lookup_key], active=True, limit=1).data
+    if not prices:
+        raise HTTPException(500, f"Price not found: {req.lookup_key}")
+    price = prices[0]
+    kwargs = dict(
+        line_items=[{"price": price.id, "quantity": req.quantity}],
+        mode="subscription" if price.recurring else "payment",
+        success_url=f"{req.origin_url}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"{req.origin_url}/payment/cancel",
+        metadata={"user_id": u["user_id"], "lookup_key": req.lookup_key},
+    )
+    try:
+        session = stripe.checkout.Session.create(**kwargs, managed_payments={"enabled": True})
+    except stripe.error.InvalidRequestError as e:
+        msg = (e.user_message or "").lower()
+        if "managed payments" in msg or "ineligible" in msg:
+            session = stripe.checkout.Session.create(**kwargs, automatic_tax={"enabled": True}, billing_address_collection="required")
+        else:
+            raise
+    await db.payment_transactions.insert_one({
+        "session_id": session.id, "user_id": u["user_id"], "lookup_key": req.lookup_key,
+        "amount": (price.unit_amount or 0) * req.quantity, "currency": price.currency,
+        "status": "initiated", "payment_status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"checkout_url": session.url, "session_id": session.id}
+
+
+@api.get("/payments/status/{session_id}")
+async def get_status(session_id: str):
+    record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    if not record: raise HTTPException(404, "Not found")
+    if record.get("payment_status") != "paid":
+        try:
+            s = stripe.checkout.Session.retrieve(session_id)
+            if s.payment_status == "paid" or s.status == "complete":
+                await db.payment_transactions.update_one(
+                    {"session_id": session_id, "payment_status": {"$ne": "paid"}},
+                    {"$set": {"status": "completed", "payment_status": "paid",
+                              "stripe_subscription_id": s.subscription,
+                              "stripe_payment_intent_id": s.payment_intent,
+                              "updated_at": datetime.now(timezone.utc).isoformat()}},
+                )
+                # unlock pro on user
+                if record.get("user_id"):
+                    await db.users.update_one({"user_id": record["user_id"]}, {"$set": {"pro": True, "pro_since": datetime.now(timezone.utc).isoformat()}})
+                record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+        except stripe.error.StripeError:
+            pass
+    return {"session_id": record["session_id"], "status": record["status"], "payment_status": record["payment_status"]}
+
+
+@app.post("/api/stripe/webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(400, "Invalid signature")
+    obj, t = event["data"]["object"], event["type"]
+    if t == "checkout.session.completed":
+        res = await db.payment_transactions.update_one(
+            {"session_id": obj["id"], "payment_status": {"$ne": "paid"}},
+            {"$set": {"status": "completed", "payment_status": obj.get("payment_status", "paid"),
+                      "stripe_subscription_id": obj.get("subscription"),
+                      "stripe_payment_intent_id": obj.get("payment_intent"),
+                      "updated_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        if res.modified_count:
+            rec = await db.payment_transactions.find_one({"session_id": obj["id"]}, {"_id": 0})
+            if rec and rec.get("user_id"):
+                await db.users.update_one({"user_id": rec["user_id"]}, {"$set": {"pro": True, "pro_since": datetime.now(timezone.utc).isoformat()}})
+    elif t == "checkout.session.async_payment_succeeded":
+        await db.payment_transactions.update_one({"session_id": obj["id"]}, {"$set": {"payment_status": "paid", "updated_at": datetime.now(timezone.utc).isoformat()}})
+    elif t == "checkout.session.async_payment_failed":
+        await db.payment_transactions.update_one({"session_id": obj["id"]}, {"$set": {"status": "failed", "payment_status": "failed", "updated_at": datetime.now(timezone.utc).isoformat()}})
+    elif t == "checkout.session.expired":
+        await db.payment_transactions.update_one({"session_id": obj["id"]}, {"$set": {"status": "expired", "payment_status": "expired", "updated_at": datetime.now(timezone.utc).isoformat()}})
+    return {"status": "ok"}
+
+
+@api.get("/")
+async def root(): return {"message": "Roster AI"}
+
+
+app.include_router(api)
+app.add_middleware(CORSMiddleware, allow_credentials=True,
+                   allow_origins=os.environ.get('CORS_ORIGINS','*').split(','),
+                   allow_methods=["*"], allow_headers=["*"])
+
+
+@app.on_event("startup")
+async def startup():
+    ex = await db.users.find_one({"email": OWNER_EMAIL.lower()}, {"_id": 0})
+    if not ex:
+        uid = f"user_{uuid.uuid4().hex[:12]}"
+        await db.users.insert_one({"user_id": uid, "email": OWNER_EMAIL.lower(), "name": "Aneesh",
+                                    "password_hash": hash_pw("demo1234"), "shop_name": "Metro Tech Retail",
+                                    "created_at": datetime.now(timezone.utc).isoformat()})
+        u = await db.users.find_one({"user_id": uid}, {"_id": 0})
+        await ensure_shop(u)
+
 
 @app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
+async def shutdown(): mclient.close()
