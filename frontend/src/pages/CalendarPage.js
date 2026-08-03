@@ -7,6 +7,7 @@ export default function CalendarPage() {
   const [hols, setHols] = useState([]);
   const [emps, setEmps] = useState([]);
   const [date, setDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [label, setLabel] = useState("");
   const [scope, setScope] = useState("shop");
   const [empId, setEmpId] = useState("");
@@ -21,8 +22,8 @@ export default function CalendarPage() {
   const add = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/holidays", { date, label, scope, employee_id: scope === "employee" ? empId : null });
-      setDate(""); setLabel(""); setEmpId("");
+      await api.post("/holidays", { date, end_date: endDate || null, label, scope, employee_id: scope === "employee" ? empId : null });
+      setDate(""); setEndDate(""); setLabel(""); setEmpId("");
       toast.success("Holiday added"); load();
     } catch (err) { toast.error(err.response?.data?.detail || "Failed"); }
   };
@@ -43,9 +44,15 @@ export default function CalendarPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <form onSubmit={add} className="glass rounded-2xl p-6 space-y-4">
           <h2 className="font-medium">Add holiday</h2>
-          <div>
-            <label className="text-xs text-white/60">Date</label>
-            <input data-testid="hol-date" required type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full px-3 py-2.5 rounded-lg font-mono" />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-white/60">Start date</label>
+              <input data-testid="hol-date" required type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full px-3 py-2.5 rounded-lg font-mono" />
+            </div>
+            <div>
+              <label className="text-xs text-white/60">End date (optional)</label>
+              <input data-testid="hol-end" type="date" value={endDate} min={date} onChange={(e) => setEndDate(e.target.value)} className="mt-1 w-full px-3 py-2.5 rounded-lg font-mono" />
+            </div>
           </div>
           <div>
             <label className="text-xs text-white/60">Label</label>
@@ -79,7 +86,7 @@ export default function CalendarPage() {
               {hols.map((h) => (
                 <li key={h.holiday_id} className="glass-solid rounded-xl p-4 flex items-center justify-between">
                   <div>
-                    <div className="font-mono text-sm">{h.date}</div>
+                    <div className="font-mono text-sm">{h.date}{h.end_date && h.end_date !== h.date ? ` → ${h.end_date}` : ""}</div>
                     <div className="text-xs text-white/60 mt-0.5">{h.label} · {h.scope === "shop" ? "Shop" : `Employee: ${empName(h.employee_id)}`}</div>
                   </div>
                   <button onClick={() => del(h.holiday_id)} className="text-red-400 hover:bg-red-500/10 p-2 rounded-lg"><Trash2 size={14} /></button>

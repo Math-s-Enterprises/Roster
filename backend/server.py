@@ -54,6 +54,8 @@ class ShopUpdate(BaseModel):
     min_shift_hours: Optional[float] = None
     max_shift_hours: Optional[float] = None
     roles: Optional[List[str]] = None
+    departments: Optional[List[str]] = None
+    multi_department: Optional[bool] = None
     onboarded: Optional[bool] = None
 
 class EmployeeIn(BaseModel):
@@ -65,9 +67,11 @@ class EmployeeIn(BaseModel):
     max_weekly_hours: float = 40
     avatar: Optional[str] = None
     preferred_days_off: List[str] = []
+    departments: List[str] = ["Shop Floor"]
 
 class HolidayIn(BaseModel):
     date: str
+    end_date: Optional[str] = None  # inclusive; if None equals date
     label: str
     scope: str = "shop"
     employee_id: Optional[str] = None
@@ -86,6 +90,7 @@ class AIRuleIn(BaseModel):
 
 class RosterGenReq(BaseModel):
     week_start: str
+    department: Optional[str] = None
 
 class ShiftIn(BaseModel):
     employee_id: str
@@ -125,6 +130,7 @@ async def get_current_user(authorization: Optional[str] = Header(None), session_
 
 DEFAULT_HOURS = [{"day": d, "open": "09:00", "close": "21:00", "closed": False} for d in ["mon","tue","wed","thu","fri","sat"]] + [{"day": "sun", "open": "10:00", "close": "18:00", "closed": False}]
 DEFAULT_ROLES = ["Manager", "Supervisor", "Cashier", "Floor Assistant", "Stocker"]
+DEFAULT_DEPARTMENTS = ["Shop Floor", "Deli"]
 DEFAULT_AI_RULES = [
     {"title": "Under-16 curfew", "description": "Employees under 16 cannot work past 19:00 or before 08:00.", "enabled": True, "category": "legal"},
     {"title": "Weekly hour cap", "description": "No employee may exceed their max_weekly_hours setting.", "enabled": True, "category": "legal"},
@@ -140,7 +146,8 @@ async def ensure_shop(user):
         "shop_id": f"shop_{uuid.uuid4().hex[:12]}", "owner_id": user["user_id"],
         "name": user.get("shop_name") or f"{user['name'].split()[0]}'s Shop",
         "hours": DEFAULT_HOURS, "min_shift_hours": 4, "max_shift_hours": 9,
-        "roles": DEFAULT_ROLES, "onboarded": False,
+        "roles": DEFAULT_ROLES, "departments": DEFAULT_DEPARTMENTS,
+        "multi_department": False, "onboarded": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.shops.insert_one(shop.copy())
@@ -329,12 +336,23 @@ def mh(m): return f"{m//60:02d}:{m%60:02d}"
 async def solve_roster(shop, employees, holidays, fixed_shifts, ai_rules, week_start, weights):
     shop_hours = {h["day"]: h for h in shop["hours"]}
     min_shift = shop["min_shift_hours"] * 60
-    max_shift = shop["max_shift_hours"] * 60
-    shop_off = {h["date"] for h in holidays if h["scope"] == "shop"}
+    max_shift = min(shop["max_shift_hours"], 11) * 60  # hard cap 11h
+    def _range(h):
+        s = datetime.strptime(h["date"], "%Y-%m-%d").date()
+        e = datetime.strptime(h.get("end_date") or h["date"], "%Y-%m-%d").date()
+        out = set()
+        while s <= e:
+            out.add(s.isoformat())
+            s += timedelta(days=1)
+        return out
+    shop_off = set()
     emp_off = {}
     for h in holidays:
-        if h["scope"] == "employee" and h.get("employee_id"):
-            emp_off.setdefault(h["employee_id"], set()).add(h["date"])
+        rng = _range(h)
+        if h["scope"] == "shop":
+            shop_off |= rng
+        elif h["scope"] == "employee" and h.get("employee_id"):
+            emp_off.setdefault(h["employee_id"], set()).update(rng)
     ws = datetime.strptime(week_start, "%Y-%m-%d").date()
     day_dates = {DAYS[i]: (ws + timedelta(days=i)).isoformat() for i in range(7)}
     fixed_map = {}
@@ -353,7 +371,13 @@ async def solve_roster(shop, employees, holidays, fixed_shifts, ai_rules, week_s
         open_m, close_m = hm(sh["open"]), hm(sh["close"])
         if close_m - open_m <= 0: continue
         target_len = min(max(close_m - open_m, int(min_shift)), int(max_shift))
-        candidates = sorted(employees, key=lambda e: (role_priority.get(e["role"], 99), -weights.get(e["employee_id"], {}).get(d, 0)))
+        already_ids = {s["employee_id"] for s in shifts if s["day"] == d}
+        def _score(e):
+            base = -weights.get("day", {}).get(e["employee_id"], {}).get(d, 0)
+            cw = weights.get("coworkers", {}).get(e["employee_id"], {})
+            affinity = -sum(cw.get(x, 0) for x in already_ids)
+            return (role_priority.get(e["role"], 99), base + affinity * 0.5)
+        candidates = sorted(employees, key=_score)
         assigned_today = set()
 
         for emp in candidates:
@@ -415,21 +439,40 @@ async def solve_roster(shop, employees, holidays, fixed_shifts, ai_rules, week_s
 
 
 async def compute_weights(sid):
+    """AI learning: per-employee day preference + co-worker affinity from APPROVED rosters."""
     w = {}
+    coworkers = {}
     async for r in db.rosters.find({"shop_id": sid, "approved": True}, {"_id": 0}):
+        by_day = {}
         for s in r.get("shifts", []):
             w.setdefault(s["employee_id"], {}).setdefault(s["day"], 0)
             w[s["employee_id"]][s["day"]] += 1
-    return w
+            by_day.setdefault(s["day"], []).append(s["employee_id"])
+        for day, ids in by_day.items():
+            for i in ids:
+                for j in ids:
+                    if i != j:
+                        coworkers.setdefault(i, {}).setdefault(j, 0)
+                        coworkers[i][j] += 1
+    return {"day": w, "coworkers": coworkers}
 
 
 @api.post("/roster/generate")
 async def gen_roster(p: RosterGenReq, u=Depends(get_current_user)):
     s = await ensure_shop(u)
+    # Free plan gating: max 4 rosters unless pro
+    if not u.get("pro", False):
+        count = await db.rosters.count_documents({"shop_id": s["shop_id"]})
+        if count >= 4:
+            raise HTTPException(402, "Free plan limit reached (4 rosters). Upgrade to Pro to generate more.")
     emps = await db.employees.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
-    if not emps: raise HTTPException(400, "Add employees first")
+    if p.department:
+        emps = [e for e in emps if p.department in (e.get("departments") or ["Shop Floor"])]
+    if not emps: raise HTTPException(400, "Add employees first" if not p.department else f"No employees in {p.department}")
     hols = await db.holidays.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
     fx = await db.fixed_shifts.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
+    emp_ids = {e["employee_id"] for e in emps}
+    fx = [f for f in fx if f["employee_id"] in emp_ids]
     rules = await db.ai_rules.find({"shop_id": s["shop_id"], "enabled": True}, {"_id": 0}).to_list(500)
     weights = await compute_weights(s["shop_id"])
     result = await solve_roster(s, emps, hols, fx, rules, p.week_start, weights)
@@ -452,7 +495,7 @@ async def gen_roster(p: RosterGenReq, u=Depends(get_current_user)):
         except: version = "v1.1"
     rid = f"rst_{uuid.uuid4().hex[:12]}"
     doc = {"roster_id": rid, "shop_id": s["shop_id"], "week_start": p.week_start, "version": version,
-           **result, "ai_summary": ai_summary, "approved": False,
+           **result, "ai_summary": ai_summary, "approved": False, "department": p.department,
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.rosters.insert_one(doc.copy())
     await db.activity_logs.insert_one({"log_id": f"log_{uuid.uuid4().hex[:10]}", "shop_id": s["shop_id"],
@@ -479,6 +522,16 @@ async def r_upd(rid: str, p: RosterUpdate, u=Depends(get_current_user)):
     emps = await db.employees.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
     er = {e["employee_id"]: e["hourly_rate"] for e in emps}
     shifts = [{"shift_id": f"sh_{uuid.uuid4().hex[:8]}", **sh.model_dump(), "fixed": False} for sh in p.shifts]
+    for sh in shifts:
+        dur = (hm(sh["end"]) - hm(sh["start"])) / 60
+        if dur <= 0: raise HTTPException(400, f"Invalid shift: end must be after start ({sh['start']}-{sh['end']})")
+        if dur > 11: raise HTTPException(400, f"Shift exceeds 11h limit ({sh['start']}-{sh['end']} = {dur}h)")
+    # Prevent duplicate employee+day
+    seen = set()
+    for sh in shifts:
+        k = (sh["employee_id"], sh["day"])
+        if k in seen: raise HTTPException(400, f"Duplicate shift for employee on {sh['day']}")
+        seen.add(k)
     lc = sum(((hm(sh["end"]) - hm(sh["start"])) / 60) * er.get(sh["employee_id"], 0) for sh in shifts)
     th = sum((hm(sh["end"]) - hm(sh["start"])) / 60 for sh in shifts)
     await db.rosters.update_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"$set": {"shifts": shifts, "labor_cost": round(lc, 2), "total_hours": round(th, 1)}})

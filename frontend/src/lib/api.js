@@ -20,7 +20,25 @@ export const roleClass = (role) => {
 };
 
 export const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-export const DAY_LABELS = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
+export const DAY_LABELS = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
+export const DAY_SHORT = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
+
+export function shiftHours(start, end) {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  return ((eh * 60 + em) - (sh * 60 + sm)) / 60;
+}
+
+export function dateForDay(weekStart, dayKey) {
+  const idx = DAYS.indexOf(dayKey);
+  const d = new Date(weekStart + "T00:00:00");
+  d.setDate(d.getDate() + idx);
+  return d;
+}
+
+export function fmtDayDate(d) {
+  return d.toLocaleDateString("en-US", { day: "2-digit", month: "short" });
+}
 
 export function mondayOf(dateStr) {
   const d = dateStr ? new Date(dateStr) : new Date();

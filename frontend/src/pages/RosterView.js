@@ -1,34 +1,44 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { api, DAY_LABELS, DAYS, mondayOf, fmtHours, roleClass } from "@/lib/api";
+import { api, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, roleClass, shiftHours, dateForDay, fmtDayDate } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { Link } from "react-router-dom";
+import { Crown } from "lucide-react";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import jsPDF from "jspdf";
 import { Wand2, Send, Check, FileDown, Printer, AlertTriangle, RefreshCw, Mail, X, Sparkles } from "lucide-react";
 
 export default function RosterView() {
+  const { user } = useAuth();
   const [week, setWeek] = useState(mondayOf());
   const [roster, setRoster] = useState(null);
   const [emps, setEmps] = useState([]);
+  const [shop, setShop] = useState(null);
+  const [department, setDepartment] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [rosters, setRosters] = useState([]);
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchResult, setDispatchResult] = useState(null);
   const [editShift, setEditShift] = useState(null);
+  const [dragging, setDragging] = useState(null);
 
   const load = async () => {
-    const [e, r] = await Promise.all([api.get("/employees"), api.get("/rosters")]);
-    setEmps(e.data); setRosters(r.data);
-    const found = r.data.find((x) => x.week_start === week);
-    if (found) setRoster(found);
-    else setRoster(null);
+    const [e, r, s] = await Promise.all([api.get("/employees"), api.get("/rosters"), api.get("/shop")]);
+    setEmps(e.data); setRosters(r.data); setShop(s.data);
+    const found = r.data.find((x) => x.week_start === week && (x.department || null) === (department || null));
+    setRoster(found || null);
   };
-  useEffect(() => { load(); }, [week]);
+  useEffect(() => { load(); }, [week, department]);
+
+  const totalRosters = rosters.length;
+  const freeLimit = 4;
+  const overLimit = !user?.pro && totalRosters >= freeLimit;
 
   const generate = async () => {
     setGenerating(true);
     try {
-      const r = await api.post("/roster/generate", { week_start: week });
+      const r = await api.post("/roster/generate", { week_start: week, department });
       setRoster(r.data);
       toast.success(`Generated ${r.data.version} · compliance ${r.data.compliance_score}`);
       load();
@@ -65,21 +75,51 @@ export default function RosterView() {
   }, [roster]);
 
   const saveShift = async (payload) => {
+    if (payload && shiftHours(payload.start, payload.end) > 11) {
+      toast.error("Shift exceeds 11h limit"); return;
+    }
     const shifts = (roster.shifts || []).filter((s) => s.shift_id !== editShift.shift_id);
-    if (payload) shifts.push(payload);
+    if (payload) {
+      // Prevent duplicate emp+day
+      const dup = shifts.find((s) => s.employee_id === payload.employee_id && s.day === payload.day);
+      if (dup) { toast.error("Employee already has a shift that day"); return; }
+      shifts.push(payload);
+    }
     const clean = shifts.map(({ employee_id, day, start, end }) => ({ employee_id, day, start, end }));
-    const r = await api.put(`/rosters/${roster.roster_id}`, { shifts: clean });
-    setRoster(r.data);
-    setEditShift(null);
-    toast.success(payload ? "Shift saved" : "Shift removed");
+    try {
+      const r = await api.put(`/rosters/${roster.roster_id}`, { shifts: clean });
+      setRoster(r.data);
+      setEditShift(null);
+      toast.success(payload ? "Shift saved" : "Shift removed");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to save");
+    }
+  };
+
+  const moveShift = async (shift, toEmpId, toDay) => {
+    if (shift.employee_id === toEmpId && shift.day === toDay) return;
+    const shifts = (roster.shifts || []).map((s) =>
+      s.shift_id === shift.shift_id ? { ...s, employee_id: toEmpId, day: toDay } : s
+    );
+    const dup = shifts.filter((s) => s.shift_id !== shift.shift_id).find((s) => s.employee_id === toEmpId && s.day === toDay);
+    if (dup) { toast.error("That slot already has a shift"); return; }
+    const clean = shifts.map(({ employee_id, day, start, end }) => ({ employee_id, day, start, end }));
+    try {
+      const r = await api.put(`/rosters/${roster.roster_id}`, { shifts: clean });
+      setRoster(r.data);
+      toast.success("Shift moved");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Move failed");
+    }
   };
 
   const exportCSV = () => {
-    const rows = [["Employee", "Role", "Day", "Start", "End", "Hours"]];
+    const rows = [["Employee", "Role", "Department", "Day", "Date", "Start", "End", "Hours"]];
     (roster.shifts || []).forEach((s) => {
       const e = empMap[s.employee_id] || {};
-      const hrs = (parseInt(s.end.split(":")[0]) * 60 + parseInt(s.end.split(":")[1]) - parseInt(s.start.split(":")[0]) * 60 - parseInt(s.start.split(":")[1])) / 60;
-      rows.push([e.name, e.role, DAY_LABELS[s.day], s.start, s.end, hrs.toFixed(1)]);
+      const hrs = shiftHours(s.start, s.end);
+      const d = dateForDay(roster.week_start, s.day);
+      rows.push([e.name, e.role, (e.departments || []).join("/"), DAY_LABELS[s.day], d.toISOString().slice(0,10), s.start, s.end, hrs.toFixed(1)]);
     });
     const csv = rows.map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -90,14 +130,37 @@ export default function RosterView() {
   };
 
   const exportPDF = () => {
-    const pdf = new jsPDF();
-    pdf.setFontSize(16); pdf.text(`Roster ${roster.version} · week of ${week}`, 14, 20);
-    pdf.setFontSize(10); let y = 32;
-    (roster.shifts || []).forEach((s) => {
+    const pdf = new jsPDF({ orientation: "landscape" });
+    // Header
+    pdf.setFillColor(15, 15, 20); pdf.rect(0, 0, 297, 22, "F");
+    pdf.setTextColor(255, 255, 255); pdf.setFontSize(18);
+    pdf.text(shop?.name || "Roster", 14, 13);
+    pdf.setFontSize(10); pdf.setTextColor(180);
+    pdf.text(`Week of ${roster.week_start} · ${roster.version}${roster.department ? " · " + roster.department : ""}`, 14, 19);
+    pdf.setTextColor(0, 0, 0);
+    // Column headers
+    const colX = [14, 60, 95, 130, 165, 200, 235];
+    let y = 32;
+    pdf.setFontSize(9); pdf.setFont(undefined, "bold");
+    ["Employee", "Role", "Day", "Date", "Start–End", "Hours"].forEach((h, i) => pdf.text(h, colX[i], y));
+    pdf.setDrawColor(200); pdf.line(14, y + 2, 283, y + 2);
+    y += 8; pdf.setFont(undefined, "normal");
+    const sorted = [...(roster.shifts || [])].sort((a, b) => (DAYS.indexOf(a.day) - DAYS.indexOf(b.day)) || a.start.localeCompare(b.start));
+    sorted.forEach((s) => {
       const e = empMap[s.employee_id] || {};
-      pdf.text(`${DAY_LABELS[s.day]}  ${s.start}–${s.end}  ·  ${e.name} (${e.role})`, 14, y);
-      y += 6; if (y > 280) { pdf.addPage(); y = 20; }
+      const d = dateForDay(roster.week_start, s.day);
+      const hrs = shiftHours(s.start, s.end);
+      pdf.text(String(e.name || "").slice(0, 24), colX[0], y);
+      pdf.text(String(e.role || ""), colX[1], y);
+      pdf.text(DAY_LABELS[s.day], colX[2], y);
+      pdf.text(fmtDayDate(d), colX[3], y);
+      pdf.text(`${s.start} – ${s.end}`, colX[4], y);
+      pdf.text(`${hrs.toFixed(1)}h`, colX[5], y);
+      y += 6; if (y > 195) { pdf.addPage(); y = 20; }
     });
+    // Footer
+    pdf.setFontSize(8); pdf.setTextColor(120);
+    pdf.text(`Compliance ${roster.compliance_score}/100 · Labor $${roster.labor_cost.toFixed(0)} · ${roster.total_hours}h total`, 14, 205);
     pdf.save(`roster-${week}-${roster.version}.pdf`);
   };
 
@@ -122,13 +185,31 @@ export default function RosterView() {
           </h1>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
+          {shop?.multi_department && user?.pro && (
+            <select data-testid="dept-switch" value={department || ""} onChange={(e) => setDepartment(e.target.value || null)} className="px-3 py-2 rounded-lg text-sm">
+              <option value="">All departments</option>
+              {(shop.departments || []).map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          )}
           <input data-testid="week-picker" type="date" value={week} onChange={(e) => setWeek(mondayOf(e.target.value))} className="px-3 py-2 rounded-lg font-mono text-sm" />
-          <button data-testid="btn-generate" onClick={generate} disabled={generating} className="neon-btn px-5 py-2.5 rounded-full text-sm flex items-center gap-2">
+          <button data-testid="btn-generate" onClick={generate} disabled={generating || overLimit} className="neon-btn px-5 py-2.5 rounded-full text-sm flex items-center gap-2">
             {generating ? <RefreshCw size={14} className="animate-spin" /> : <Wand2 size={14} />}
             {roster ? "Regenerate" : "Generate"}
           </button>
         </div>
       </div>
+      {overLimit && (
+        <div className="glass rounded-2xl p-5 mb-6 flex items-center justify-between gap-4 flex-wrap border border-amber-500/30">
+          <div className="flex items-center gap-3">
+            <Crown size={18} className="text-cyan-400" />
+            <div>
+              <div className="text-sm font-medium">Free plan limit reached ({freeLimit} rosters)</div>
+              <div className="text-xs text-white/50">Upgrade to Pro for unlimited generations, AI learning and multi-department.</div>
+            </div>
+          </div>
+          <Link to="/pricing" className="neon-btn px-5 py-2 rounded-full text-sm">Upgrade</Link>
+        </div>
+      )}
 
       {roster && (
         <>
@@ -158,46 +239,68 @@ export default function RosterView() {
           )}
 
           {/* Weekly grid */}
-          <div className="glass rounded-3xl p-4 overflow-x-auto scroll-thin mb-6">
-            <div className="min-w-[900px]">
-              <div className="grid grid-cols-8 gap-2 mb-3 sticky top-0">
+          <div className="glass rounded-3xl p-4 overflow-x-auto scroll-thin mb-6" id="roster-print">
+            <div className="print-header hidden print:block mb-4">
+              <h2 className="text-2xl font-bold text-black">{shop?.name} — Weekly Roster {roster.version}</h2>
+              <p className="text-sm text-gray-700">Week of {roster.week_start}{roster.department ? ` · ${roster.department}` : ""}</p>
+            </div>
+            <div className="min-w-[1000px]">
+              <div className="grid grid-cols-8 gap-2 mb-3">
                 <div className="text-xs text-white/40 uppercase tracking-wider py-2 pl-3">Employee</div>
-                {DAYS.map((d) => (
-                  <div key={d} className="text-xs text-white/40 uppercase tracking-wider text-center py-2">{DAY_LABELS[d]}</div>
-                ))}
-              </div>
-              {emps.map((e) => (
-                <div key={e.employee_id} className="grid grid-cols-8 gap-2 mb-2 items-stretch">
-                  <div className="flex items-center gap-2 bg-[#0A0B10] rounded-lg px-3 py-2">
-                    <img src={e.avatar} alt="" className="w-8 h-8 rounded-full object-cover border border-white/10" />
-                    <div className="min-w-0">
-                      <div className="text-sm truncate">{e.name}</div>
-                      <div className={`text-[10px] px-1.5 py-0.5 rounded inline-block mt-0.5 ${roleClass(e.role)}`}>{e.role}</div>
+                {DAYS.map((d) => {
+                  const dt = dateForDay(week, d);
+                  return (
+                    <div key={d} className="text-center py-2">
+                      <div className="text-sm text-white/80 font-medium">{DAY_SHORT[d]}</div>
+                      <div className="text-[10px] font-mono text-cyan-400 mt-0.5">{fmtDayDate(dt)}</div>
                     </div>
+                  );
+                })}
+              </div>
+              {emps.map((e) => {
+                const empHours = (roster.shifts || []).filter((s) => s.employee_id === e.employee_id).reduce((a, s) => a + shiftHours(s.start, s.end), 0);
+                return (
+                  <div key={e.employee_id} className="grid grid-cols-8 gap-2 mb-2 items-stretch">
+                    <div className="flex items-center gap-2 bg-[#0A0B10] rounded-lg px-3 py-2">
+                      <img src={e.avatar} alt="" className="w-8 h-8 rounded-full object-cover border border-white/10" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm truncate">{e.name}</div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${roleClass(e.role)}`}>{e.role}</span>
+                          <span className="text-[10px] font-mono text-white/50">{empHours.toFixed(1)}h</span>
+                        </div>
+                      </div>
+                    </div>
+                    {DAYS.map((d) => {
+                      const s = shiftsByDay[d].find((x) => x.employee_id === e.employee_id);
+                      const dur = s ? shiftHours(s.start, s.end) : 0;
+                      return (
+                        <button
+                          key={d}
+                          data-testid={`cell-${e.employee_id}-${d}`}
+                          draggable={!!s}
+                          onDragStart={() => s && setDragging(s)}
+                          onDragOver={(ev) => { if (dragging) ev.preventDefault(); }}
+                          onDrop={(ev) => { ev.preventDefault(); if (dragging) moveShift(dragging, e.employee_id, d); setDragging(null); }}
+                          onDragEnd={() => setDragging(null)}
+                          onClick={() => setEditShift(s || { shift_id: `new_${Date.now()}`, employee_id: e.employee_id, day: d, start: "09:00", end: "17:00" })}
+                          className={`min-h-[64px] rounded-lg text-xs transition-colors ${
+                            s ? `${roleClass(e.role)} hover:brightness-125 cursor-grab active:cursor-grabbing` : "bg-white/[0.02] border border-dashed border-white/10 hover:border-white/30 text-white/30"
+                          }`}
+                        >
+                          {s ? (
+                            <div className="p-2 text-left">
+                              <div className="font-mono text-xs">{s.start}–{s.end}</div>
+                              <div className="font-mono text-[10px] opacity-80 mt-0.5">{dur.toFixed(1)}h</div>
+                              {s.fixed && <div className="text-[9px] mt-1 opacity-70">FIXED</div>}
+                            </div>
+                          ) : "+"}
+                        </button>
+                      );
+                    })}
                   </div>
-                  {DAYS.map((d) => {
-                    const s = shiftsByDay[d].find((x) => x.employee_id === e.employee_id);
-                    return (
-                      <button
-                        key={d}
-                        data-testid={`cell-${e.employee_id}-${d}`}
-                        onClick={() => setEditShift(s || { shift_id: `new_${Date.now()}`, employee_id: e.employee_id, day: d, start: "09:00", end: "17:00" })}
-                        className={`min-h-[52px] rounded-lg text-xs transition-colors ${
-                          s ? `${roleClass(e.role)} hover:brightness-125` : "bg-white/[0.02] border border-dashed border-white/10 hover:border-white/30 text-white/30"
-                        }`}
-                      >
-                        {s ? (
-                          <div className="p-2 text-left">
-                            <div className="font-mono">{s.start}</div>
-                            <div className="font-mono text-[10px] opacity-80">→ {s.end}</div>
-                            {s.fixed && <div className="text-[9px] mt-1 opacity-70">FIXED</div>}
-                          </div>
-                        ) : "+"}
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

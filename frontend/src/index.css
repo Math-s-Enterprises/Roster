@@ -131,6 +131,17 @@ input:focus, textarea:focus, select:focus {
 .role-stocker { background: rgba(16, 185, 129, 0.10); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
 
 @media print {
-  .no-print { display: none !important; }
-  body { background: white !important; color: black !important; }
+  @page { size: A4 landscape; margin: 12mm; }
+  .no-print, aside, nav { display: none !important; }
+  body, html, #root { background: white !important; color: black !important; }
+  main { padding: 0 !important; }
+  #roster-print { background: white !important; border: none !important; box-shadow: none !important; padding: 0 !important; overflow: visible !important; }
+  #roster-print .glass, #roster-print .glass-solid { background: white !important; border-color: #ddd !important; color: black !important; }
+  #roster-print button { background: #f7f7f9 !important; color: black !important; border: 1px solid #ddd !important; page-break-inside: avoid; }
+  #roster-print .grid { display: grid !important; }
+  #roster-print img { display: none !important; }
+  #roster-print .font-mono, #roster-print [class*="text-cyan"], #roster-print [class*="text-white"] { color: black !important; }
+  #roster-print .print-header { border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 12px; }
+  #roster-print .role-manager, #roster-print .role-supervisor, #roster-print .role-cashier,
+  #roster-print .role-floor-assistant, #roster-print .role-stocker { background: #f0f4ff !important; color: #111 !important; border-color: #ccd !important; }
 }
