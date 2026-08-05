@@ -23,7 +23,7 @@ export default function Employees() {
     e.preventDefault();
     try {
       if (modal === "edit") {
-        await api.put(`/employees/${form.employee_id}`, form);
+        await api.put(`/employees/€{form.employee_id}`, form);
         toast.success("Employee updated");
       } else {
         await api.post("/employees", form);
@@ -37,7 +37,7 @@ export default function Employees() {
 
   const del = async (id) => {
     if (!window.confirm("Remove this employee?")) return;
-    await api.delete(`/employees/${id}`); toast.success("Removed"); load();
+    await api.delete(`/employees/€{id}`); toast.success("Removed"); load();
   };
 
   return (
@@ -59,14 +59,14 @@ export default function Employees() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {emps.map((e) => (
-            <div key={e.employee_id} data-testid={`employee-card-${e.employee_id}`} className="glass rounded-2xl p-6 relative">
+            <div key={e.employee_id} data-testid={`employee-card-€{e.employee_id}`} className="glass rounded-2xl p-6 relative">
               <div className="flex gap-4">
                 <img src={e.avatar} alt={e.name} className="w-14 h-14 rounded-full object-cover border border-white/10" />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate">{e.name}</div>
                   <div className="text-[11px] text-white/40 truncate">{e.email}</div>
                   <div className="mt-2 flex items-center gap-2 flex-wrap">
-                    <span className={`text-[11px] px-2 py-0.5 rounded-md ${roleClass(e.role)}`}>{e.role}</span>
+                    <span className={`text-[11px] px-2 py-0.5 rounded-md €{roleClass(e.role)}`}>{e.role}</span>
                     {e.age < 16 && (
                       <span className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center gap-1">
                         <AlertTriangle size={10} /> Under 16
@@ -77,8 +77,8 @@ export default function Employees() {
               </div>
               <div className="grid grid-cols-3 gap-3 mt-4 text-xs">
                 <Stat label="Age" value={e.age} />
-                <Stat label="Rate" value={`$${e.hourly_rate}`} />
-                <Stat label="Max" value={`${e.max_weekly_hours}h`} />
+                <Stat label="Rate" value={`€€{e.hourly_rate}`} />
+                <Stat label="Max" value={`€{e.max_weekly_hours}h`} />
               </div>
               {e.preferred_days_off?.length > 0 && (
                 <div className="mt-4 text-[11px] text-white/50">
@@ -86,7 +86,7 @@ export default function Employees() {
                 </div>
               )}
               <div className="flex gap-2 mt-4">
-                <button data-testid={`btn-edit-${e.employee_id}`} onClick={() => { setForm(e); setModal("edit"); }} className="flex-1 px-3 py-2 rounded-lg glass-solid text-xs flex items-center justify-center gap-1"><Pencil size={12} /> Edit</button>
+                <button data-testid={`btn-edit-€{e.employee_id}`} onClick={() => { setForm(e); setModal("edit"); }} className="flex-1 px-3 py-2 rounded-lg glass-solid text-xs flex items-center justify-center gap-1"><Pencil size={12} /> Edit</button>
                 <button onClick={() => del(e.employee_id)} className="px-3 py-2 rounded-lg text-red-400 hover:bg-red-500/10 text-xs"><Trash2 size={12} /></button>
               </div>
             </div>
@@ -122,7 +122,7 @@ export default function Employees() {
                   const on = form.preferred_days_off.includes(d);
                   return (
                     <button type="button" key={d} onClick={() => setForm({ ...form, preferred_days_off: on ? form.preferred_days_off.filter((x) => x !== d) : [...form.preferred_days_off, d] })}
-                      className={`px-3 py-1.5 rounded-full text-xs ${on ? "neon-btn" : "glass-solid text-white/70"}`}>
+                      className={`px-3 py-1.5 rounded-full text-xs €{on ? "neon-btn" : "glass-solid text-white/70"}`}>
                       {DAY_LABELS[d]}
                     </button>
                   );

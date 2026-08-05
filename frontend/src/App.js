@@ -12,6 +12,7 @@ import CalendarPage from "@/pages/CalendarPage";
 import FixedShifts from "@/pages/FixedShifts";
 import AIRules from "@/pages/AIRules";
 import RosterView from "@/pages/RosterView";
+import PastRosters from "@/pages/PastRosters";
 import Pricing from "@/pages/Pricing";
 import { PaymentSuccess, PaymentCancel } from "@/pages/PaymentResult";
 import AppLayout from "@/components/AppLayout";
@@ -46,6 +47,7 @@ function Router() {
         <Route path="fixed-shifts" element={<FixedShifts />} />
         <Route path="rules" element={<AIRules />} />
         <Route path="roster" element={<RosterView />} />
+        <Route path="past" element={<PastRosters />} />
         <Route path="pricing" element={<Pricing />} />
         <Route path="payment/success" element={<PaymentSuccess />} />
         <Route path="payment/cancel" element={<PaymentCancel />} />

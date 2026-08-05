@@ -10,6 +10,7 @@ export default function CalendarPage() {
   const [endDate, setEndDate] = useState("");
   const [label, setLabel] = useState("");
   const [scope, setScope] = useState("shop");
+  const scopeOpts = [{k:"shop",l:"Shop"},{k:"employee",l:"Holiday"},{k:"sick",l:"Sick"}];
   const [empId, setEmpId] = useState("");
 
   const load = async () => {
@@ -61,11 +62,15 @@ export default function CalendarPage() {
           <div>
             <label className="text-xs text-white/60">Scope</label>
             <div className="flex gap-2 mt-1">
-              <button type="button" onClick={() => setScope("shop")} className={`flex-1 px-3 py-2 rounded-lg text-xs flex items-center justify-center gap-1 ${scope === "shop" ? "neon-btn" : "glass-solid text-white/60"}`}><Store size={12} /> Shop-wide</button>
-              <button type="button" onClick={() => setScope("employee")} className={`flex-1 px-3 py-2 rounded-lg text-xs flex items-center justify-center gap-1 ${scope === "employee" ? "neon-btn" : "glass-solid text-white/60"}`}><User size={12} /> Employee</button>
+              {scopeOpts.map((o) => (
+                <button type="button" key={o.k} onClick={() => setScope(o.k)} className={`flex-1 px-3 py-2 rounded-lg text-xs ${scope === o.k ? "neon-btn" : "glass-solid text-white/60"}`}>
+                  {o.l}
+                </button>
+              ))}
             </div>
+            {scope === "sick" && <div className="text-[10px] text-amber-400 mt-2">Sick leave is temporary and never used by AI learning.</div>}
           </div>
-          {scope === "employee" && (
+          {(scope === "employee" || scope === "sick") && (
             <div>
               <label className="text-xs text-white/60">Employee</label>
               <select required value={empId} onChange={(e) => setEmpId(e.target.value)} className="mt-1 w-full px-3 py-2.5 rounded-lg">

@@ -67,8 +67,8 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
         <KpiCard icon={<Users size={16} />} label="Team" value={employees.length} unit="people" testId="kpi-team" />
         <KpiCard icon={<ShieldCheck size={16} />} label="Compliance" value={latest?.compliance_score ?? "—"} unit={latest ? "score" : ""} accent testId="kpi-compliance" />
-        <KpiCard icon={<DollarSign size={16} />} label="Weekly cost" value={latest ? `$${latest.labor_cost.toFixed(0)}` : "—"} unit={latest ? "USD" : ""} testId="kpi-cost" />
-        <KpiCard icon={<Activity size={16} />} label="Utilization" value={latest ? `${latest.utilization}%` : "—"} unit={latest ? "of capacity" : ""} testId="kpi-utilization" />
+        <KpiCard icon={<DollarSign size={16} />} label="Weekly cost" value={latest ? `€€{latest.labor_cost.toFixed(0)}` : "—"} unit={latest ? "USD" : ""} testId="kpi-cost" />
+        <KpiCard icon={<Activity size={16} />} label="Utilization" value={latest ? `€{latest.utilization}%` : "—"} unit={latest ? "of capacity" : ""} testId="kpi-utilization" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -89,7 +89,7 @@ export default function Dashboard() {
                 <li key={r.roster_id} className="flex items-center justify-between glass-solid rounded-xl p-4">
                   <div>
                     <div className="text-sm font-medium">Week of {r.week_start} · <span className="neon-text">{r.version}</span></div>
-                    <div className="text-xs text-white/40 font-mono mt-1">{fmtHours(r.total_hours)} · ${r.labor_cost.toFixed(0)} · score {r.compliance_score}</div>
+                    <div className="text-xs text-white/40 font-mono mt-1">{fmtHours(r.total_hours)} · €{r.labor_cost.toFixed(0)} · score {r.compliance_score}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     {r.issues?.length > 0 && <span className="conflict-dot" />}
@@ -123,7 +123,7 @@ export default function Dashboard() {
 
 function KpiCard({ icon, label, value, unit, accent, testId }) {
   return (
-    <div data-testid={testId} className={`rounded-2xl p-6 ${accent ? "neon-border" : "glass"}`}>
+    <div data-testid={testId} className={`rounded-2xl p-6 €{accent ? "neon-border" : "glass"}`}>
       <div className="flex items-center gap-2 text-xs text-white/50 uppercase tracking-wider">
         <span className="text-cyan-400">{icon}</span> {label}
       </div>

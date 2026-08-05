@@ -131,11 +131,11 @@ input:focus, textarea:focus, select:focus {
 .role-stocker { background: rgba(16, 185, 129, 0.10); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
 
 @media print {
-  @page { size: A4 landscape; margin: 12mm; }
+  @page { size: A4 landscape; margin: 10mm; }
   .no-print, aside, nav { display: none !important; }
   body, html, #root { background: white !important; color: black !important; }
   main { padding: 0 !important; }
-  #roster-print { background: white !important; border: none !important; box-shadow: none !important; padding: 0 !important; overflow: visible !important; }
+  #roster-print { background: white !important; border: none !important; box-shadow: none !important; padding: 0 !important; overflow: visible !important; transform: scale(var(--print-scale, 1)); transform-origin: top left; width: calc(100% / var(--print-scale, 1)); }
   #roster-print .glass, #roster-print .glass-solid { background: white !important; border-color: #ddd !important; color: black !important; }
   #roster-print button { background: #f7f7f9 !important; color: black !important; border: 1px solid #ddd !important; page-break-inside: avoid; }
   #roster-print .grid { display: grid !important; }

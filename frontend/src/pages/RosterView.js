@@ -33,14 +33,14 @@ export default function RosterView() {
 
   const totalRosters = rosters.length;
   const freeLimit = 4;
-  const overLimit = !user?.pro && totalRosters >= freeLimit;
+  const overLimit = false; // DEV: paywall disabled
 
   const generate = async () => {
     setGenerating(true);
     try {
       const r = await api.post("/roster/generate", { week_start: week, department });
       setRoster(r.data);
-      toast.success(`Generated ${r.data.version} · compliance ${r.data.compliance_score}`);
+      toast.success(`Generated €{r.data.version} · compliance €{r.data.compliance_score}`);
       load();
     } catch (err) {
       toast.error(err.response?.data?.detail || "Generation failed");
@@ -48,7 +48,7 @@ export default function RosterView() {
   };
 
   const approve = async () => {
-    await api.post(`/rosters/${roster.roster_id}/approve`);
+    await api.post(`/rosters/€{roster.roster_id}/approve`);
     confetti({ particleCount: 140, spread: 80, origin: { y: 0.4 }, colors: ["#00E5FF", "#7C4DFF", "#ffffff"] });
     toast.success("Roster approved");
     load();
@@ -57,9 +57,9 @@ export default function RosterView() {
   const dispatch = async () => {
     setDispatching(true);
     try {
-      const r = await api.post(`/roster/${roster.roster_id}/dispatch`);
+      const r = await api.post(`/roster/€{roster.roster_id}/dispatch`);
       setDispatchResult(r.data);
-      toast.success(`Sent ${r.data.sent.length} of ${r.data.total} emails`);
+      toast.success(`Sent €{r.data.sent.length} of €{r.data.total} emails`);
       confetti({ particleCount: 200, spread: 100, origin: { y: 0.6 }, colors: ["#00E5FF", "#7C4DFF"] });
     } catch (err) {
       toast.error("Dispatch failed");
@@ -87,7 +87,7 @@ export default function RosterView() {
     }
     const clean = shifts.map(({ employee_id, day, start, end }) => ({ employee_id, day, start, end }));
     try {
-      const r = await api.put(`/rosters/${roster.roster_id}`, { shifts: clean });
+      const r = await api.put(`/rosters/€{roster.roster_id}`, { shifts: clean });
       setRoster(r.data);
       setEditShift(null);
       toast.success(payload ? "Shift saved" : "Shift removed");
@@ -105,7 +105,7 @@ export default function RosterView() {
     if (dup) { toast.error("That slot already has a shift"); return; }
     const clean = shifts.map(({ employee_id, day, start, end }) => ({ employee_id, day, start, end }));
     try {
-      const r = await api.put(`/rosters/${roster.roster_id}`, { shifts: clean });
+      const r = await api.put(`/rosters/€{roster.roster_id}`, { shifts: clean });
       setRoster(r.data);
       toast.success("Shift moved");
     } catch (err) {
@@ -125,7 +125,7 @@ export default function RosterView() {
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `roster-${week}-${roster.version}.csv`;
+    a.download = `roster-€{week}-€{roster.version}.csv`;
     a.click();
   };
 
@@ -136,7 +136,7 @@ export default function RosterView() {
     pdf.setTextColor(255, 255, 255); pdf.setFontSize(18);
     pdf.text(shop?.name || "Roster", 14, 13);
     pdf.setFontSize(10); pdf.setTextColor(180);
-    pdf.text(`Week of ${roster.week_start} · ${roster.version}${roster.department ? " · " + roster.department : ""}`, 14, 19);
+    pdf.text(`Week of €{roster.week_start} · €{roster.version}€{roster.department ? " · " + roster.department : ""}`, 14, 19);
     pdf.setTextColor(0, 0, 0);
     // Column headers
     const colX = [14, 60, 95, 130, 165, 200, 235];
@@ -154,14 +154,14 @@ export default function RosterView() {
       pdf.text(String(e.role || ""), colX[1], y);
       pdf.text(DAY_LABELS[s.day], colX[2], y);
       pdf.text(fmtDayDate(d), colX[3], y);
-      pdf.text(`${s.start} – ${s.end}`, colX[4], y);
-      pdf.text(`${hrs.toFixed(1)}h`, colX[5], y);
+      pdf.text(`€{s.start} – €{s.end}`, colX[4], y);
+      pdf.text(`€{hrs.toFixed(1)}h`, colX[5], y);
       y += 6; if (y > 195) { pdf.addPage(); y = 20; }
     });
     // Footer
     pdf.setFontSize(8); pdf.setTextColor(120);
-    pdf.text(`Compliance ${roster.compliance_score}/100 · Labor $${roster.labor_cost.toFixed(0)} · ${roster.total_hours}h total`, 14, 205);
-    pdf.save(`roster-${week}-${roster.version}.pdf`);
+    pdf.text(`Compliance €{roster.compliance_score}/100 · Labor $€{roster.labor_cost.toFixed(0)} · €{roster.total_hours}h total`, 14, 205);
+    pdf.save(`roster-€{week}-€{roster.version}.pdf`);
   };
 
   if (emps.length === 0) {
@@ -216,8 +216,8 @@ export default function RosterView() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 no-print">
             <Metric label="Compliance" value={roster.compliance_score} suffix="/100" accent />
             <Metric label="Weekly hours" value={fmtHours(roster.total_hours)} />
-            <Metric label="Labor cost" value={`$${roster.labor_cost.toFixed(0)}`} />
-            <Metric label="Utilization" value={`${roster.utilization}%`} />
+            <Metric label="Labor cost" value={`€€{roster.labor_cost.toFixed(0)}`} />
+            <Metric label="Utilization" value={`€{roster.utilization}%`} />
           </div>
 
           {roster.ai_summary && (
@@ -242,7 +242,7 @@ export default function RosterView() {
           <div className="glass rounded-3xl p-4 overflow-x-auto scroll-thin mb-6" id="roster-print">
             <div className="print-header hidden print:block mb-4">
               <h2 className="text-2xl font-bold text-black">{shop?.name} — Weekly Roster {roster.version}</h2>
-              <p className="text-sm text-gray-700">Week of {roster.week_start}{roster.department ? ` · ${roster.department}` : ""}</p>
+              <p className="text-sm text-gray-700">Week of {roster.week_start}{roster.department ? ` · €{roster.department}` : ""}</p>
             </div>
             <div className="min-w-[1000px]">
               <div className="grid grid-cols-8 gap-2 mb-3">
@@ -266,7 +266,7 @@ export default function RosterView() {
                       <div className="min-w-0 flex-1">
                         <div className="text-sm truncate">{e.name}</div>
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${roleClass(e.role)}`}>{e.role}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded €{roleClass(e.role)}`}>{e.role}</span>
                           <span className="text-[10px] font-mono text-white/50">{empHours.toFixed(1)}h</span>
                         </div>
                       </div>
@@ -277,15 +277,15 @@ export default function RosterView() {
                       return (
                         <button
                           key={d}
-                          data-testid={`cell-${e.employee_id}-${d}`}
+                          data-testid={`cell-€{e.employee_id}-€{d}`}
                           draggable={!!s}
                           onDragStart={() => s && setDragging(s)}
                           onDragOver={(ev) => { if (dragging) ev.preventDefault(); }}
                           onDrop={(ev) => { ev.preventDefault(); if (dragging) moveShift(dragging, e.employee_id, d); setDragging(null); }}
                           onDragEnd={() => setDragging(null)}
-                          onClick={() => setEditShift(s || { shift_id: `new_${Date.now()}`, employee_id: e.employee_id, day: d, start: "09:00", end: "17:00" })}
+                          onClick={() => setEditShift(s || { shift_id: `new_€{Date.now()}`, employee_id: e.employee_id, day: d, start: "09:00", end: "17:00" })}
                           className={`min-h-[64px] rounded-lg text-xs transition-colors ${
-                            s ? `${roleClass(e.role)} hover:brightness-125 cursor-grab active:cursor-grabbing` : "bg-white/[0.02] border border-dashed border-white/10 hover:border-white/30 text-white/30"
+                            s ? `€{roleClass(e.role)} hover:brightness-125 cursor-grab active:cursor-grabbing` : "bg-white/[0.02] border border-dashed border-white/10 hover:border-white/30 text-white/30"
                           }`}
                         >
                           {s ? (
@@ -313,7 +313,7 @@ export default function RosterView() {
             <button data-testid="btn-dispatch" onClick={() => setDispatchOpen(true)} className="px-5 py-2.5 rounded-full glass-solid text-sm flex items-center gap-2"><Mail size={14} /> Email team</button>
             <button onClick={exportPDF} className="px-5 py-2.5 rounded-full glass-solid text-sm flex items-center gap-2"><FileDown size={14} /> PDF</button>
             <button onClick={exportCSV} className="px-5 py-2.5 rounded-full glass-solid text-sm flex items-center gap-2"><FileDown size={14} /> CSV</button>
-            <button onClick={() => window.print()} className="px-5 py-2.5 rounded-full glass-solid text-sm flex items-center gap-2"><Printer size={14} /> Print</button>
+            <button onClick={() => { const pages = parseInt(prompt("How many pages? (1-4)", "1") || "1"); document.documentElement.style.setProperty('--print-scale', String(1 / Math.max(1, Math.min(4, pages)))); setTimeout(() => window.print(), 50); }} className="px-5 py-2.5 rounded-full glass-solid text-sm flex items-center gap-2"><Printer size={14} /> Print</button>
           </div>
 
           {/* Version history */}
@@ -322,7 +322,7 @@ export default function RosterView() {
               <div className="text-sm font-medium mb-3">Versions this week</div>
               <div className="flex flex-wrap gap-2">
                 {rosters.filter((r) => r.week_start === week).map((r) => (
-                  <button key={r.roster_id} onClick={() => setRoster(r)} className={`px-3 py-1.5 rounded-full text-xs font-mono ${r.roster_id === roster.roster_id ? "neon-btn" : "glass-solid text-white/60"}`}>
+                  <button key={r.roster_id} onClick={() => setRoster(r)} className={`px-3 py-1.5 rounded-full text-xs font-mono €{r.roster_id === roster.roster_id ? "neon-btn" : "glass-solid text-white/60"}`}>
                     {r.version}
                   </button>
                 ))}
@@ -359,7 +359,7 @@ export default function RosterView() {
 
 function Metric({ label, value, suffix, accent }) {
   return (
-    <div className={`rounded-2xl p-5 ${accent ? "neon-border" : "glass"}`}>
+    <div className={`rounded-2xl p-5 €{accent ? "neon-border" : "glass"}`}>
       <div className="text-[11px] text-white/50 uppercase tracking-wider">{label}</div>
       <div className="mt-2 flex items-baseline gap-1">
         <div className="text-3xl font-light font-mono">{value}</div>
@@ -435,7 +435,7 @@ function DispatchModal({ roster, emps, onClose, onSend, sending, result }) {
             </div>
             <button data-testid="btn-send-emails" onClick={onSend} disabled={sending} className="neon-btn w-full py-3 rounded-full text-sm flex items-center justify-center gap-2">
               {sending ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
-              {sending ? "Sending…" : `Send ${emps.length} emails`}
+              {sending ? "Sending…" : `Send €{emps.length} emails`}
             </button>
           </>
         ) : (

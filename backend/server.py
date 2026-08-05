@@ -71,9 +71,9 @@ class EmployeeIn(BaseModel):
 
 class HolidayIn(BaseModel):
     date: str
-    end_date: Optional[str] = None  # inclusive; if None equals date
+    end_date: Optional[str] = None
     label: str
-    scope: str = "shop"
+    scope: str = "shop"  # "shop" | "employee" | "sick"
     employee_id: Optional[str] = None
 
 class FixedShiftIn(BaseModel):
@@ -206,7 +206,8 @@ async def google_session(request: Request, response: Response):
 
 @api.get("/auth/me")
 async def me(u=Depends(get_current_user)):
-    return {"user_id": u["user_id"], "email": u["email"], "name": u["name"], "picture": u.get("picture"), "pro": bool(u.get("pro", False))}
+    # DEV MODE: unlimited access — all users are treated as Pro until production
+    return {"user_id": u["user_id"], "email": u["email"], "name": u["name"], "picture": u.get("picture"), "pro": True}
 
 
 @api.post("/auth/logout")
@@ -351,7 +352,7 @@ async def solve_roster(shop, employees, holidays, fixed_shifts, ai_rules, week_s
         rng = _range(h)
         if h["scope"] == "shop":
             shop_off |= rng
-        elif h["scope"] == "employee" and h.get("employee_id"):
+        elif h["scope"] in ("employee", "sick") and h.get("employee_id"):
             emp_off.setdefault(h["employee_id"], set()).update(rng)
     ws = datetime.strptime(week_start, "%Y-%m-%d").date()
     day_dates = {DAYS[i]: (ws + timedelta(days=i)).isoformat() for i in range(7)}
@@ -443,8 +444,11 @@ async def compute_weights(sid):
     w = {}
     coworkers = {}
     async for r in db.rosters.find({"shop_id": sid, "approved": True}, {"_id": 0}):
+        # skip anything explicitly excluded from learning
+        if r.get("exclude_from_ai"): continue
         by_day = {}
         for s in r.get("shifts", []):
+            if s.get("sick") or s.get("temp_override"): continue  # never learn from sick leave / temp overrides
             w.setdefault(s["employee_id"], {}).setdefault(s["day"], 0)
             w[s["employee_id"]][s["day"]] += 1
             by_day.setdefault(s["day"], []).append(s["employee_id"])
@@ -460,11 +464,11 @@ async def compute_weights(sid):
 @api.post("/roster/generate")
 async def gen_roster(p: RosterGenReq, u=Depends(get_current_user)):
     s = await ensure_shop(u)
-    # Free plan gating: max 4 rosters unless pro
-    if not u.get("pro", False):
-        count = await db.rosters.count_documents({"shop_id": s["shop_id"]})
-        if count >= 4:
-            raise HTTPException(402, "Free plan limit reached (4 rosters). Upgrade to Pro to generate more.")
+    # Free plan gating: DISABLED in dev
+    # if not u.get("pro", False):
+    #     count = await db.rosters.count_documents({"shop_id": s["shop_id"]})
+    #     if count >= 4:
+    #         raise HTTPException(402, "Free plan limit reached (4 rosters). Upgrade to Pro to generate more.")
     emps = await db.employees.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
     if p.department:
         emps = [e for e in emps if p.department in (e.get("departments") or ["Shop Floor"])]
@@ -540,11 +544,41 @@ async def r_upd(rid: str, p: RosterUpdate, u=Depends(get_current_user)):
 @api.post("/rosters/{rid}/approve")
 async def r_approve(rid: str, u=Depends(get_current_user)):
     s = await ensure_shop(u)
-    await db.rosters.update_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"$set": {"approved": True}})
+    r = await db.rosters.find_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"_id": 0})
+    if not r: raise HTTPException(404, "Not found")
+    # Delete all OTHER versions for the same week (approved is single source of truth)
+    await db.rosters.delete_many({"shop_id": s["shop_id"], "week_start": r["week_start"],
+                                    "department": r.get("department"), "roster_id": {"$ne": rid}})
+    await db.rosters.update_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"$set": {"approved": True, "version": "v1.0"}})
     await db.activity_logs.insert_one({"log_id": f"log_{uuid.uuid4().hex[:10]}", "shop_id": s["shop_id"],
-        "action": "roster_approved", "detail": f"Approved roster {rid}",
+        "action": "roster_approved", "detail": f"Approved & pruned prior versions for week {r['week_start']}",
         "created_at": datetime.now(timezone.utc).isoformat()})
     return {"ok": True}
+
+
+@api.get("/rosters/past")
+async def past_rosters(u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    today = datetime.now(timezone.utc).date().isoformat()
+    return await db.rosters.find({"shop_id": s["shop_id"], "week_start": {"$lt": today}}, {"_id": 0}).sort("week_start", -1).to_list(200)
+
+
+@api.post("/rosters/upload-historical")
+async def upload_hist(u=Depends(get_current_user), payload: Dict[str, Any] = None):
+    """Accept previously-approved historical roster JSON. Treated as trusted training data."""
+    from fastapi import Body
+    s = await ensure_shop(u)
+    if not payload: raise HTTPException(400, "Empty payload")
+    shifts = payload.get("shifts", [])
+    week_start = payload.get("week_start")
+    if not week_start or not shifts: raise HTTPException(400, "week_start and shifts required")
+    doc = {"roster_id": f"hist_{uuid.uuid4().hex[:12]}", "shop_id": s["shop_id"], "week_start": week_start,
+           "version": "v1.0-hist", "shifts": shifts, "issues": [], "compliance_score": 100,
+           "labor_cost": 0, "total_hours": sum((hm(x["end"])-hm(x["start"]))/60 for x in shifts),
+           "utilization": 0, "per_employee_hours": {}, "approved": True, "historical": True,
+           "created_at": datetime.now(timezone.utc).isoformat()}
+    await db.rosters.insert_one(doc.copy())
+    return {"ok": True, "roster_id": doc["roster_id"]}
 
 
 def email_html(name, shop_name, ws, shifts, ver):
