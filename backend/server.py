@@ -105,7 +105,7 @@ class RosterUpdate(BaseModel):
 def hash_pw(pw): return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
 def check_pw(pw, h):
     try: return bcrypt.checkpw(pw.encode(), h.encode())
-    except: return False
+    except Exception: return False
 def make_jwt(uid): return jwt.encode({"user_id": uid, "exp": datetime.now(timezone.utc) + timedelta(days=7)}, JWT_SECRET, algorithm="HS256")
 
 
@@ -115,7 +115,7 @@ async def get_current_user(authorization: Optional[str] = Header(None), session_
             payload = jwt.decode(authorization.replace("Bearer ", ""), JWT_SECRET, algorithms=["HS256"])
             u = await db.users.find_one({"user_id": payload.get("user_id")}, {"_id": 0})
             if u: return u
-        except: pass
+        except Exception: pass
     if session_token:
         s = await db.user_sessions.find_one({"session_token": session_token}, {"_id": 0})
         if s:
@@ -496,7 +496,7 @@ async def gen_roster(p: RosterGenReq, u=Depends(get_current_user)):
         try:
             mj, mn = latest["version"].replace("v", "").split(".")
             version = f"v{mj}.{int(mn)+1}"
-        except: version = "v1.1"
+        except Exception: version = "v1.1"
     rid = f"rst_{uuid.uuid4().hex[:12]}"
     doc = {"roster_id": rid, "shop_id": s["shop_id"], "week_start": p.week_start, "version": version,
            **result, "ai_summary": ai_summary, "approved": False, "department": p.department,
