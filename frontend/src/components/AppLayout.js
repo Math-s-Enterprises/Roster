@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users, CalendarDays, Clock, ShieldCheck, Sparkles, LogOut, Menu, X, Wand2, Crown, Archive } from "lucide-react";
+import { LayoutDashboard, Users, CalendarDays, Clock, ShieldCheck, Sparkles, LogOut, Menu, X, Wand2, Crown, Archive, Brain, ThermometerSnowflake } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 const nav = [
@@ -11,6 +11,8 @@ const nav = [
   { to: "/rules", label: "AI Rules", icon: ShieldCheck },
   { to: "/roster", label: "Roster", icon: Wand2 },
   { to: "/past", label: "Past Rosters", icon: Archive },
+  { to: "/ai-training", label: "AI Training", icon: Brain },
+  { to: "/sick-report", label: "Sick Report", icon: ThermometerSnowflake },
 ];
 
 export default function AppLayout() {

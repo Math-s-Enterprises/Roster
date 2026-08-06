@@ -1,0 +1,45 @@
+{
+  "summary": "Comprehensive backend + frontend testing of Roster AI covering 4 reported bug fixes (Euro currency, past holidays classification, /api/rosters/past 404, AxiosError 404s) and new features (OCR, upload-historical, training-stats, sick-leave, ai-rule compile, /ai-training + /sick-report pages). 19/20 backend pytest cases pass (OCR public-URL 502 was an ingress timeout — endpoint verified working internally with HTTP 200 in ~34s returning correct schema). All 4 reported bugs verified as FIXED on the live preview URL.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/rosters/ocr", "issue": "OCR takes ~30-40s (image download + Claude vision). Public preview ingress occasionally returns 502 due to timeout. Endpoint itself works — returned HTTP 200 with correct {week_start, shifts, raw_shifts} schema when called on backend port 8001 directly. Consider streaming or async job pattern for reliability."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "FixedShifts (or another dropdown)", "issue": "React hydration warning: '<span> cannot be a child of <option>'. Non-blocking but should be cleaned up.", "selector": "select > option > span", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "SickReport", "issues": ["Seeded sick holiday shows 'Unknown' employee name — either the employee_id refers to a deleted employee or scope was 'sick' without a valid employee_id. Not a code bug but a data/UX consideration: consider filtering out records with missing employee, or showing '(deleted employee)' instead of 'Unknown'."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_roster_ai.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: fix minor React hydration warning on /fixed-shifts (span inside option).",
+    "OPTIONAL: handle missing/unknown employees in /reports/sick-leave (currently shows 'Unknown').",
+    "OPTIONAL: consider async/streaming pattern for OCR since ingress-level 502 is possible on slow Claude vision calls."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 875 lines — approaching the 700-line split threshold; recommend modularizing by resource (auth/, rosters/, ai/, reports/) for maintainability.",
+    "OCR endpoint synchronously downloads image + calls Claude vision (~30-40s). This blocks a worker and risks ingress 502. Consider background job with polling.",
+    "Route order fix for /rosters/past is correct — but no test ensured this at CI level before. Test file added covers this now.",
+    "compile_rule() writes AI output back to db.ai_rules without sanitization/validation of the compiled schema keys — a bad LLM response could persist arbitrary shapes.",
+    "AI training stats loops rosters in Python (async for r ... nested loop) — for shops with many rosters this could be slow; consider MongoDB aggregation pipeline."
+  ],
+  "updated_files": [
+    "/app/backend/tests/__init__.py (new)",
+    "/app/backend/tests/test_roster_ai.py (new)"
+  ],
+  "success_rate": {"backend": "95% (19/20 pytest; OCR ingress 502 only, endpoint verified working)", "frontend": "100% (all 8 routes load without 404s, KPI shows €0 EUR, 2025-06-15 correctly classified under Past, AI Training shows 5 thumbnails + stats, Sick Report loads with grouped data)"},
+  "test_credentials": "aneeshthimmapurmath@gmail.com / demo1234 (seeded owner) — verified working",
+  "seed_data_creation": "Created 1 test holiday (2025-06-15, label 'TEST_past_hol_15jun', scope 'shop') to verify past-classification; deleted after test. Created 1 historical roster via /rosters/upload-historical during test_upload_historical_creates_roster (week_start = today-90d); left in DB (harmless training data).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test suite lives at /app/backend/tests/test_roster_ai.py — run: pytest backend/tests/test_roster_ai.py -v --junitxml=/app/test_reports/pytest/pytest_results.xml. OCR test may 502 through public ingress; call http://localhost:8001/api/rosters/ocr internally to bypass ingress timeout. All 4 originally reported bugs (Euro conversion crash, past-holidays-in-upcoming, /rosters/past 404, template-literal AxiosErrors) are verified FIXED. New features (/ai-training, /sick-report, /ai-rules/{rid}/compile, /reports/sick-leave, /ai/training-stats, /rosters/upload-historical, /rosters/ocr) are all working.",
+  "rca of the issue": "Bug 1 (Euro conversion crash) + Bug 2 (AxiosError 404 on many pages) shared the same root cause: a bad global sed replaced every '${' with '€{' in frontend JS template literals, which broke both currency labels ('${cost}' -> '€{cost}') AND API paths (e.g. api.get(`/rosters/${rid}`) -> api.get(`/rosters/€{rid}`), which the router matched to /rosters/{rid} literal with rid='€{rid}' -> 404). Restoring '${' fixed both simultaneously. Bug 3 (past holidays in upcoming) was fixed in CalendarPage.js by classifying via `end < today` -> past, `date > today` -> upcoming, else current. Bug 4 (/api/rosters/past returned 404) was FastAPI route-ordering: '/rosters/{rid}' was defined before '/rosters/past', so 'past' was captured as rid and the {rid} handler ran, returning 404 for the non-existent roster. Fix: reorder routes so /rosters, /rosters/past, /rosters/upload-historical, /rosters/ocr are declared BEFORE the parametric /rosters/{rid} — verified via test_rosters_past_returns_200_list (PASS) and test_rosters_by_id_returns_404_for_missing (PASS)."
+}

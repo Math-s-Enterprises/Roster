@@ -13,6 +13,8 @@ import FixedShifts from "@/pages/FixedShifts";
 import AIRules from "@/pages/AIRules";
 import RosterView from "@/pages/RosterView";
 import PastRosters from "@/pages/PastRosters";
+import AITraining from "@/pages/AITraining";
+import SickReport from "@/pages/SickReport";
 import Pricing from "@/pages/Pricing";
 import { PaymentSuccess, PaymentCancel } from "@/pages/PaymentResult";
 import AppLayout from "@/components/AppLayout";
@@ -48,6 +50,8 @@ function Router() {
         <Route path="rules" element={<AIRules />} />
         <Route path="roster" element={<RosterView />} />
         <Route path="past" element={<PastRosters />} />
+        <Route path="ai-training" element={<AITraining />} />
+        <Route path="sick-report" element={<SickReport />} />
         <Route path="pricing" element={<Pricing />} />
         <Route path="payment/success" element={<PaymentSuccess />} />
         <Route path="payment/cancel" element={<PaymentCancel />} />

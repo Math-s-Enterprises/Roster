@@ -15,7 +15,13 @@ export default function CalendarPage() {
 
   const load = async () => {
     const [h, e] = await Promise.all([api.get("/holidays"), api.get("/employees")]);
-    setHols(h.data.sort((a, b) => a.date.localeCompare(b.date)));
+    const today = new Date().toISOString().slice(0, 10);
+    const withStatus = h.data.map((x) => {
+      const end = x.end_date || x.date;
+      const status = end < today ? "past" : (x.date > today ? "upcoming" : "current");
+      return { ...x, _status: status };
+    });
+    setHols(withStatus.sort((a, b) => b.date.localeCompare(a.date)));
     setEmps(e.data);
   };
   useEffect(() => { load(); }, []);
@@ -82,22 +88,30 @@ export default function CalendarPage() {
           <button data-testid="btn-add-holiday" className="neon-btn w-full py-2.5 rounded-full text-sm flex items-center justify-center gap-2"><CalendarPlus size={14} /> Add holiday</button>
         </form>
 
-        <div className="lg:col-span-2 glass rounded-2xl p-6">
-          <h2 className="font-medium mb-4">Upcoming ({hols.length})</h2>
-          {hols.length === 0 ? (
-            <div className="text-white/40 text-sm py-10 text-center">No holidays configured.</div>
-          ) : (
-            <ul className="space-y-2">
-              {hols.map((h) => (
-                <li key={h.holiday_id} className="glass-solid rounded-xl p-4 flex items-center justify-between">
-                  <div>
-                    <div className="font-mono text-sm">{h.date}{h.end_date && h.end_date !== h.date ? ` → ${h.end_date}` : ""}</div>
-                    <div className="text-xs text-white/60 mt-0.5">{h.label} · {h.scope === "shop" ? "Shop" : `Employee: ${empName(h.employee_id)}`}</div>
-                  </div>
-                  <button onClick={() => del(h.holiday_id)} className="text-red-400 hover:bg-red-500/10 p-2 rounded-lg"><Trash2 size={14} /></button>
-                </li>
-              ))}
-            </ul>
+        <div className="lg:col-span-2 space-y-6">
+          {["current", "upcoming", "past"].map((section) => {
+            const list = hols.filter((h) => h._status === section);
+            if (!list.length) return null;
+            const label = section === "current" ? "Today" : section === "upcoming" ? "Upcoming" : "Past";
+            return (
+              <div key={section} className="glass rounded-2xl p-6">
+                <h2 className="font-medium mb-4">{label} <span className="text-white/40 text-xs">({list.length})</span></h2>
+                <ul className="space-y-2">
+                  {list.map((h) => (
+                    <li key={h.holiday_id} className="glass-solid rounded-xl p-4 flex items-center justify-between">
+                      <div>
+                        <div className="font-mono text-sm">{h.date}{h.end_date && h.end_date !== h.date ? ` → ${h.end_date}` : ""}</div>
+                        <div className="text-xs text-white/60 mt-0.5">{h.label} · {h.scope === "shop" ? "Shop" : h.scope === "sick" ? `Sick: ${empName(h.employee_id)}` : `Employee: ${empName(h.employee_id)}`}</div>
+                      </div>
+                      <button onClick={() => del(h.holiday_id)} className="text-red-400 hover:bg-red-500/10 p-2 rounded-lg"><Trash2 size={14} /></button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+          {hols.length === 0 && (
+            <div className="glass rounded-2xl p-12 text-center text-white/40 text-sm">No holidays configured.</div>
           )}
         </div>
       </div>

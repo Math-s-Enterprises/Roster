@@ -513,6 +513,87 @@ async def r_list(u=Depends(get_current_user)):
     s = await ensure_shop(u)
     return await db.rosters.find({"shop_id": s["shop_id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
 
+
+@api.get("/rosters/past")
+async def past_rosters(u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    today = datetime.now(timezone.utc).date().isoformat()
+    return await db.rosters.find({"shop_id": s["shop_id"], "week_start": {"$lt": today}}, {"_id": 0}).sort("week_start", -1).to_list(200)
+
+
+@api.post("/rosters/upload-historical")
+async def upload_hist(request: Request, u=Depends(get_current_user)):
+    """Accept previously-approved historical roster JSON. Trusted training data."""
+    s = await ensure_shop(u)
+    payload = await request.json()
+    if not payload: raise HTTPException(400, "Empty payload")
+    rosters_in = payload if isinstance(payload, list) else [payload]
+    created = []
+    for p in rosters_in:
+        shifts = p.get("shifts", [])
+        week_start = p.get("week_start")
+        if not week_start or not shifts: continue
+        doc = {"roster_id": f"hist_{uuid.uuid4().hex[:12]}", "shop_id": s["shop_id"], "week_start": week_start,
+               "version": "v1.0-hist", "shifts": shifts, "issues": [], "compliance_score": 100,
+               "labor_cost": 0, "total_hours": sum((hm(x["end"])-hm(x["start"]))/60 for x in shifts if x.get("start") and x.get("end")),
+               "utilization": 0, "per_employee_hours": {}, "approved": True, "historical": True,
+               "created_at": datetime.now(timezone.utc).isoformat()}
+        await db.rosters.insert_one(doc.copy())
+        created.append(doc["roster_id"])
+    # AI training stats
+    total_shifts = sum(len(r.get("shifts", [])) for r in rosters_in)
+    employees_learned = len({s["employee_id"] for r in rosters_in for s in r.get("shifts", []) if s.get("employee_id")})
+    return {"ok": True, "imported": len(created), "weeks": len(created), "total_shifts": total_shifts,
+            "employees_learned": employees_learned, "roster_ids": created}
+
+
+@api.post("/rosters/ocr")
+async def ocr_roster(request: Request, u=Depends(get_current_user)):
+    """Extract roster data from an image URL using Claude vision."""
+    body = await request.json()
+    image_url = body.get("image_url")
+    if not image_url: raise HTTPException(400, "image_url required")
+    s = await ensure_shop(u)
+    emps = await db.employees.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
+    emp_names = [e["name"] for e in emps]
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    import base64
+    async with httpx.AsyncClient(timeout=30) as h:
+        img_resp = await h.get(image_url)
+        img_resp.raise_for_status()
+    image_b64 = base64.b64encode(img_resp.content).decode()
+    system = ("You extract weekly retail rosters from images. Return STRICT JSON only, no prose. "
+              "Schema: {\"week_start\":\"YYYY-MM-DD (Monday)\",\"shifts\":[{\"employee_name\":\"...\",\"day\":\"mon|tue|wed|thu|fri|sat|sun\",\"start\":\"HH:MM\",\"end\":\"HH:MM\",\"role\":\"...\",\"note\":\"holiday|sick|off|\"}]}. "
+              f"Known employees at this shop: {emp_names}. Use exact names when matched, else use as-shown.")
+    try:
+        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"ocr-{uuid.uuid4().hex[:8]}", system_message=system).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        msg = UserMessage(text="Extract the roster in strict JSON per schema.", file_contents=[ImageContent(image_base64=image_b64)])
+        raw = await chat.send_message(msg)
+    except Exception as e:
+        raise HTTPException(500, f"OCR failed: {e}")
+    text = raw if isinstance(raw, str) else str(raw)
+    # Try to isolate JSON
+    import json as _json, re as _re
+    m = _re.search(r"\{[\s\S]*\}", text)
+    if not m: raise HTTPException(500, f"Could not parse JSON from OCR: {text[:200]}")
+    try:
+        parsed = _json.loads(m.group(0))
+    except Exception as e:
+        raise HTTPException(500, f"JSON parse error: {e}")
+    # Map employee names to IDs
+    name_to_id = {e["name"].lower(): e["employee_id"] for e in emps}
+    valid = []
+    for sh in parsed.get("shifts", []):
+        eid = name_to_id.get((sh.get("employee_name") or "").lower())
+        if not eid: continue  # skip unknown employees; UI review will offer to create
+        note = (sh.get("note") or "").lower()
+        if note in ("holiday", "sick", "off", "hol", "leave"): continue
+        if not sh.get("start") or not sh.get("end") or not sh.get("day"): continue
+        valid.append({"employee_id": eid, "employee_name": sh.get("employee_name"),
+                       "day": sh["day"], "start": sh["start"], "end": sh["end"]})
+    return {"week_start": parsed.get("week_start"), "shifts": valid, "raw_shifts": parsed.get("shifts", [])}
+
+
 @api.get("/rosters/{rid}")
 async def r_get(rid: str, u=Depends(get_current_user)):
     s = await ensure_shop(u)
@@ -530,7 +611,6 @@ async def r_upd(rid: str, p: RosterUpdate, u=Depends(get_current_user)):
         dur = (hm(sh["end"]) - hm(sh["start"])) / 60
         if dur <= 0: raise HTTPException(400, f"Invalid shift: end must be after start ({sh['start']}-{sh['end']})")
         if dur > 11: raise HTTPException(400, f"Shift exceeds 11h limit ({sh['start']}-{sh['end']} = {dur}h)")
-    # Prevent duplicate employee+day
     seen = set()
     for sh in shifts:
         k = (sh["employee_id"], sh["day"])
@@ -546,7 +626,6 @@ async def r_approve(rid: str, u=Depends(get_current_user)):
     s = await ensure_shop(u)
     r = await db.rosters.find_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"_id": 0})
     if not r: raise HTTPException(404, "Not found")
-    # Delete all OTHER versions for the same week (approved is single source of truth)
     await db.rosters.delete_many({"shop_id": s["shop_id"], "week_start": r["week_start"],
                                     "department": r.get("department"), "roster_id": {"$ne": rid}})
     await db.rosters.update_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"$set": {"approved": True, "version": "v1.0"}})
@@ -554,31 +633,6 @@ async def r_approve(rid: str, u=Depends(get_current_user)):
         "action": "roster_approved", "detail": f"Approved & pruned prior versions for week {r['week_start']}",
         "created_at": datetime.now(timezone.utc).isoformat()})
     return {"ok": True}
-
-
-@api.get("/rosters/past")
-async def past_rosters(u=Depends(get_current_user)):
-    s = await ensure_shop(u)
-    today = datetime.now(timezone.utc).date().isoformat()
-    return await db.rosters.find({"shop_id": s["shop_id"], "week_start": {"$lt": today}}, {"_id": 0}).sort("week_start", -1).to_list(200)
-
-
-@api.post("/rosters/upload-historical")
-async def upload_hist(u=Depends(get_current_user), payload: Dict[str, Any] = None):
-    """Accept previously-approved historical roster JSON. Treated as trusted training data."""
-    from fastapi import Body
-    s = await ensure_shop(u)
-    if not payload: raise HTTPException(400, "Empty payload")
-    shifts = payload.get("shifts", [])
-    week_start = payload.get("week_start")
-    if not week_start or not shifts: raise HTTPException(400, "week_start and shifts required")
-    doc = {"roster_id": f"hist_{uuid.uuid4().hex[:12]}", "shop_id": s["shop_id"], "week_start": week_start,
-           "version": "v1.0-hist", "shifts": shifts, "issues": [], "compliance_score": 100,
-           "labor_cost": 0, "total_hours": sum((hm(x["end"])-hm(x["start"]))/60 for x in shifts),
-           "utilization": 0, "per_employee_hours": {}, "approved": True, "historical": True,
-           "created_at": datetime.now(timezone.utc).isoformat()}
-    await db.rosters.insert_one(doc.copy())
-    return {"ok": True, "roster_id": doc["roster_id"]}
 
 
 def email_html(name, shop_name, ws, shifts, ver):
@@ -619,6 +673,70 @@ async def dispatch(rid: str, u=Depends(get_current_user)):
 async def act_list(u=Depends(get_current_user)):
     s = await ensure_shop(u)
     return await db.activity_logs.find({"shop_id": s["shop_id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
+
+
+@api.post("/ai-rules/{rid}/compile")
+async def compile_rule(rid: str, u=Depends(get_current_user)):
+    """Use Claude to transform a free-text rule into a structured constraint."""
+    s = await ensure_shop(u)
+    rule = await db.ai_rules.find_one({"rule_id": rid, "shop_id": s["shop_id"]}, {"_id": 0})
+    if not rule: raise HTTPException(404, "Rule not found")
+    emps = await db.employees.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
+    system = ("You convert scheduling rules into JSON constraints. Reply with STRICT JSON only. "
+              "Schema: {\"type\":\"no_close|no_open|no_day|max_hours|min_rest|required_together|role_required_day|other\","
+              "\"employee_ids\":[...],\"days\":[\"mon\"..\"sun\"],\"role\":\"...\",\"value\":number,\"description\":\"...\"}. "
+              f"Known employees: {[{'id':e['employee_id'],'name':e['name'],'role':e['role']} for e in emps]}")
+    try:
+        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"rule-{uuid.uuid4().hex[:8]}",
+                       system_message=system).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        raw = str(await chat.send_message(UserMessage(text=f"Rule: {rule['title']} — {rule['description']}")))
+    except Exception as e:
+        raise HTTPException(500, f"Compilation failed: {e}")
+    import json as _json, re as _re
+    m = _re.search(r"\{[\s\S]*\}", raw)
+    if not m: raise HTTPException(500, "Could not parse constraint JSON")
+    try:
+        compiled = _json.loads(m.group(0))
+    except Exception as e:
+        raise HTTPException(500, f"JSON parse error: {e}")
+    await db.ai_rules.update_one({"rule_id": rid, "shop_id": s["shop_id"]}, {"$set": {"compiled": compiled}})
+    return {"compiled": compiled}
+
+
+@api.get("/reports/sick-leave")
+async def sick_report(u=Depends(get_current_user)):
+    """Sick leave report — for HR only, never used for AI training."""
+    s = await ensure_shop(u)
+    hols = await db.holidays.find({"shop_id": s["shop_id"], "scope": "sick"}, {"_id": 0}).to_list(500)
+    emps = {e["employee_id"]: e for e in await db.employees.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)}
+    by_emp = {}
+    for h in hols:
+        eid = h.get("employee_id")
+        if not eid: continue
+        entry = by_emp.setdefault(eid, {"employee_id": eid, "name": emps.get(eid, {}).get("name", "Unknown"), "role": emps.get(eid, {}).get("role", ""), "avatar": emps.get(eid, {}).get("avatar"), "days": 0, "occurrences": []})
+        s_ = datetime.strptime(h["date"], "%Y-%m-%d").date()
+        e_ = datetime.strptime(h.get("end_date") or h["date"], "%Y-%m-%d").date()
+        days = (e_ - s_).days + 1
+        entry["days"] += days
+        entry["occurrences"].append({"start": h["date"], "end": h.get("end_date") or h["date"], "days": days, "label": h.get("label")})
+    return {"by_employee": list(by_emp.values()), "total_days": sum(x["days"] for x in by_emp.values()),
+            "total_incidents": sum(len(x["occurrences"]) for x in by_emp.values())}
+
+
+@api.get("/ai/training-stats")
+async def ai_stats(u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    approved = await db.rosters.count_documents({"shop_id": s["shop_id"], "approved": True})
+    historical = await db.rosters.count_documents({"shop_id": s["shop_id"], "historical": True})
+    total_shifts = 0
+    emp_set = set()
+    async for r in db.rosters.find({"shop_id": s["shop_id"], "approved": True}, {"_id": 0}):
+        for sh in r.get("shifts", []):
+            if sh.get("sick") or sh.get("temp_override"): continue
+            total_shifts += 1
+            emp_set.add(sh["employee_id"])
+    return {"approved_rosters": approved, "historical_rosters": historical,
+            "total_shifts_learned": total_shifts, "employees_learned": len(emp_set)}
 
 
 @api.post("/seed-demo")
