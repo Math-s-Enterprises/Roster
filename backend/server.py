@@ -643,7 +643,7 @@ async def r_upd(rid: str, p: RosterUpdate, u=Depends(get_current_user)):
     lc = sum((shift_duration_min(sh["start"], sh["end"]) / 60) * er.get(sh["employee_id"], 0)
              for sh in shifts if not sh.get("unpaid_holiday"))
     th = sum(shift_duration_min(sh["start"], sh["end"]) / 60 for sh in shifts
-             if not sh.get("unpaid_holiday") and not sh.get("sick"))
+             if not sh.get("unpaid_holiday") and not sh.get("sick") and not sh.get("paid_holiday"))
     await db.rosters.update_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"$set": {"shifts": shifts, "labor_cost": round(lc, 2), "total_hours": round(th, 1)}})
     return await db.rosters.find_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"_id": 0})
 
