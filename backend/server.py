@@ -503,6 +503,11 @@ async def gen_roster(p: RosterGenReq, u=Depends(get_current_user)):
     fx = [f for f in fx if f["employee_id"] in emp_ids]
     rules = await db.ai_rules.find({"shop_id": s["shop_id"], "enabled": True}, {"_id": 0}).to_list(500)
     weights = await compute_weights(s["shop_id"])
+
+    # Guard: if all shop days are zero-length or all closed, tell the user rather than silently return 0 shifts
+    open_days = [h for h in s["hours"] if not h.get("closed") and hm(h["close"]) - hm(h["open"]) > 0]
+    if not open_days:
+        raise HTTPException(400, "Shop hours are not set. Complete onboarding and configure opening hours before generating a roster.")
     result = await solve_roster(s, emps, hols, fx, rules, p.week_start, weights)
 
     ai_summary = None
@@ -925,8 +930,13 @@ async def reset_all(u=Depends(get_current_user)):
     # Re-seed just the default AI rules (constraints, not data)
     for r in DEFAULT_AI_RULES:
         await db.ai_rules.insert_one({"rule_id": f"rule_{uuid.uuid4().hex[:12]}", "shop_id": sid, **r})
-    # Reset onboarding
-    await db.shops.update_one({"shop_id": sid}, {"$set": {"onboarded": False}})
+    # Reset onboarding + restore sane default hours (previous corrupt "00:00-00:00" caused zero-shift rosters)
+    await db.shops.update_one({"shop_id": sid}, {"$set": {
+        "onboarded": False,
+        "hours": DEFAULT_HOURS,
+        "min_shift_hours": 4,
+        "max_shift_hours": 9,
+    }})
     return {"ok": True, "message": "All data reset. Shop is now empty."}
 
 
