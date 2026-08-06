@@ -10,6 +10,7 @@ export default function AIRules() {
   const [rules, setRules] = useState([]);
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
+  const [compiling, setCompiling] = useState(null);
 
   const load = async () => setRules((await api.get("/ai-rules")).data);
   useEffect(() => { load(); }, []);
@@ -25,6 +26,24 @@ export default function AIRules() {
     load();
   };
   const del = async (id) => { await api.delete(`/ai-rules/${id}`); load(); };
+
+  const compile = async (r) => {
+    setCompiling(r.rule_id);
+    try {
+      const resp = await api.post(`/ai-rules/${r.rule_id}/compile`);
+      toast.success("Rule compiled — review then approve");
+      // Refresh to get the compiled JSON
+      load();
+      return resp.data.compiled;
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Compile failed");
+    } finally { setCompiling(null); }
+  };
+  const approve = async (r) => {
+    await api.post(`/ai-rules/${r.rule_id}/approve-compiled`);
+    toast.success("Constraint approved — solver will enforce it");
+    load();
+  };
 
   return (
     <div className="max-w-6xl">
@@ -52,21 +71,36 @@ export default function AIRules() {
           {rules.map((r) => {
             const Icon = catIcon[r.category] || Sparkles;
             return (
-              <div key={r.rule_id} className="glass rounded-2xl p-5 flex items-start gap-4">
-                <Icon size={18} className={catClass[r.category] || "text-white/60"} />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="font-medium text-sm">{r.title}</div>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full glass-solid text-white/50 uppercase tracking-wider">{r.category}</span>
+              <div key={r.rule_id} className="glass rounded-2xl p-5">
+                <div className="flex items-start gap-4">
+                  <Icon size={18} className={catClass[r.category] || "text-white/60"} />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="font-medium text-sm">{r.title}</div>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full glass-solid text-white/50 uppercase tracking-wider">{r.category}</span>
+                      {r.compiled && !r.approved && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400">Needs approval</span>}
+                      {r.approved && <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">Enforced</span>}
+                    </div>
+                    <div className="text-xs text-white/60 mt-1">{r.description}</div>
+                    {r.compiled && (
+                      <pre className="mt-3 text-[10px] font-mono bg-black/40 p-3 rounded-lg text-cyan-300 overflow-x-auto scroll-thin">{JSON.stringify(r.compiled, null, 2)}</pre>
+                    )}
+                    <div className="flex gap-2 mt-3 flex-wrap">
+                      <button data-testid={`btn-compile-${r.rule_id}`} onClick={() => compile(r)} disabled={compiling === r.rule_id} className="text-[11px] px-3 py-1.5 rounded-full glass-solid hover:border-white/20 flex items-center gap-1">
+                        <Sparkles size={10} /> {compiling === r.rule_id ? "Compiling…" : (r.compiled ? "Re-compile" : "Compile")}
+                      </button>
+                      {r.compiled && !r.approved && (
+                        <button data-testid={`btn-approve-${r.rule_id}`} onClick={() => approve(r)} className="neon-btn text-[11px] px-3 py-1.5 rounded-full">Approve for solver</button>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-xs text-white/60 mt-1">{r.description}</div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={r.enabled} onChange={() => toggle(r)} className="w-4 h-4" />
+                  </label>
+                  {r.category === "custom" && (
+                    <button onClick={() => del(r.rule_id)} className="text-red-400 hover:bg-red-500/10 p-2 rounded-lg"><Trash2 size={14} /></button>
+                  )}
                 </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={r.enabled} onChange={() => toggle(r)} className="w-4 h-4" />
-                </label>
-                {r.category === "custom" && (
-                  <button onClick={() => del(r.rule_id)} className="text-red-400 hover:bg-red-500/10 p-2 rounded-lg"><Trash2 size={14} /></button>
-                )}
               </div>
             );
           })}

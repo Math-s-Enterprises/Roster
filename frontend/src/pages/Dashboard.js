@@ -57,6 +57,7 @@ export default function Dashboard() {
               <Sparkles size={14} className="text-cyan-400" /> Load demo team
             </button>
           )}
+          <button data-testid="btn-reset" onClick={async () => { if (window.confirm("Wipe ALL employees, rosters, rules and start fresh?")) { await api.post("/dev/reset"); toast.success("Data reset — shop is empty"); load(); } }} className="px-5 py-2.5 rounded-full text-xs text-red-400 border border-red-500/30 hover:bg-red-500/10">Reset all data</button>
           <button data-testid="btn-generate-roster" onClick={() => navigate("/roster")} className="neon-btn px-5 py-2.5 rounded-full text-sm flex items-center gap-2">
             <Wand2 size={14} /> Generate roster
           </button>

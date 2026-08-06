@@ -80,12 +80,11 @@ export default function RosterView() {
     }
     const shifts = (roster.shifts || []).filter((s) => s.shift_id !== editShift.shift_id);
     if (payload) {
-      // Prevent duplicate emp+day
       const dup = shifts.find((s) => s.employee_id === payload.employee_id && s.day === payload.day);
       if (dup) { toast.error("Employee already has a shift that day"); return; }
       shifts.push(payload);
     }
-    const clean = shifts.map(({ employee_id, day, start, end }) => ({ employee_id, day, start, end }));
+    const clean = shifts.map(({ employee_id, day, start, end, paid_holiday, unpaid_holiday, sick }) => ({ employee_id, day, start, end, paid_holiday: !!paid_holiday, unpaid_holiday: !!unpaid_holiday, sick: !!sick }));
     try {
       const r = await api.put(`/rosters/${roster.roster_id}`, { shifts: clean });
       setRoster(r.data);
@@ -103,7 +102,7 @@ export default function RosterView() {
     );
     const dup = shifts.filter((s) => s.shift_id !== shift.shift_id).find((s) => s.employee_id === toEmpId && s.day === toDay);
     if (dup) { toast.error("That slot already has a shift"); return; }
-    const clean = shifts.map(({ employee_id, day, start, end }) => ({ employee_id, day, start, end }));
+    const clean = shifts.map(({ employee_id, day, start, end, paid_holiday, unpaid_holiday, sick }) => ({ employee_id, day, start, end, paid_holiday: !!paid_holiday, unpaid_holiday: !!unpaid_holiday, sick: !!sick }));
     try {
       const r = await api.put(`/rosters/${roster.roster_id}`, { shifts: clean });
       setRoster(r.data);
@@ -290,8 +289,18 @@ export default function RosterView() {
                         >
                           {s ? (
                             <div className="p-2 text-left">
-                              <div className="font-mono text-xs">{s.start}–{s.end}</div>
-                              <div className="font-mono text-[10px] opacity-80 mt-0.5">{dur.toFixed(1)}h</div>
+                              {s.paid_holiday ? (
+                                <div className="font-medium text-xs">Holiday</div>
+                              ) : s.unpaid_holiday ? (
+                                <div className="font-medium text-xs opacity-60">N/A</div>
+                              ) : s.sick ? (
+                                <div className="font-medium text-xs text-amber-300">Sick</div>
+                              ) : (
+                                <>
+                                  <div className="font-mono text-xs">{s.start}–{s.end}</div>
+                                  <div className="font-mono text-[10px] opacity-80 mt-0.5">{dur.toFixed(1)}h</div>
+                                </>
+                              )}
                               {s.fixed && <div className="text-[9px] mt-1 opacity-70">FIXED</div>}
                             </div>
                           ) : "+"}
@@ -372,8 +381,11 @@ function Metric({ label, value, suffix, accent }) {
 function ShiftModal({ shift, employee, onClose, onSave, onDelete, isNew }) {
   const [start, setStart] = useState(shift.start);
   const [end, setEnd] = useState(shift.end);
+  const [paidHoliday, setPaidHoliday] = useState(!!shift.paid_holiday);
+  const [unpaidHoliday, setUnpaidHoliday] = useState(!!shift.unpaid_holiday);
+  const [sick, setSick] = useState(!!shift.sick);
   const under16 = employee?.age < 16;
-  const conflict = under16 && (start < "08:00" || end > "19:00");
+  const conflict = under16 && !paidHoliday && !unpaidHoliday && (start < "08:00" || end > "19:00");
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -396,11 +408,25 @@ function ShiftModal({ shift, employee, onClose, onSave, onDelete, isNew }) {
             <input data-testid="edit-end" type="time" value={end} onChange={(e) => setEnd(e.target.value)} className="mt-1 w-full px-3 py-2.5 rounded-lg font-mono" />
           </div>
         </div>
+        <div className="mt-4 space-y-2">
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <input type="checkbox" data-testid="paid-holiday" checked={paidHoliday} onChange={(e) => { setPaidHoliday(e.target.checked); if (e.target.checked) { setUnpaidHoliday(false); setSick(false); } }} />
+            <span>Paid holiday <span className="text-white/40">(shows "Holiday", counts toward cost + deducts balance)</span></span>
+          </label>
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <input type="checkbox" data-testid="unpaid-holiday" checked={unpaidHoliday} onChange={(e) => { setUnpaidHoliday(e.target.checked); if (e.target.checked) { setPaidHoliday(false); setSick(false); } }} />
+            <span>Unpaid holiday <span className="text-white/40">(shows "N/A", no cost, no balance impact)</span></span>
+          </label>
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <input type="checkbox" data-testid="sick-flag" checked={sick} onChange={(e) => { setSick(e.target.checked); if (e.target.checked) { setPaidHoliday(false); setUnpaidHoliday(false); } }} />
+            <span>Sick leave <span className="text-white/40">(excluded from AI training)</span></span>
+          </label>
+        </div>
         {conflict && (
           <div className="mt-4 text-xs text-red-400 flex items-center gap-2"><AlertTriangle size={12} /> Under-16 curfew: shift must be within 08:00–19:00.</div>
         )}
         <div className="flex gap-2 mt-6">
-          <button onClick={() => onSave({ shift_id: shift.shift_id, employee_id: shift.employee_id, day: shift.day, start, end, fixed: false })} className="neon-btn flex-1 py-2.5 rounded-full text-sm">Save</button>
+          <button onClick={() => onSave({ shift_id: shift.shift_id, employee_id: shift.employee_id, day: shift.day, start, end, paid_holiday: paidHoliday, unpaid_holiday: unpaidHoliday, sick, fixed: false })} className="neon-btn flex-1 py-2.5 rounded-full text-sm">Save</button>
           {!isNew && <button onClick={onDelete} className="px-4 py-2.5 rounded-full text-red-400 border border-red-500/30 hover:bg-red-500/10 text-sm">Remove</button>}
         </div>
       </div>

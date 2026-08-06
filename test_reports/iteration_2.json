@@ -1,0 +1,57 @@
+{
+  "summary": "Iteration 2: tested 10 new-round features + regressions on Roster AI. 16/17 pytest cases pass. One real business-logic bug found: PUT /api/rosters/{id} does NOT exclude paid_holiday shifts from total_hours (spec requires exclusion). All other new endpoints (overnight math, unpaid/sick flags, holiday-balance accrual, /dev/reset, new-user isolation, /rosters/ocr-batch, /ai-rules/{rid}/compile + /approve-compiled, custom role free-text) work as specified. Regressions (login, past-rosters, sick-report, training-stats, OCR single) still green.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "PUT /api/rosters/{rid}",
+        "issue": "total_hours calculation (server.py lines 645-646) does NOT exclude shifts with paid_holiday=true. Currently: `th = sum(... if not sh.get('unpaid_holiday') and not sh.get('sick'))`. Per spec, paid_holiday shifts should ALSO be excluded from total_hours (but kept in labor_cost). Test test_paid_holiday failed: expected total_hours=0.0 for a single paid_holiday shift, got 8.0. Note: /employees/{eid}/holiday-balance uses correct exclusion logic (line 951), so behavior is inconsistent between the two endpoints.",
+        "priority": "HIGH",
+        "fix": "Change line 645-646 to: `th = sum(shift_duration_min(sh['start'], sh['end']) / 60 for sh in shifts if not sh.get('unpaid_holiday') and not sh.get('sick') and not sh.get('paid_holiday'))`"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/rosters/ocr-batch",
+        "issue": "Dead code: lines 885-890 reference undefined `_json_bytes` (defined later at line 909) and monkey-patch `request._body` with unused values before the real loop starts at line 892. Cleanup only — does not affect behavior since a fresh `_Req` shim is used inside the actual loop. Refactor into a small helper function."
+      },
+      {
+        "endpoint": "POST /api/dev/reset",
+        "issue": "No auth-level gating (any authenticated user hits it). Fine for dev but should be guarded (env flag or admin check) before production. Also, other users' data is untouched (scoped to shop_id) — good."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_new_features.py",
+    "/app/test_reports/pytest/pytest_iter2.xml"
+  ],
+  "action_items": [
+    "FIX (HIGH): server.py r_upd() — add `and not sh.get('paid_holiday')` to the total_hours sum on line 645-646 so paid_holiday shifts are excluded from total_hours while still counted in labor_cost.",
+    "CLEANUP (LOW): remove dead code lines 885-890 in /api/rosters/ocr-batch (unused monkey-patch block).",
+    "OPTIONAL: gate /api/dev/reset behind an env flag or admin role before production."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1008 lines — split into resource modules (auth/, rosters/, ai/, reports/, payments/) is now overdue.",
+    "Batch OCR calls single-OCR sequentially in a loop with ~30-40s per image; 5 images = 2.5-3min synchronous. Ingress will 502. Consider async job queue with progress polling.",
+    "Two inconsistent hours computations: r_upd (line 645) excludes {unpaid_holiday, sick}; emp_balance (line 951) excludes {sick, unpaid_holiday} but explicitly separates paid_holiday. The r_upd one should ALSO exclude paid_holiday to match spec + balance endpoint semantics.",
+    "compile_rule() persists raw LLM output to db.ai_rules.compiled without schema validation — a bad response could poison the solver constraints (though _violates() is defensive with .get()).",
+    "solve_roster() shift-duration calc at line 457 uses `(hm(end)-hm(start))/60` — NOT shift_duration_min — so if the solver ever emits an overnight shift the labor_cost would be negative. Solver currently never produces overnight shifts (start=open_m, end<=close_m), so no bug today, but consistency fix recommended."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py (new)"
+  ],
+  "success_rate": {
+    "backend": "94% (16/17 pytest — 1 real bug: paid_holiday not excluded from total_hours in r_upd)",
+    "frontend": "not fully re-tested this round (regression assumed from iter1); dashboard 'Reset all data' visible, AI Training 'Batch OCR' text present, AI Rules compile/approve buttons wired via data-testid btn-compile-{rid} + btn-approve-{rid}"
+  },
+  "test_credentials": "aneeshthimmapurmath@gmail.com / demo1234",
+  "seed_data_creation": "test_new_features.py resets owner shop via /dev/reset, seeds one TEST_Barista employee, generates one roster for the upcoming Monday, then approves it in test_balance_accrual. State at end of run: owner shop has 1 employee + 1 approved roster + ~2 custom AI rules from compile tests. If cleanliness matters, main agent can POST /api/dev/reset before demo.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test suite at /app/backend/tests/test_new_features.py. RUN SERIALLY with `-n0` — the default pytest-xdist parallel mode causes contamination because /dev/reset is destructive at the shop level and multiple workers share the same owner account. After main agent fixes the paid_holiday total_hours bug (line 645-646 in server.py), rerun `pytest backend/tests/test_new_features.py -v -n0` and all 17 should pass. The iter1 test file test_roster_ai.py is complementary and still valid.",
+  "rca of the issue": "Bug: r_upd() at server.py lines 645-646 was updated to exclude unpaid_holiday and sick from total_hours but the developer forgot to also exclude paid_holiday. The spec explicitly states paid_holiday should be excluded from total_hours (paid time off, not worked hours) but INCLUDED in labor_cost (employee still gets paid). Line 943-961 emp_balance() implements this correctly (paid_holiday contributes to `used_paid_holiday`, not `total_worked`), so the two endpoints disagree on what a paid-holiday shift counts as. Reproduction: PUT /rosters/{id} with one shift {employee_id, day:'tue', start:'09:00', end:'17:00', paid_holiday:true} → response.total_hours=8.0 (WRONG, expected 0.0), response.labor_cost=160.0 (correct). Fix in one line."
+}

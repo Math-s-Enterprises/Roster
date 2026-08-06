@@ -26,7 +26,8 @@ export const DAY_SHORT = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: 
 export function shiftHours(start, end) {
   const [sh, sm] = start.split(":").map(Number);
   const [eh, em] = end.split(":").map(Number);
-  return ((eh * 60 + em) - (sh * 60 + sm)) / 60;
+  const s = sh * 60 + sm, e = eh * 60 + em;
+  return (e > s ? e - s : (24 * 60 - s) + e) / 60;
 }
 
 export function dateForDay(weekStart, dayKey) {

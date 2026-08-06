@@ -14,12 +14,13 @@ const SAMPLE_URLS = [
 export default function AITraining() {
   const [stats, setStats] = useState(null);
   const [ocring, setOcring] = useState(null);
+  const [batchOcring, setBatchOcring] = useState(false);
   const [preview, setPreview] = useState(null);
   const [importing, setImporting] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
 
   const load = async () => {
-    try { setStats((await api.get("/ai/training-stats")).data); } catch {}
+    try { setStats((await api.get("/ai/training-stats")).data); } catch { /* ignore */ }
   };
   useEffect(() => { load(); }, []);
 
@@ -32,6 +33,18 @@ export default function AITraining() {
     } catch (err) {
       toast.error(err.response?.data?.detail || "OCR failed");
     } finally { setOcring(null); }
+  };
+
+  const runBatchOCR = async () => {
+    setBatchOcring(true);
+    try {
+      const urls = SAMPLE_URLS.map((s) => s.url);
+      const r = await api.post("/rosters/ocr-batch", { image_urls: urls });
+      setPreview({ week_start: r.data.weeks?.[0] || "", shifts: r.data.shifts, raw_shifts: r.data.raw_shifts, batch: true, weeks: r.data.weeks });
+      toast.success(`Batch OCR: ${r.data.shifts.length} matched · ${r.data.raw_shifts.length} rows across ${r.data.weeks.length} weeks`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Batch OCR failed");
+    } finally { setBatchOcring(false); }
   };
 
   const importPreview = async () => {
@@ -65,7 +78,13 @@ export default function AITraining() {
       )}
 
       <div className="glass rounded-3xl p-8 mb-6">
-        <h2 className="text-xl font-medium mb-4 flex items-center gap-2"><Upload size={16} /> Import from your photos</h2>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <h2 className="text-xl font-medium flex items-center gap-2"><Upload size={16} /> Import from your photos</h2>
+          <button data-testid="btn-batch-ocr" onClick={runBatchOCR} disabled={batchOcring} className="neon-btn px-4 py-2 rounded-full text-xs flex items-center gap-2">
+            {batchOcring ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            {batchOcring ? "Analyzing all 5…" : "Batch OCR all 5 weeks"}
+          </button>
+        </div>
         <p className="text-xs text-white/50 mb-4">Click a roster below to run Claude vision OCR, review the extracted shifts, then import.</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {SAMPLE_URLS.map((s) => (

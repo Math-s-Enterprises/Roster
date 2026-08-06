@@ -97,6 +97,10 @@ class ShiftIn(BaseModel):
     day: str
     start: str
     end: str
+    paid_holiday: bool = False
+    unpaid_holiday: bool = False
+    sick: bool = False
+    temp_override: bool = False
 
 class RosterUpdate(BaseModel):
     shifts: List[ShiftIn]
@@ -332,6 +336,10 @@ async def rules_del(rid: str, u=Depends(get_current_user)):
 DAYS = ["mon","tue","wed","thu","fri","sat","sun"]
 def hm(s): h,m = s.split(":"); return int(h)*60+int(m)
 def mh(m): return f"{m//60:02d}:{m%60:02d}"
+def shift_duration_min(start: str, end: str) -> int:
+    """Handles overnight shifts (23:00-07:00 = 8h)."""
+    s, e = hm(start), hm(end)
+    return e - s if e > s else (24*60 - s) + e
 
 
 async def solve_roster(shop, employees, holidays, fixed_shifts, ai_rules, week_start, weights):
@@ -362,6 +370,19 @@ async def solve_roster(shop, employees, holidays, fixed_shifts, ai_rules, week_s
             fixed_map.setdefault(f["employee_id"], {})[d] = (f["start"], f["end"])
     shifts, issues = [], []
     emp_hours = {e["employee_id"]: 0.0 for e in employees}
+    # Load compiled custom-rule constraints for hard enforcement
+    constraints = [r.get("compiled") for r in ai_rules if r.get("compiled") and r.get("approved", True)]
+    def _violates(emp_id, day, start_m, end_m, open_m_local, close_m_local):
+        for c in constraints:
+            eids = c.get("employee_ids") or []
+            if eids and emp_id not in eids: continue
+            days = [d.lower()[:3] for d in (c.get("days") or [])]
+            if days and day not in days: continue
+            t = (c.get("type") or "").lower()
+            if t == "no_day": return c
+            if t == "no_close" and end_m >= close_m_local - 30: return c
+            if t == "no_open" and start_m <= open_m_local + 30: return c
+        return None
     role_priority = {r: i for i, r in enumerate(["Manager","Supervisor","Cashier","Floor Assistant","Stocker"])}
 
     for d in DAYS:
@@ -418,6 +439,9 @@ async def solve_roster(shop, employees, holidays, fixed_shifts, ai_rules, week_s
                 if s_m < hm("08:00"): s_m = hm("08:00")
                 length_h = (e_m - s_m) / 60
                 if length_h < shop["min_shift_hours"]: continue
+            if _violates(emp["employee_id"], d, s_m, e_m, open_m, close_m):
+                issues.append(f"{emp['name']} skipped on {d} due to custom rule.")
+                continue
             shifts.append({"shift_id": f"sh_{uuid.uuid4().hex[:8]}", "employee_id": emp["employee_id"], "day": d, "start": mh(s_m), "end": mh(e_m), "fixed": False})
             emp_hours[emp["employee_id"]] += length_h
             assigned_today.add(emp["employee_id"])
@@ -608,16 +632,18 @@ async def r_upd(rid: str, p: RosterUpdate, u=Depends(get_current_user)):
     er = {e["employee_id"]: e["hourly_rate"] for e in emps}
     shifts = [{"shift_id": f"sh_{uuid.uuid4().hex[:8]}", **sh.model_dump(), "fixed": False} for sh in p.shifts]
     for sh in shifts:
-        dur = (hm(sh["end"]) - hm(sh["start"])) / 60
-        if dur <= 0: raise HTTPException(400, f"Invalid shift: end must be after start ({sh['start']}-{sh['end']})")
+        dur = shift_duration_min(sh["start"], sh["end"]) / 60
+        if dur <= 0: raise HTTPException(400, f"Invalid shift ({sh['start']}-{sh['end']})")
         if dur > 11: raise HTTPException(400, f"Shift exceeds 11h limit ({sh['start']}-{sh['end']} = {dur}h)")
     seen = set()
     for sh in shifts:
         k = (sh["employee_id"], sh["day"])
         if k in seen: raise HTTPException(400, f"Duplicate shift for employee on {sh['day']}")
         seen.add(k)
-    lc = sum(((hm(sh["end"]) - hm(sh["start"])) / 60) * er.get(sh["employee_id"], 0) for sh in shifts)
-    th = sum((hm(sh["end"]) - hm(sh["start"])) / 60 for sh in shifts)
+    lc = sum((shift_duration_min(sh["start"], sh["end"]) / 60) * er.get(sh["employee_id"], 0)
+             for sh in shifts if not sh.get("unpaid_holiday"))
+    th = sum(shift_duration_min(sh["start"], sh["end"]) / 60 for sh in shifts
+             if not sh.get("unpaid_holiday") and not sh.get("sick"))
     await db.rosters.update_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"$set": {"shifts": shifts, "labor_cost": round(lc, 2), "total_hours": round(th, 1)}})
     return await db.rosters.find_one({"roster_id": rid, "shop_id": s["shop_id"]}, {"_id": 0})
 
@@ -846,6 +872,113 @@ async def stripe_webhook(request: Request):
     elif t == "checkout.session.expired":
         await db.payment_transactions.update_one({"session_id": obj["id"]}, {"$set": {"status": "expired", "payment_status": "expired", "updated_at": datetime.now(timezone.utc).isoformat()}})
     return {"status": "ok"}
+
+
+@api.post("/rosters/ocr-batch")
+async def ocr_batch(request: Request, u=Depends(get_current_user)):
+    """Batch OCR across multiple image URLs. Returns merged shifts + raw."""
+    body = await request.json()
+    urls = body.get("image_urls") or []
+    if not urls: raise HTTPException(400, "image_urls required")
+    all_valid, all_raw = [], []
+    weeks = []
+    for url in urls:
+        try:
+            body_single = {"image_url": url}
+            request._body = _json_bytes(body_single)  # not portable; call function directly
+        except Exception:
+            pass
+    # simplest: iterate and call ocr_roster inline
+    for url in urls:
+        try:
+            async def _call():
+                from fastapi import Request as R
+                class _Req:
+                    async def json(self): return {"image_url": url}
+                resp = await ocr_roster(_Req(), u)
+                return resp
+            data = await _call()
+            all_valid.extend(data.get("shifts", []))
+            all_raw.extend([{**r, "_source_url": url} for r in data.get("raw_shifts", [])])
+            if data.get("week_start"): weeks.append(data["week_start"])
+        except Exception as e:
+            log.warning(f"OCR failed for {url}: {e}")
+    return {"weeks": weeks, "shifts": all_valid, "raw_shifts": all_raw, "processed": len(urls)}
+
+
+def _json_bytes(d):
+    import json as _j
+    return _j.dumps(d).encode()
+
+
+@api.post("/dev/reset")
+async def reset_all(u=Depends(get_current_user)):
+    """Wipe all data for the current user's shop — dev reset."""
+    s = await ensure_shop(u)
+    sid = s["shop_id"]
+    await db.employees.delete_many({"shop_id": sid})
+    await db.holidays.delete_many({"shop_id": sid})
+    await db.fixed_shifts.delete_many({"shop_id": sid})
+    await db.rosters.delete_many({"shop_id": sid})
+    await db.activity_logs.delete_many({"shop_id": sid})
+    await db.ai_rules.delete_many({"shop_id": sid})
+    # Re-seed just the default AI rules (constraints, not data)
+    for r in DEFAULT_AI_RULES:
+        await db.ai_rules.insert_one({"rule_id": f"rule_{uuid.uuid4().hex[:12]}", "shop_id": sid, **r})
+    # Reset onboarding
+    await db.shops.update_one({"shop_id": sid}, {"$set": {"onboarded": False}})
+    return {"ok": True, "message": "All data reset. Shop is now empty."}
+
+
+@api.post("/ai-rules/{rid}/approve-compiled")
+async def approve_rule(rid: str, u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    r = await db.ai_rules.find_one({"rule_id": rid, "shop_id": s["shop_id"]}, {"_id": 0})
+    if not r or not r.get("compiled"): raise HTTPException(400, "Rule not compiled yet")
+    await db.ai_rules.update_one({"rule_id": rid, "shop_id": s["shop_id"]}, {"$set": {"approved": True}})
+    return {"ok": True}
+
+
+@api.get("/employees/{eid}/holiday-balance")
+async def emp_balance(eid: str, u=Depends(get_current_user)):
+    """Holiday accrual: 8h per 100h worked (0.08 ratio). Only counts approved roster hours."""
+    s = await ensure_shop(u)
+    total_worked = 0.0
+    paid_holiday_used = 0.0
+    async for r in db.rosters.find({"shop_id": s["shop_id"], "approved": True}, {"_id": 0}):
+        for sh in r.get("shifts", []):
+            if sh.get("employee_id") != eid: continue
+            if sh.get("sick") or sh.get("unpaid_holiday"): continue
+            dur = shift_duration_min(sh["start"], sh["end"]) / 60
+            if sh.get("paid_holiday"):
+                paid_holiday_used += dur
+            else:
+                total_worked += dur
+    accrued = round(total_worked * 0.08, 2)
+    balance = round(accrued - paid_holiday_used, 2)
+    return {"employee_id": eid, "hours_worked": round(total_worked, 1),
+            "accrued_holiday_hours": accrued, "used_paid_holiday": round(paid_holiday_used, 1),
+            "balance": balance}
+
+
+@api.get("/employees/holiday-balances")
+async def all_balances(u=Depends(get_current_user)):
+    s = await ensure_shop(u)
+    emps = await db.employees.find({"shop_id": s["shop_id"]}, {"_id": 0}).to_list(500)
+    out = []
+    for e in emps:
+        worked = 0.0; used = 0.0
+        async for r in db.rosters.find({"shop_id": s["shop_id"], "approved": True}, {"_id": 0}):
+            for sh in r.get("shifts", []):
+                if sh.get("employee_id") != e["employee_id"]: continue
+                if sh.get("sick") or sh.get("unpaid_holiday"): continue
+                dur = shift_duration_min(sh["start"], sh["end"]) / 60
+                if sh.get("paid_holiday"): used += dur
+                else: worked += dur
+        out.append({"employee_id": e["employee_id"], "name": e["name"], "role": e.get("role"),
+                    "hours_worked": round(worked, 1), "accrued": round(worked * 0.08, 2),
+                    "used": round(used, 1), "balance": round(worked * 0.08 - used, 2)})
+    return out
 
 
 @api.get("/")

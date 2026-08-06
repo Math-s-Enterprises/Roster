@@ -10,12 +10,15 @@ const emptyForm = {
 export default function Employees() {
   const [emps, setEmps] = useState([]);
   const [shop, setShop] = useState(null);
+  const [balances, setBalances] = useState({});
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(emptyForm);
 
   const load = async () => {
-    const [e, s] = await Promise.all([api.get("/employees"), api.get("/shop")]);
+    const [e, s, b] = await Promise.all([api.get("/employees"), api.get("/shop"), api.get("/employees/holiday-balances").catch(() => ({data: []}))]);
     setEmps(e.data); setShop(s.data);
+    const map = {}; (b.data || []).forEach((x) => { map[x.employee_id] = x; });
+    setBalances(map);
   };
   useEffect(() => { load(); }, []);
 
@@ -80,6 +83,12 @@ export default function Employees() {
                 <Stat label="Rate" value={`€${e.hourly_rate}`} />
                 <Stat label="Max" value={`${e.max_weekly_hours}h`} />
               </div>
+              {balances[e.employee_id] && (
+                <div className="mt-3 glass-solid rounded-lg px-3 py-2 flex items-center justify-between text-xs">
+                  <span className="text-white/50">Holiday balance</span>
+                  <span className="font-mono text-cyan-400">{balances[e.employee_id].balance}h <span className="text-white/40">/ {balances[e.employee_id].accrued}h</span></span>
+                </div>
+              )}
               {e.preferred_days_off?.length > 0 && (
                 <div className="mt-4 text-[11px] text-white/50">
                   Off: <span className="text-white/70 font-mono">{e.preferred_days_off.map((d) => DAY_LABELS[d]).join(", ")}</span>
@@ -102,9 +111,10 @@ export default function Employees() {
               <Field label="Name"><input data-testid="emp-name" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2.5 rounded-lg" /></Field>
               <Field label="Email"><input data-testid="emp-email" required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2.5 rounded-lg" /></Field>
               <Field label="Role">
-                <select data-testid="emp-role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2.5 rounded-lg">
-                  {shop?.roles?.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
+                <input data-testid="emp-role" list="role-suggestions" required value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2.5 rounded-lg" placeholder="Type any role (e.g. Barista, Cook)" />
+                <datalist id="role-suggestions">
+                  {shop?.roles?.map((r) => <option key={r} value={r} />)}
+                </datalist>
               </Field>
               <Field label="Age"><input data-testid="emp-age" type="number" min={14} max={80} required value={form.age} onChange={(e) => setForm({ ...form, age: Number(e.target.value) })} className="w-full px-3 py-2.5 rounded-lg font-mono" /></Field>
               <Field label="Hourly rate ($)"><input data-testid="emp-rate" type="number" step="0.5" required value={form.hourly_rate} onChange={(e) => setForm({ ...form, hourly_rate: Number(e.target.value) })} className="w-full px-3 py-2.5 rounded-lg font-mono" /></Field>
