@@ -56,6 +56,8 @@ class ShopUpdate(BaseModel):
     roles: Optional[List[str]] = None
     departments: Optional[List[str]] = None
     multi_department: Optional[bool] = None
+    open_24h: Optional[bool] = None
+    shift_templates: Optional[List[Dict[str, Any]]] = None
     onboarded: Optional[bool] = None
 
 class EmployeeIn(BaseModel):
@@ -135,6 +137,11 @@ async def get_current_user(authorization: Optional[str] = Header(None), session_
 DEFAULT_HOURS = [{"day": d, "open": "09:00", "close": "21:00", "closed": False} for d in ["mon","tue","wed","thu","fri","sat"]] + [{"day": "sun", "open": "10:00", "close": "18:00", "closed": False}]
 DEFAULT_ROLES = ["Manager", "Supervisor", "Cashier", "Floor Assistant", "Stocker"]
 DEFAULT_DEPARTMENTS = ["Shop Floor", "Deli"]
+DEFAULT_24H_TEMPLATES = [
+    {"template_id": "tpl_morning", "name": "Morning", "start": "07:00", "end": "15:00", "min_staff": 2},
+    {"template_id": "tpl_afternoon", "name": "Afternoon", "start": "15:00", "end": "23:00", "min_staff": 2},
+    {"template_id": "tpl_night", "name": "Night", "start": "23:00", "end": "07:00", "min_staff": 1},
+]
 DEFAULT_AI_RULES = [
     {"title": "Under-16 curfew", "description": "Employees under 16 cannot work past 19:00 or before 08:00.", "enabled": True, "category": "legal"},
     {"title": "Weekly hour cap", "description": "No employee may exceed their max_weekly_hours setting.", "enabled": True, "category": "legal"},
@@ -151,7 +158,8 @@ async def ensure_shop(user):
         "name": user.get("shop_name") or f"{user['name'].split()[0]}'s Shop",
         "hours": DEFAULT_HOURS, "min_shift_hours": 4, "max_shift_hours": 9,
         "roles": DEFAULT_ROLES, "departments": DEFAULT_DEPARTMENTS,
-        "multi_department": False, "onboarded": False,
+        "multi_department": False, "open_24h": False,
+        "shift_templates": [], "onboarded": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.shops.insert_one(shop.copy())
@@ -230,6 +238,11 @@ async def get_shop(u=Depends(get_current_user)):
 async def update_shop(p: ShopUpdate, u=Depends(get_current_user)):
     s = await ensure_shop(u)
     upd = {k: v for k, v in p.model_dump(exclude_unset=True).items() if v is not None}
+    # When switching a shop to 24h and it has no templates yet, seed the 3 defaults
+    if upd.get("open_24h") and not (s.get("shift_templates") or upd.get("shift_templates")):
+        upd["shift_templates"] = [dict(t) for t in DEFAULT_24H_TEMPLATES]
+        # Also set hours to fully-open 00:00-24:00 for every day
+        upd["hours"] = [{"day": d, "open": "00:00", "close": "23:59", "closed": False} for d in DAYS]
     if upd: await db.shops.update_one({"shop_id": s["shop_id"]}, {"$set": upd})
     return await db.shops.find_one({"shop_id": s["shop_id"]}, {"_id": 0})
 
@@ -384,6 +397,7 @@ async def solve_roster(shop, employees, holidays, fixed_shifts, ai_rules, week_s
             if t == "no_open" and start_m <= open_m_local + 30: return c
         return None
     role_priority = {r: i for i, r in enumerate(["Manager","Supervisor","Cashier","Floor Assistant","Stocker"])}
+    templates = shop.get("shift_templates") or []
 
     for d in DAYS:
         the_date = day_dates[d]
@@ -392,6 +406,38 @@ async def solve_roster(shop, employees, holidays, fixed_shifts, ai_rules, week_s
         if sh.get("closed"): continue
         open_m, close_m = hm(sh["open"]), hm(sh["close"])
         if close_m - open_m <= 0: continue
+
+        # ---------- Template-based path (24h stores / any store with configured templates) ----------
+        if templates:
+            for tpl in templates:
+                t_start, t_end = tpl["start"], tpl["end"]
+                length_h = shift_duration_min(t_start, t_end) / 60
+                need = max(1, int(tpl.get("min_staff", 1)))
+                assigned_here = 0
+                tk = f"{t_start}-{t_end}"
+                def _tscore(e):
+                    tw = weights.get("tpl", {}).get(e["employee_id"], {}).get(tk, 0)  # loves this template
+                    dw = weights.get("day", {}).get(e["employee_id"], {}).get(d, 0)  # loves this day
+                    return (role_priority.get(e["role"], 99), -(tw * 2 + dw))
+                for emp in sorted(employees, key=_tscore):
+                    if assigned_here >= need: break
+                    if the_date in emp_off.get(emp["employee_id"], set()): continue
+                    if d in (emp.get("preferred_days_off") or []): continue
+                    # already scheduled today (no double-book)
+                    if any(s["employee_id"] == emp["employee_id"] and s["day"] == d for s in shifts): continue
+                    if emp_hours[emp["employee_id"]] + length_h > emp["max_weekly_hours"]: continue
+                    if emp["age"] < 16 and (hm(t_start) < hm("08:00") or hm(t_end) > hm("19:00") or hm(t_end) < hm(t_start)): continue
+                    if _violates(emp["employee_id"], d, hm(t_start), hm(t_end), open_m, close_m): continue
+                    shifts.append({"shift_id": f"sh_{uuid.uuid4().hex[:8]}", "employee_id": emp["employee_id"],
+                                    "day": d, "start": t_start, "end": t_end, "fixed": False,
+                                    "template_id": tpl.get("template_id"), "template_name": tpl.get("name")})
+                    emp_hours[emp["employee_id"]] += length_h
+                    assigned_here += 1
+                if assigned_here < need:
+                    issues.append(f"{tpl.get('name','Shift')} on {d}: only {assigned_here}/{need} staffed.")
+            continue  # done with this day via templates
+
+        # ---------- Original single-window path ----------
         target_len = min(max(close_m - open_m, int(min_shift)), int(max_shift))
         already_ids = {s["employee_id"] for s in shifts if s["day"] == d}
         def _score(e):
@@ -464,25 +510,46 @@ async def solve_roster(shop, employees, holidays, fixed_shifts, ai_rules, week_s
 
 
 async def compute_weights(sid):
-    """AI learning: per-employee day preference + co-worker affinity from APPROVED rosters."""
+    """AI learning:
+      - w['day'][emp][day]  → historical count of emp on day
+      - w['coworkers'][emp][emp2] → historical times together
+      - w['tpl'][emp][template_key] → historical count on shift template (start-end)
+      - w['covers'][absent_emp][cover_emp] → historical covers (approved roster shows cover_emp on day absent_emp is off)
+    """
     w = {}
     coworkers = {}
+    tpl = {}
+    covers = {}
     async for r in db.rosters.find({"shop_id": sid, "approved": True}, {"_id": 0}):
-        # skip anything explicitly excluded from learning
         if r.get("exclude_from_ai"): continue
         by_day = {}
+        emp_days = {}
         for s in r.get("shifts", []):
-            if s.get("sick") or s.get("temp_override"): continue  # never learn from sick leave / temp overrides
-            w.setdefault(s["employee_id"], {}).setdefault(s["day"], 0)
-            w[s["employee_id"]][s["day"]] += 1
-            by_day.setdefault(s["day"], []).append(s["employee_id"])
+            if s.get("sick") or s.get("temp_override") or s.get("unpaid_holiday"): continue
+            eid = s["employee_id"]
+            w.setdefault(eid, {}).setdefault(s["day"], 0)
+            w[eid][s["day"]] += 1
+            by_day.setdefault(s["day"], []).append(eid)
+            emp_days.setdefault(eid, set()).add(s["day"])
+            tk = f"{s.get('start','')}-{s.get('end','')}"
+            tpl.setdefault(eid, {}).setdefault(tk, 0)
+            tpl[eid][tk] += 1
         for day, ids in by_day.items():
             for i in ids:
                 for j in ids:
                     if i != j:
                         coworkers.setdefault(i, {}).setdefault(j, 0)
                         coworkers[i][j] += 1
-    return {"day": w, "coworkers": coworkers}
+        # Cover patterns: for anyone off this week who has a strong prior day pattern
+        for eid_a, hist_days in w.items():
+            if eid_a in emp_days: continue  # they worked, not off
+            # Find their strongest historical day(s)
+            for d in hist_days:
+                if d in by_day:  # someone worked that day when they were off
+                    for cover in by_day[d]:
+                        covers.setdefault(eid_a, {}).setdefault(cover, 0)
+                        covers[eid_a][cover] += 1
+    return {"day": w, "coworkers": coworkers, "tpl": tpl, "covers": covers}
 
 
 @api.post("/roster/generate")

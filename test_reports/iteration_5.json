@@ -1,0 +1,32 @@
+{
+  "summary": "Backend-only regression for the 3 roster-generator fixes (hours regression, 24h templates, training-stats increment). Created /app/backend/tests/test_24h_and_training.py with 9 tests covering: zero-hours -> 400, /dev/reset defaults, 24h auto-creates 3 templates + fully-open hours, roster generation spreads employees across Morning/Afternoon/Night, custom template edits reflected in next roster, approve increments /ai/training-stats, soft-preference retention on regen (>=50%), training-stats stable after multiple approves, non-24h happy path. ALL 9 TESTS PASS against public URL. Soft-preference test observed 100% retention (all top-day employees kept their prior template on regen). Live behaviour matches main agent's summary: 24h generation now yields ~5 shifts/day (2 morning + 2 afternoon + 1 night = 5) across 3 templates without dumping everyone on one shift; training-stats grow with each approve.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/dev/reset", "issue": "Reset restores default hours but does NOT reset open_24h flag or clear shift_templates. If a user resets while shop is in 24h mode, they stay in 24h mode with default (non-24h) 09:00-21:00 hours, which is an inconsistent state. Not blocking, but consider clearing open_24h + shift_templates in reset."},
+      {"endpoint": "/api/dev/reset", "issue": "Pre-existing test file /app/backend/tests/test_roster_hours_regression.py:test_04 assumes reset auto-seeds demo employees, but reset only clears data (employees stay empty). Pre-existing testing debt — not in current fix scope."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_24h_and_training.py",
+    "/app/test_reports/pytest/test_24h_and_training.xml"
+  ],
+  "action_items": [
+    "(Optional) In /api/dev/reset also reset open_24h=false and clear shift_templates for a fully-clean state.",
+    "(Optional) Update pre-existing /app/backend/tests/test_roster_hours_regression.py to call /api/seed-demo after reset (or make reset itself re-seed demo employees) so that suite stops failing on tests 02-04."
+  ],
+  "critical_code_review_comments": [
+    "server.py update_shop (line 242-245): when open_24h flips true, it force-overrides hours to 00:00-23:59 even if the caller provided custom hours in the same PUT. Consider merging instead of overriding when both fields are set explicitly.",
+    "server.py compute_weights is invoked on every generate — with many approved rosters this could get slow. Consider caching or a dedicated aggregation.",
+    "DEFAULT_24H_TEMPLATES uses fixed template_ids ('tpl_morning' etc.); if a user renames these via PUT /shop {shift_templates:[...]} and later flips open_24h off then on, the auto-seed will skip because shift_templates array is non-empty — expected but worth documenting."
+  ],
+  "updated_files": ["/app/backend/tests/test_24h_and_training.py"],
+  "success_rate": {"backend": "100% (9/9 new tests)", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "aneeshthimmapurmath@gmail.com / demo1234 (valid)",
+  "seed_data_creation": "Tests call /api/dev/reset and /api/seed-demo to establish 7 demo employees before generation; each test uses distinct week_start dates (2026-08-03 through 2026-11-02) to avoid roster collisions.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New pytest file at /app/backend/tests/test_24h_and_training.py — covers 24h templates + training stats. Pre-existing /app/backend/tests/test_roster_hours_regression.py has 3 failing tests due to stale assumption that /dev/reset seeds demo employees; either fix that assumption or make /dev/reset re-seed demo employees. End state after run: shop is left non-24h with default hours + demo employees (via test_09 cleanup + module teardown).",
+  "rca of the issue": "N/A — all requested features verified working: (1) 00:00-00:00 hours produce HTTP 400 with 'Shop hours are not set'; (2) /dev/reset restores mon-sat 09:00-21:00 + sun 10:00-18:00; (3) enabling open_24h auto-seeds Morning(07-15,min2)/Afternoon(15-23,min2)/Night(23-07,min1) templates + 00:00-23:59 hours; (4) roster generation produces shifts across all 3 templates with no template hoarding all employees; (5) custom templates via PUT /shop are honoured in next roster; (6) approve endpoint increments total_shifts_learned and employees_learned; (7) soft-preference weights make employees retain their dominant template on regen (100% retention observed in our run)."
+}
