@@ -1,0 +1,59 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Runs the API with the debugger attached. Set a breakpoint anywhere —
+      // a route, or inside scheduler.py — hit the endpoint, and step through
+      // it. Much better than print statements for working out why a roster
+      // came out the way it did.
+      "name": "Backend (FastAPI, debug)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--reload", "--port", "8001"],
+      "cwd": "${workspaceFolder}/backend",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Import workbook (dry run)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/ml/import_workbook.py",
+      "args": ["${input:workbookPath}", "--email", "${input:accountEmail}"],
+      "cwd": "${workspaceFolder}/backend",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "ML feasibility experiment",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/ml/experiment_baseline.py",
+      "args": ["${input:workbookPath}"],
+      "cwd": "${workspaceFolder}/backend",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Bootstrap (first-time setup)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/bootstrap.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "workbookPath",
+      "type": "promptString",
+      "description": "Full path to the roster .xlsx",
+      "default": "C:\\Users\\anees\\Desktop\\new roster 26.xlsx"
+    },
+    {
+      "id": "accountEmail",
+      "type": "promptString",
+      "description": "Email of the account to import into",
+      "default": "aneeshthimmapurmath@gmail.com"
+    }
+  ]
+}

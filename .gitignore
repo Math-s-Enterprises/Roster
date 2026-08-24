@@ -83,6 +83,9 @@ android-sdk/
 .env
 .env.*
 *.env
+# ...but DO commit the templates, they contain no secrets:
+!.env.example
+!**/.env.example
 credentials.json
 *.key
 .credentials

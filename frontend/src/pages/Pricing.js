@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { api } from "@/lib/api";
+import { api, errorMessage, CURRENCY } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { Sparkles, Check, Zap, Crown } from "lucide-react";
@@ -8,7 +8,7 @@ const plans = [
   {
     key: "roster_pro_monthly",
     name: "Pro Monthly",
-    price: "$19",
+    price: `${CURRENCY}19`,
     per: "/month",
     tag: "Flexible",
     features: ["Unlimited rosters", "AI narrative summaries", "Priority email dispatch", "Version history & audit log", "Multi-store roadmap access"],
@@ -16,7 +16,7 @@ const plans = [
   {
     key: "roster_pro_yearly",
     name: "Pro Yearly",
-    price: "$190",
+    price: `${CURRENCY}190`,
     per: "/year",
     tag: "Save 17%",
     highlighted: true,
@@ -34,7 +34,7 @@ export default function Pricing() {
       const r = await api.post("/payments/checkout", { lookup_key, quantity: 1, origin_url: window.location.origin });
       window.location.href = r.data.checkout_url;
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Checkout failed");
+      toast.error(errorMessage(err, "Could not start checkout"));
       setBusy(null);
     }
   };

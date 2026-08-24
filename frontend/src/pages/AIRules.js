@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Trash2, Shield, AlertCircle, Sparkles } from "lucide-react";
+import { Plus, Trash2, Shield, AlertCircle, Sparkles, Lock } from "lucide-react";
 
 const catIcon = { legal: Shield, safety: AlertCircle, custom: Sparkles };
 const catClass = { legal: "text-cyan-400", safety: "text-amber-400", custom: "text-violet-400" };
@@ -22,10 +22,15 @@ export default function AIRules() {
   };
 
   const toggle = async (r) => {
+    if (r.locked) { toast.error("This is a system rule and cannot be changed."); return; }
     await api.put(`/ai-rules/${r.rule_id}`, { title: r.title, description: r.description, category: r.category, enabled: !r.enabled });
     load();
   };
-  const del = async (id) => { await api.delete(`/ai-rules/${id}`); load(); };
+  const del = async (r) => {
+    if (r.locked) { toast.error("This is a system rule and cannot be removed."); return; }
+    await api.delete(`/ai-rules/${r.rule_id}`);
+    load();
+  };
 
   const compile = async (r) => {
     setCompiling(r.rule_id);
@@ -36,7 +41,7 @@ export default function AIRules() {
       load();
       return resp.data.compiled;
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Compile failed");
+      toast.error(errorMessage(err, "Could not compile the rule"));
     } finally { setCompiling(null); }
   };
   const approve = async (r) => {
@@ -78,6 +83,11 @@ export default function AIRules() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <div className="font-medium text-sm">{r.title}</div>
                       <span className="text-[10px] px-2 py-0.5 rounded-full glass-solid text-white/50 uppercase tracking-wider">{r.category}</span>
+                      {r.locked && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/15 text-white/50 flex items-center gap-1">
+                          <Lock size={9} /> System rule
+                        </span>
+                      )}
                       {r.compiled && !r.approved && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400">Needs approval</span>}
                       {r.approved && <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">Enforced</span>}
                     </div>
@@ -94,11 +104,11 @@ export default function AIRules() {
                       )}
                     </div>
                   </div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={r.enabled} onChange={() => toggle(r)} className="w-4 h-4" />
+                  <label className={`flex items-center gap-2 ${r.locked ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`} title={r.locked ? "System rule — always on" : ""}>
+                    <input type="checkbox" checked={r.enabled} disabled={r.locked} onChange={() => toggle(r)} className="w-4 h-4" />
                   </label>
-                  {r.category === "custom" && (
-                    <button onClick={() => del(r.rule_id)} className="text-red-400 hover:bg-red-500/10 p-2 rounded-lg"><Trash2 size={14} /></button>
+                  {!r.locked && (
+                    <button onClick={() => del(r)} className="text-red-400 hover:bg-red-500/10 p-2 rounded-lg"><Trash2 size={14} /></button>
                   )}
                 </div>
               </div>

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(netstat -ano)",
+      "Bash(taskkill //PID 35576 //F)",
+      "Bash(sleep 2; cat /tmp/uvicorn_restart.log; echo \"---\"; netstat -ano | grep \":8001\" | grep LISTENING)",
+      "Bash(powershell -NoProfile -Command \"Get-Process -Id 35576 | Select-Object Id,ProcessName,Path,StartTime\")",
+      "PowerShell(Get-NetTCPConnection -LocalPort 8001 -State Listen | Select-Object OwningProcess; Get-Process -Id \\(Get-NetTCPConnection -LocalPort 8001 -State Listen\\).OwningProcess | Select-Object Id,ProcessName,Path,StartTime)",
+      "Bash(curl -s http://127.0.0.1:8001/api/auth/providers)",
+      "Bash(curl -s -H \"Cache-Control: no-cache\" http://127.0.0.1:8001/api/auth/providers)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:8001/api/health)",
+      "Bash(taskkill //PID 39604 //F)"
+    ]
+  }
+}

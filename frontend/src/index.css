@@ -1,4 +1,19 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&family=IBM+Plex+Sans:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+/**
+ * Roster design tokens — see DESIGN.md in the project root.
+ *
+ * Carbon: neutral charcoal surfaces, one emerald accent reserved for the
+ * single primary action on screen. This is the Supabase *dashboard* register
+ * rather than their white marketing site — same palette, dark canvas.
+ *
+ * Still no gradients, glass blur or glow. The roster grid is dense data read
+ * all day, and every decorative layer worked against that regardless of
+ * whether the background is white or black.
+ *
+ * Everything below is a semantic variable. Pages consume --ink / --canvas /
+ * --hairline and never a literal colour, so the whole app can be re-themed
+ * from this block alone.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,142 +21,341 @@
 
 :root {
   color-scheme: dark;
+
+  /* Brand — the only chromatic event on the page. */
+  --primary: #3ecf8e;
+  --primary-hover: #4ade9e;   /* brighter on hover; on dark, deeper reads as disabled */
+  --primary-deep: #24b47e;
+  --on-primary: #0a0a0a;      /* near-black on green, never white */
+
+  /* Ink ladder, brightest first. Contrast ratios are against --canvas
+     and are checked in the verification step — see DESIGN.md. */
+  --ink: #ededed;          /* 16.9:1 on page — body text */
+  --ink-secondary: #d4d4d4;
+  --ink-mute: #a1a1a1;     /*  7.1:1 — secondary text */
+  --ink-mute-2: #8f8f8f;   /*  5.4:1 — tertiary, eyebrows, timestamps */
+  --ink-faint: #5c5c5c;    /*  3.0:1 — placeholders and disabled only */
+
+  /* Surfaces. Lightness steps up with elevation, so a modal is never darker
+     than the page behind it. The steps are wider than they look they need to
+     be: on near-black, #0a0a0a to #141414 measures 1.07:1, which is not
+     enough for a card to read as a distinct surface at all. */
+  --canvas: #0a0a0a;         /* page */
+  --canvas-soft: #1a1a1a;    /* in-flow card, grid cell — 1.14:1 above page */
+  --canvas-raised: #262626;  /* modal, popover — 1.15:1 above card */
+
+  /* Hairlines */
+  --hairline: #2e2e2e;
+  --hairline-strong: #454545;
+  --hairline-cool: #242424;
+
+  /* Status — a scheduling tool has to say "shop unattended" and
+     "please confirm", which a marketing palette has no word for.
+     On dark these invert: bright text on a deep tinted surface. */
+  --danger: #f87171;
+  --danger-soft: #1c1010;
+  --danger-hairline: #5c2320;
+  --warn: #e3b341;
+  --warn-soft: #1c1508;
+  --warn-hairline: #5c4514;
+
+  --radius: 0.5rem;
 }
 
 html, body, #root {
-  background: #05050A;
-  color: #ffffff;
+  background: var(--canvas);
+  color: var(--ink);
   min-height: 100vh;
 }
 
 body {
   margin: 0;
-  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background:
-    radial-gradient(1000px 600px at 10% -10%, rgba(0, 229, 255, 0.08), transparent 60%),
-    radial-gradient(900px 500px at 110% 10%, rgba(124, 77, 255, 0.10), transparent 60%),
-    #05050A;
 }
 
-h1, h2, h3, h4 { font-family: 'Outfit', sans-serif; letter-spacing: -0.02em; }
-.font-mono, code, pre { font-family: 'JetBrains Mono', monospace; }
+/* Weight 500 with negative tracking reads as engineered rather than
+   decorative. Above 600 the calibration breaks — see DESIGN.md. */
+h1, h2, h3, h4 { font-family: 'Inter', sans-serif; font-weight: 500; color: var(--ink); }
+h1 { font-size: 36px; line-height: 1.15; letter-spacing: -0.72px; }
+h2 { font-size: 28px; line-height: 1.2; letter-spacing: -0.42px; }
+h3 { font-size: 22px; line-height: 1.2; }
+h4 { font-size: 18px; line-height: 1.4; }
 
+.font-mono, code, pre { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; }
+
+.display { font-size: 36px; font-weight: 500; line-height: 1.15; letter-spacing: -0.72px; }
+@media (max-width: 767px) { .display { font-size: 28px; letter-spacing: -0.42px; } }
+
+.eyebrow {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute-2);
+}
+
+/* shadcn/ui reads these; kept in sync with the tokens above so the two
+   systems cannot drift apart. */
 @layer base {
   :root {
-    --background: 240 20% 3%;
-    --foreground: 0 0% 100%;
-    --card: 240 15% 6%;
-    --card-foreground: 0 0% 100%;
-    --popover: 240 15% 6%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 190 100% 50%;
-    --primary-foreground: 240 20% 3%;
-    --secondary: 240 10% 12%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 240 10% 14%;
-    --muted-foreground: 240 5% 65%;
-    --accent: 262 83% 58%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 240 10% 15%;
-    --input: 240 10% 15%;
-    --ring: 190 100% 50%;
-    --radius: 0.75rem;
+    --background: 0 0% 4%;
+    --foreground: 0 0% 93%;
+    --card: 0 0% 8%;
+    --card-foreground: 0 0% 93%;
+    --popover: 0 0% 12%;
+    --popover-foreground: 0 0% 93%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 93%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 63%;
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 93%;
+    --destructive: 0 91% 71%;
+    --destructive-foreground: 0 0% 4%;
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
+    --ring: 154 59% 53%;
   }
+  * { border-color: var(--hairline); }
 }
 
-@layer base {
-  * { border-color: rgba(255, 255, 255, 0.08); }
+/* ---------------------------------------------------------------------------
+   Surfaces
+   Flat by default. On a dark canvas, elevation is a lighter surface rather
+   than a shadow — a drop shadow against near-black is invisible.
+--------------------------------------------------------------------------- */
+.card {
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
 }
 
-.glass {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+.card-soft {
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline-cool);
+  border-radius: 8px;
 }
 
-.glass-solid {
-  background: #0A0B10;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+.card-hover { transition: background-color 0.15s ease, border-color 0.15s ease; }
+.card-hover:hover { border-color: var(--hairline-strong); }
+
+.elevated {
+  background: var(--canvas-raised);
+  border-color: var(--hairline-strong);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
 }
 
-.neon-gradient {
-  background: linear-gradient(90deg, #00E5FF 0%, #7C4DFF 100%);
-}
-.neon-text {
-  background: linear-gradient(90deg, #00E5FF 0%, #7C4DFF 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-.neon-border {
+/* Legacy aliases. The prototype used .glass / .glass-solid everywhere; these
+   keep unconverted pages coherent until each one is migrated. Delete once no
+   page references them. */
+.glass { background: var(--canvas-soft); border: 1px solid var(--hairline); border-radius: 12px; }
+.glass-solid { background: var(--canvas-raised); border: 1px solid var(--hairline); }
+
+/* ---------------------------------------------------------------------------
+   Buttons
+   6px radius — square-ish and technical, never pill-shaped.
+--------------------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 10px 16px;
+  border-radius: 6px;
   border: 1px solid transparent;
-  background:
-    linear-gradient(#0A0B10, #0A0B10) padding-box,
-    linear-gradient(90deg, #00E5FF, #7C4DFF) border-box;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
 }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.neon-btn {
-  background: linear-gradient(90deg, #00E5FF 0%, #7C4DFF 100%);
-  color: #05050A;
-  font-weight: 600;
-  transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
-}
-.neon-btn:hover {
-  transform: translateY(-1px) scale(1.02);
-  box-shadow: 0 0 22px rgba(0, 229, 255, 0.35), 0 0 44px rgba(124, 77, 255, 0.25);
-  filter: brightness(1.05);
-}
-.neon-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+/* The single most important action on screen. One per viewport. */
+.btn-primary { background: var(--primary); color: var(--on-primary); }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.btn-primary:active:not(:disabled) { background: var(--primary-deep); }
 
-.conflict-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: #ef4444;
-  box-shadow: 0 0 0 rgba(239, 68, 68, 0.7);
-  animation: pulse-conflict 1.6s infinite;
+.btn-secondary {
+  background: var(--canvas-soft);
+  color: var(--ink);
+  border-color: var(--hairline-strong);
 }
-@keyframes pulse-conflict {
-  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-  70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-}
+.btn-secondary:hover:not(:disabled) { background: var(--canvas-raised); }
 
-.scroll-thin::-webkit-scrollbar { height: 8px; width: 8px; }
-.scroll-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 8px; }
+.btn-ghost { background: transparent; color: var(--ink-mute); }
+.btn-ghost:hover:not(:disabled) { background: var(--canvas-soft); color: var(--ink); }
 
+.btn-danger { background: transparent; color: var(--danger); border-color: var(--danger-hairline); }
+.btn-danger:hover:not(:disabled) { background: var(--danger-soft); }
+
+/* Aliases so pages not yet migrated stop rendering a neon gradient. */
+.neon-btn { background: var(--primary); color: var(--on-primary); font-weight: 500; border-radius: 6px; }
+.neon-btn:hover:not(:disabled) { background: var(--primary-hover); }
+.neon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.neon-text { color: var(--ink); }
+.neon-gradient { background: var(--primary); }
+.neon-border { border: 1px solid var(--hairline); background: var(--canvas-soft); }
+
+/* ---------------------------------------------------------------------------
+   Forms
+--------------------------------------------------------------------------- */
 input, textarea, select {
-  background: #0A0B10 !important;
-  border: 1px solid rgba(255,255,255,0.10) !important;
-  color: #fff !important;
+  background: var(--canvas) !important;
+  border: 1px solid var(--hairline-strong) !important;
+  color: var(--ink) !important;
+  border-radius: 6px;
+  font-size: 14px;
+  min-height: 36px;
 }
+input::placeholder, textarea::placeholder { color: var(--ink-faint) !important; }
 input:focus, textarea:focus, select:focus {
   outline: none !important;
-  border-color: rgba(0, 229, 255, 0.5) !important;
-  box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.15) !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.2) !important;
+}
+input[type="checkbox"] { min-height: 0; accent-color: var(--primary); }
+
+/* Date and time pickers.
+   The glyph is drawn here rather than tinted, because Chrome's own icon
+   already flips light under `color-scheme: dark` — an invert filter on top
+   of that turned it black again, invisible on a black field. Supplying a
+   background-image replaces the native glyph outright, so it looks the same
+   whatever the browser decides to do. */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 1;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-left: 4px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 16px 16px;
+  border-radius: 3px;
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1a1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='5' width='18' height='16' rx='2'/><path d='M16 3v4M8 3v4M3 11h18'/></svg>");
+}
+input[type="time"]::-webkit-calendar-picker-indicator {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1a1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M12 7v5l3 2'/></svg>");
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover {
+  background-color: var(--canvas-raised);
 }
 
-.role-manager { background: rgba(217, 70, 239, 0.10); color: #e879f9; border: 1px solid rgba(217, 70, 239, 0.3); }
-.role-supervisor { background: rgba(139, 92, 246, 0.10); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.3); }
-.role-cashier { background: rgba(6, 182, 212, 0.10); color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.3); }
-.role-floor-assistant { background: rgba(59, 130, 246, 0.10); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
-.role-stocker { background: rgba(16, 185, 129, 0.10); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+/* ---------------------------------------------------------------------------
+   Status
+   The one place colour is allowed to shout, in severity order.
+--------------------------------------------------------------------------- */
+.status-danger {
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-hairline);
+  color: var(--danger);
+  border-radius: 12px;
+}
+.status-warn {
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-hairline);
+  color: var(--warn);
+  border-radius: 12px;
+}
 
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline);
+  background: var(--canvas-raised);
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+.pill-danger { background: var(--danger-soft); border-color: var(--danger-hairline); color: var(--danger); }
+.pill-warn { background: var(--warn-soft); border-color: var(--warn-hairline); color: var(--warn); }
+
+/* ---------------------------------------------------------------------------
+   Role badges
+   Colour encodes SENIORITY, not identity, so it reads as one ink ramp rather
+   than five unrelated hues — brightest is most senior. The prototype used
+   five 10%-opacity colours that were both low-contrast and unrelated to the
+   hierarchy the solver actually uses. Emerald never appears here; it belongs
+   to actions.
+--------------------------------------------------------------------------- */
+.role-assistant-manager,
+.role-customer-service-manager,
+.role-ambient-manager,
+.role-duty-manager,
+.role-manager {
+  background: #ededed; color: #0a0a0a; border: 1px solid #ededed;
+}
+.role-supervisor {
+  background: #4a4a4a; color: #f5f5f5; border: 1px solid #5c5c5c;
+}
+.role-goods-inwards,
+.role-cashier {
+  background: #303030; color: #d4d4d4; border: 1px solid #454545;
+}
+.role-floor-assistant,
+.role-stocker {
+  background: transparent; color: #a1a1a1; border: 1px solid #454545;
+}
+/* Night shifts are the hardest slot to fill and the easiest to overlook, so
+   they get the one recessed surface — visibly "after hours" without
+   introducing a hue. */
+.role-night-shift {
+  background: #000000; color: #9a9a9a; border: 1px solid #454545;
+}
+
+.scroll-thin::-webkit-scrollbar { height: 10px; width: 10px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: var(--hairline-strong); border-radius: 8px; }
+.scroll-thin::-webkit-scrollbar-track { background: var(--canvas); }
+
+/* ---------------------------------------------------------------------------
+   Print
+   The rota gets pinned to a wall, so paper is always white regardless of what
+   the screen is doing. Scoped to the print block only — none of this leaks
+   into the app.
+--------------------------------------------------------------------------- */
 @media print {
   @page { size: A4 landscape; margin: 10mm; }
+
   .no-print, aside, nav { display: none !important; }
-  body, html, #root { background: white !important; color: black !important; }
   main { padding: 0 !important; }
-  #roster-print { background: white !important; border: none !important; box-shadow: none !important; padding: 0 !important; overflow: visible !important; transform: scale(var(--print-scale, 1)); transform-origin: top left; width: calc(100% / var(--print-scale, 1)); }
-  #roster-print .glass, #roster-print .glass-solid { background: white !important; border-color: #ddd !important; color: black !important; }
-  #roster-print button { background: #f7f7f9 !important; color: black !important; border: 1px solid #ddd !important; page-break-inside: avoid; }
-  #roster-print .grid { display: grid !important; }
+  html, body, #root { background: #ffffff !important; color: #111111 !important; }
+
+  #roster-print {
+    background: #ffffff !important;
+    border: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    transform: scale(var(--print-scale, 1));
+    transform-origin: top left;
+    width: calc(100% / var(--print-scale, 1));
+  }
+  #roster-print * { color: #111111 !important; }
+  #roster-print .card,
+  #roster-print .card-soft,
+  #roster-print .glass,
+  #roster-print .glass-solid,
+  #roster-print button { background: #ffffff !important; border-color: #cccccc !important; }
   #roster-print img { display: none !important; }
-  #roster-print .font-mono, #roster-print [class*="text-cyan"], #roster-print [class*="text-white"] { color: black !important; }
-  #roster-print .print-header { border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 12px; }
-  #roster-print .role-manager, #roster-print .role-supervisor, #roster-print .role-cashier,
-  #roster-print .role-floor-assistant, #roster-print .role-stocker { background: #f0f4ff !important; color: #111 !important; border-color: #ccd !important; }
+  #roster-print .grid { display: grid !important; }
+  #roster-print button { page-break-inside: avoid; }
+  #roster-print [class*="role-"] { background: #f4f4f4 !important; border-color: #cccccc !important; }
+  #roster-print .print-header {
+    border-bottom: 2px solid #111111;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+  }
 }

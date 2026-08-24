@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api, fmtHours, DAY_LABELS } from "@/lib/api";
+import { api, fmtHours, fmtMoney, DAY_LABELS } from "@/lib/api";
 import { Archive, FileDown, Printer } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -27,7 +27,7 @@ export default function PastRosters() {
             <li key={r.roster_id} className="glass rounded-2xl p-5 flex items-center justify-between flex-wrap gap-3">
               <div>
                 <div className="text-sm font-medium">Week of <span className="font-mono">{r.week_start}</span> · <span className="neon-text">{r.version}</span></div>
-                <div className="text-xs text-white/50 mt-1 font-mono">{fmtHours(r.total_hours)} · €{r.labor_cost?.toFixed?.(0) || 0} · score {r.compliance_score}{r.approved ? " · approved" : ""}</div>
+                <div className="text-xs text-white/50 mt-1 font-mono">{fmtHours(r.total_hours)} · {fmtMoney(r.labor_cost)} · score {r.compliance_score}{r.approved ? " · approved" : ""}</div>
               </div>
               <Link to={`/roster?week=${r.week_start}`} className="text-xs px-4 py-2 rounded-full glass-solid hover:border-white/20">Open</Link>
             </li>

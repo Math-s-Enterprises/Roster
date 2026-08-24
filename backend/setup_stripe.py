@@ -1,54 +1,100 @@
-"""Idempotent Stripe catalog setup for Roster AI."""
-import os, stripe
-from dotenv import load_dotenv
+"""Create the Stripe product catalogue.
+
+Run once against a Stripe account (test or live):
+
+    python setup_stripe.py
+
+Idempotent — it looks for existing products and prices before creating
+anything, so re-running is safe. Prices in Stripe are immutable, so changing
+an amount here deactivates the old price and creates a new one.
+"""
+import os
+import sys
 from pathlib import Path
 
-load_dotenv(Path(__file__).parent / ".env")
-stripe.api_key = os.environ["STRIPE_SECRET_KEY"]
+import stripe
+from dotenv import load_dotenv
 
+load_dotenv(Path(__file__).parent / ".env")
+
+api_key = os.environ.get("STRIPE_SECRET_KEY")
+if not api_key:
+    sys.exit("STRIPE_SECRET_KEY is not set in backend/.env — nothing to do.")
+stripe.api_key = api_key
+
+# `lookup_key` is what the app asks for at checkout, so these strings are a
+# contract with the frontend's pricing page. Amounts are in the currency's
+# smallest unit (cents).
 CATALOG = [
     {
-        "emergent_product_id": "roster_pro",
-        "name": "Roster AI · Pro",
-        "tax_code": "txcd_10103001",  # SaaS
+        "product_key": "roster_pro",
+        "name": "Roster · Pro",
+        "tax_code": "txcd_10103001",  # SaaS — business use
         "prices": [
             {"lookup_key": "roster_pro_monthly", "amount": 1900, "currency": "usd", "interval": "month"},
-            {"lookup_key": "roster_pro_yearly",  "amount": 19000, "currency": "usd", "interval": "year"},
+            {"lookup_key": "roster_pro_yearly", "amount": 19000, "currency": "usd", "interval": "year"},
         ],
     },
 ]
 
 
 def get_or_create_product(entry):
-    for p in stripe.Product.list(active=True).auto_paging_iter():
-        if p.to_dict().get("metadata", {}).get("emergent_product_id") == entry["emergent_product_id"]:
-            return p
-    return stripe.Product.create(
+    for product in stripe.Product.list(active=True).auto_paging_iter():
+        if product.metadata.get("product_key") == entry["product_key"]:
+            print(f"Product '{entry['name']}' already exists ({product.id})")
+            return product
+
+    product = stripe.Product.create(
         name=entry["name"],
         tax_code=entry.get("tax_code"),
-        metadata={"managed_by": "emergent", "emergent_product_id": entry["emergent_product_id"]},
+        metadata={"product_key": entry["product_key"]},
     )
+    print(f"Created product '{entry['name']}' ({product.id})")
+    return product
 
 
 def ensure_prices(product, prices):
-    for p in prices:
-        existing = stripe.Price.list(lookup_keys=[p["lookup_key"]], active=True, limit=1).data
-        if existing and (existing[0].unit_amount != p["amount"] or existing[0].currency != p["currency"]):
-            stripe.Price.modify(existing[0].id, active=False)
-            existing = []
-        if not existing:
-            kwargs = dict(product=product.id, unit_amount=p["amount"], currency=p["currency"],
-                          lookup_key=p["lookup_key"], transfer_lookup_key=True)
-            if p.get("interval"):
-                kwargs["recurring"] = {"interval": p["interval"]}
-            stripe.Price.create(**kwargs)
-            print(f"Created price {p['lookup_key']} ({p['amount']} {p['currency']})")
-        else:
-            print(f"Price {p['lookup_key']} already exists")
+    for spec in prices:
+        existing = stripe.Price.list(
+            lookup_keys=[spec["lookup_key"]], active=True, limit=1
+        ).data
+
+        if existing:
+            current = existing[0]
+            unchanged = (
+                current.unit_amount == spec["amount"]
+                and current.currency == spec["currency"]
+            )
+            if unchanged:
+                print(f"  Price '{spec['lookup_key']}' is already correct")
+                continue
+            # Stripe prices are immutable: retire the old one and make a new
+            # one carrying the same lookup key.
+            stripe.Price.modify(current.id, active=False)
+            print(f"  Deactivated outdated price '{spec['lookup_key']}'")
+
+        kwargs = {
+            "product": product.id,
+            "unit_amount": spec["amount"],
+            "currency": spec["currency"],
+            "lookup_key": spec["lookup_key"],
+            "transfer_lookup_key": True,
+        }
+        if spec.get("interval"):
+            kwargs["recurring"] = {"interval": spec["interval"]}
+
+        stripe.Price.create(**kwargs)
+        amount = spec["amount"] / 100
+        period = f"/{spec['interval']}" if spec.get("interval") else ""
+        print(f"  Created price '{spec['lookup_key']}': {amount:.2f} {spec['currency'].upper()}{period}")
 
 
 if __name__ == "__main__":
+    mode = "TEST" if api_key.startswith("sk_test_") else "LIVE"
+    print(f"Configuring Stripe catalogue in {mode} mode\n")
+
     for entry in CATALOG:
-        prod = get_or_create_product(entry)
-        ensure_prices(prod, entry["prices"])
-    print("Catalog ready.")
+        product = get_or_create_product(entry)
+        ensure_prices(product, entry["prices"])
+
+    print("\nCatalogue ready.")
