@@ -6,6 +6,9 @@ React 19 + CRA/craco frontend. Built against a real shop: Top Oil South Link,
 
 Read this before changing anything. Most of it was learned the hard way.
 
+See also `feedback.md` — how to work on this project, and the mistakes already
+made so they are not made again.
+
 ---
 
 ## 1. Rules that are never relaxed
