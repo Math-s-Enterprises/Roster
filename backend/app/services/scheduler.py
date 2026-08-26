@@ -22,6 +22,7 @@ a legally-eligible employee; that outcome is a staffing problem and is
 surfaced as a CRITICAL issue for a human to resolve.
 """
 import math
+import random
 import re
 import uuid
 from collections import Counter, defaultdict
@@ -31,6 +32,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.services import availability as avail
 from app.services import hierarchy
+from app.services import slot_owners
 
 DAYS: Tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
@@ -79,6 +81,11 @@ MIN_REST_HOURS = 11.0
 
 # Distinguishes "not computed yet" from "computed, and the answer is None".
 _UNSET = object()
+
+# Sorts after anybody who has actually worked a slot. Must not be derived
+# from how many people are ranked — with one ranked person that number is 1,
+# which ties them with everybody who has never worked it.
+_UNRANKED_FOR_SLOT = 9_999
 
 
 # ---------------------------------------------------------------------------
@@ -380,7 +387,30 @@ class _RosterBuilder:
         demand: Optional[Any] = None,
         history_rosters: Optional[List[Dict[str, Any]]] = None,
         locked_shifts: Optional[List[Dict[str, Any]]] = None,
+        seed: Optional[int] = None,
+        only_day: Optional[str] = None,
     ):
+        # Re-solve ONE day and leave the rest of the week exactly as it is.
+        #
+        # "Two people called in sick on Wednesday" does not want the whole
+        # week rearranged — every other day that moves is a change the manager
+        # has to read, understand and mostly undo. The other days are handed
+        # in as locked shifts, so their hours still count against everybody's
+        # weekly cap and five-day limit; this flag additionally stops the fill
+        # passes adding anything new to them.
+        self.only_day = only_day
+        # A seed makes Regenerate offer a DIFFERENT arrangement of the shifts
+        # nobody has a claim on, while leaving settled shifts alone. Without
+        # one the solve is exactly as deterministic as it always was.
+        #
+        # Regenerate used to be a button that provably did nothing: same
+        # inputs, same roster, so pressing it sixteen times saved sixteen
+        # identical weeks. But the fix is not to shuffle everything — a
+        # reshuffled roster hands back the 06:00 opening somebody has worked
+        # for months, and every one of those is an edit the manager has to
+        # undo. Only genuinely arbitrary choices are varied. See _pick_for_slot.
+        self.rng = random.Random(seed) if seed is not None else None
+
         # Shifts the manager placed by hand. Laid down before anything else
         # and never moved, lengthened or trimmed — the whole point of
         # rebalancing is that your decisions survive and everybody else
@@ -411,6 +441,13 @@ class _RosterBuilder:
         # Shift history, for spotting assignments unlike anything a person
         # has worked before. Built once — the check runs thousands of times.
         self.shift_history = avail.build_shift_history(history_rosters or [])
+        # Who normally works each shift. Built once per solve — it is asked
+        # for every slot on every day.
+        # Leavers keep their history but lose their claim: see build_owners.
+        self.slot_owners = slot_owners.build_owners(
+            history_rosters or [],
+            {e["employee_id"] for e in employees if avail.is_active(e)},
+        )
 
         # Why each employee ended up with no shifts. Every active employee
         # must be accounted for, so "not rostered" always has a stated
@@ -1167,8 +1204,14 @@ class _RosterBuilder:
                 continue
             if employee_id not in self.employees_by_id:
                 continue
+            # `extra` has to survive the round trip. An extra shift comes back
+            # in as a locked one, and if it were laid down as an ordinary pin
+            # it would start cancelling a demand slot — turning "this person
+            # AS WELL AS the usual cover" into "this person INSTEAD OF it",
+            # which is the opposite of what the manager asked for.
             self._record_shift(
-                employee_id, day, shift["start"], shift["end"], pinned=True,
+                employee_id, day, shift["start"], shift["end"],
+                pinned=True, **({"extra": True} if shift.get("extra") else {}),
             )
             assigned_today.add(employee_id)
 
@@ -1416,6 +1459,72 @@ class _RosterBuilder:
         # shortfall so an over-long shift is not preferred for its own sake.
         return -min(shortfall, span)
 
+    # How far a placed shift's start may sit from a slot's and still be
+    # taken as filling it. An hour covers "pinned at 06:00 against an
+    # 06:00 slot" and "07:30 against 07:00", without letting an afternoon
+    # shift cancel the morning opening.
+    SLOT_MATCH_TOLERANCE_MINUTES = 60
+
+    def _history_rank(
+        self, eligible: List[Dict[str, Any]], day: str, start: str, end: str
+    ) -> Dict[str, int]:
+        """employee_id -> how strong their claim on this slot is, 0 = best.
+
+        Two tiers, matching what a manager does:
+
+          0        the owner — works this slot most of the time
+          1, 2…    whoever else actually covers it, most often first
+
+        Anybody with no history for the slot is absent from the map and sorts
+        last, so a shift with no settled pattern is decided exactly as before.
+        """
+        if not self.slot_owners:
+            return {}
+
+        ranks: Dict[str, int] = {}
+        available = {e["employee_id"] for e in eligible}
+
+        owner = slot_owners.owner_of(
+            self.slot_owners, day, start, end,
+        )
+        if owner and owner in available:
+            ranks[owner] = 0
+
+        # The usual person may be off. Falling back to seniority would hand a
+        # 06:00 opening to whoever ranks highest rather than to whoever
+        # actually opens when they are away.
+        position = 1
+        for employee_id in slot_owners.preference_order(
+            self.slot_owners, day, start, end
+        ):
+            if employee_id in available and employee_id not in ranks:
+                ranks[employee_id] = position
+                position += 1
+
+        return ranks
+
+    def _closest_placed(
+        self, placed: List[Dict[str, Any]], start: str, end: str
+    ) -> Optional[Dict[str, Any]]:
+        """The shift already on the floor that best answers this slot.
+
+        Nearest start wins; the finish only breaks ties. A person is either
+        there to open or they are not, and how long they stay is a separate
+        question the contract and hour-fitting passes deal with.
+        """
+        want_start, want_end = to_minutes(start), to_minutes(end)
+        best, best_key = None, None
+
+        for shift in placed:
+            gap = abs(to_minutes(shift["start"]) - want_start)
+            if gap > self.SLOT_MATCH_TOLERANCE_MINUTES:
+                continue
+            key = (gap, abs(to_minutes(shift["end"]) - want_end))
+            if best_key is None or key < best_key:
+                best, best_key = shift, key
+
+        return best
+
     def _staff_by_slots(
         self, day: str, date_iso: str, assigned_today: Set[str],
         open_m: int, close_m: int,
@@ -1440,22 +1549,96 @@ class _RosterBuilder:
         if not slots:
             return
 
-        # Fixed shifts and booked leave are already on the day. Anything they
-        # cover is a slot that no longer needs filling.
-        already = Counter(
-            (s["start"], s["end"]) for s in self.result.shifts
+        # Fixed shifts, pins and booked leave are already on the day. Anybody
+        # standing there is a slot that no longer needs filling.
+        #
+        # Matched on START time, not on the exact pair. Exact matching meant a
+        # pinned 06:00-14:00 did not cancel a 06:00-16:00 slot, so the solver
+        # sent a third person to a morning that runs two — and the manager
+        # deleted the person the solver had added because of their own pin.
+        # What matters for coverage is that somebody opens, not that they
+        # leave at the minute the learned shape says.
+        #
+        # Extra staff are excluded: they are deliberately ON TOP of the
+        # requirement, so they must not cancel anything.
+        placed = [
+            s for s in self.result.shifts
             if s["day"] == day and s.get("start") and s.get("end")
-        )
+            and not s.get("extra")
+        ]
+
+        # Two passes, because two slots can share a start time and the wrong
+        # one gets cancelled otherwise.
+        #
+        # Monday runs 06:00-16:00 and 06:00-14:00. If the manager is already
+        # standing on his own 06:00-14:00, matching purely by proximity lets
+        # him cancel the 06:00-16:00 slot instead — and the person who owns
+        # THAT one loses her shift to a slot she does not work.
+        #
+        # So: anybody standing on a slot they own claims it first. Whatever
+        # is left is matched by nearest start.
+        claimed = set()
+        for index, (start, end) in enumerate(slots):
+            owner = slot_owners.owner_of(
+                self.slot_owners, day, start, end,
+            )
+            if owner is None:
+                continue
+            # They must actually be standing there. Owning Monday's opening
+            # does not cancel it when the manager has pinned you to the
+            # afternoon — that would leave the shop unopened.
+            theirs = next(
+                (
+                    s for s in placed
+                    if s["employee_id"] == owner
+                    and abs(to_minutes(s["start"]) - to_minutes(start))
+                    <= self.SLOT_MATCH_TOLERANCE_MINUTES
+                ),
+                None,
+            )
+            if theirs is not None:
+                placed.remove(theirs)
+                claimed.add(index)
+
         outstanding = []
-        for start, end in slots:
-            if already[(start, end)]:
-                already[(start, end)] -= 1
+        for index, (start, end) in enumerate(slots):
+            if index in claimed:
+                continue
+            match = self._closest_placed(placed, start, end)
+            if match is not None:
+                # One placed shift cancels at most one slot, so a genuine
+                # double-up on the same opening still gets filled.
+                placed.remove(match)
                 continue
             outstanding.append((start, end))
+
+        # Hold each owner back from OTHER slots while their own is unfilled.
+        #
+        # Slots are filled earliest first, so an owner can be spent on an
+        # earlier slot before their own comes up: Martin owns 10:00-19:00, but
+        # 06:00-14:00 is offered first, its owner was on leave, and Martin was
+        # the best of who was left — so he took it and his own shift went to
+        # somebody else. Reordering the slots would fix it and break something
+        # worse, because the opener is the hardest slot to fill and must keep
+        # first refusal. Reserving the person instead leaves the order alone.
+        #
+        # Only ONE reservation each: nobody works two shifts in a day, so if
+        # somebody owns two slots the earlier one is the one held for them.
+        reservations: Dict[str, Tuple[str, str]] = {}
+        for shape in outstanding:
+            owner = slot_owners.owner_of(self.slot_owners, day, shape[0], shape[1])
+            if owner is not None:
+                reservations.setdefault(owner, shape)
+        unfilled = set(outstanding)
 
         for start, end in outstanding:
             segment = Segment(start=start, end=end, min_staff=1)
             hours = [h for d, h in self.hours_covered(day, start, end) if d == day]
+            unfilled.discard((start, end))
+            held = {
+                eid for eid, shape in reservations.items()
+                if shape != (start, end) and shape in unfilled
+            }
 
             best = None
             for relax in (False, True):
@@ -1466,14 +1649,55 @@ class _RosterBuilder:
                         open_m, close_m, relax_preferences=relax,
                     )
                 ]
+                # A reservation is a preference between candidates, never a
+                # reason to leave a shift empty. If holding people back empties
+                # the list, the slot in front of us wins — cover first.
+                if held:
+                    kept = [e for e in eligible if e["employee_id"] not in held]
+                    if kept:
+                        eligible = kept
                 if eligible:
                     span = shift_duration_minutes(start, end) / 60
-                    best = min(
-                        eligible,
-                        key=lambda e: (
+                    # The OWNER of a slot takes it, ahead of contract need.
+                    #
+                    # Contract need used to come first, and it swept the week.
+                    # _contract_need returns a negative number for any salaried
+                    # employee below their band, and zero for everybody else —
+                    # so while a full-timer is short they outrank the owner on
+                    # every slot they are eligible for. Monday is built first,
+                    # when every shortfall is still the whole contract, so
+                    # Monday took the worst of it: measured against the
+                    # reference shop, four settled shifts changed hands on one
+                    # day — the 06:00 opening its owner had worked for 14 of 24
+                    # weeks, and three others.
+                    #
+                    # The contract still gets filled, because 41 hours can be
+                    # reached from many combinations of shifts. It does not
+                    # need THAT slot, only enough slots — and _top_up_contracts
+                    # runs afterwards for anyone left short, with under_contract
+                    # reporting whoever it cannot reach. Taking the shift
+                    # somebody has opened every week for months buys nothing the
+                    # contract needs and costs the manager an edit.
+                    #
+                    # Only rank 0 — the owner — jumps contract need. Someone who
+                    # merely covers the slot sometimes does not: below, the
+                    # order is exactly as it was.
+                    history_rank = self._history_rank(eligible, day, start, end)
+
+                    def rank_of(e):
+                        return (
+                            0 if history_rank.get(e["employee_id"]) == 0 else 1,
                             self._contract_need(e, span),
+                            # UNRANKED, not len(ranks): with one ranked person
+                            # len() is 1, which tied them with everybody who
+                            # had never worked the slot and let ordinary
+                            # ranking decide after all.
+                            history_rank.get(e["employee_id"], _UNRANKED_FOR_SLOT),
                             self._rank_for_demand(e, f"{start}-{end}", day, hours),
-                        ),
+                        )
+
+                    best = self._pick_for_slot(
+                        eligible, rank_of, day, start, end,
                     )
                     if relax:
                         self._note_relaxed_preference(best, day)
@@ -1492,6 +1716,59 @@ class _RosterBuilder:
             finish = self._fit_length_to_contract(best, day, start, end)
             self._record_shift(best["employee_id"], day, start, finish)
             assigned_today.add(best["employee_id"])
+
+    # How far down the ranking a seeded regeneration may reach. Two means
+    # the usual pick and the next one or two behind them — people the manager
+    # would regard as equally reasonable for a shift nobody owns. Wider than
+    # that and Regenerate starts proposing the person who has covered the
+    # slot once against the person who covers it most weeks, which is not
+    # variety, it is a worse roster.
+    VARIATION_DEPTH = 2
+
+    def _pick_for_slot(self, eligible, rank_of, day: str, start: str, end: str):
+        """The best candidate — or, when regenerating, a near-equal one.
+
+        Without a seed this is exactly `min`, and the solver stays the
+        deterministic thing it has always been.
+
+        With a seed, three conditions all have to hold before anything varies:
+
+          * the slot has no owner. A settled shift is not a coin toss, and
+            handing Emma's opening to somebody else on a re-roll is an edit
+            the manager has to undo.
+          * the alternatives are no worse on CONTRACT need. Contract hours are
+            already being paid for and are not traded for variety.
+          * they are within VARIATION_DEPTH on preference. Somebody who has
+            covered the slot twice does not get equal billing with whoever
+            covers it most weeks.
+
+        Choice is weighted by standing, so the usual person stays the most
+        likely outcome — Regenerate offers a plausible alternative, not a
+        random one.
+        """
+        ordered = sorted(eligible, key=rank_of)
+        if self.rng is None or len(ordered) < 2:
+            return ordered[0]
+
+        if slot_owners.owner_of(self.slot_owners, day, start, end) is not None:
+            return ordered[0]
+
+        top = rank_of(ordered[0])
+        # Same owner-tier and same contract need — anything else is not an
+        # equal alternative, whatever its preference rank.
+        pool = [
+            e for e in ordered
+            if rank_of(e)[:2] == top[:2]
+            and rank_of(e)[2] - top[2] <= self.VARIATION_DEPTH
+        ]
+        if len(pool) < 2:
+            return ordered[0]
+
+        # Front-loaded weights: first choice twice as likely as second, and
+        # so on. Over a few regenerations the manager sees real alternatives
+        # without the roster losing its shape.
+        weights = [1.0 / (index + 1) for index in range(len(pool))]
+        return self.rng.choices(pool, weights=weights, k=1)[0]
 
     def _fit_length_to_contract(
         self, employee: Dict[str, Any], day: str, start: str, end: str
@@ -1915,6 +2192,11 @@ class _RosterBuilder:
         """
         self._warn_on_oversubscribed_days()
         trading = self._trading_days()
+        # Every day is still SET UP — leave, pins and fixed shifts are applied
+        # across the week, so hours and rest gaps are counted against the real
+        # week rather than against one day in isolation. Only the filling is
+        # narrowed.
+        fill = [t for t in trading if self.only_day in (None, t[0])]
         # Shared so the coverage pass, which may place a shift on the
         # previous day, still respects one shift per person per day.
         assigned_by_day = self.assigned_by_day
@@ -1943,10 +2225,10 @@ class _RosterBuilder:
         # both supervisors used up, and the weekend with nobody senior at
         # all. Claiming one day at a time across the whole week first is what
         # a manager does before filling anything else in.
-        self._ensure_supervisory_cover(trading)
+        self._ensure_supervisory_cover(fill)
 
         # Pass 1 — demand.
-        for day, date_iso, open_m, close_m in trading:
+        for day, date_iso, open_m, close_m in fill:
             assigned_today = assigned_by_day[day]
 
             if self.demand is not None and self.demand.slots_for(day):
@@ -1964,7 +2246,7 @@ class _RosterBuilder:
         # Pass 2 — the coverage floor is a separate, non-negotiable
         # guarantee: the curve says "how many", this says "never zero".
         if self.demand is not None:
-            for day, date_iso, open_m, close_m in trading:
+            for day, date_iso, open_m, close_m in fill:
                 self._enforce_coverage_floor(
                     day, date_iso, assigned_by_day[day], open_m, close_m
                 )
@@ -1977,7 +2259,7 @@ class _RosterBuilder:
         # them beyond the usual shape, and the day is reported as busier
         # than normal so the decision is visible rather than silent.
         if self.demand is not None:
-            self._top_up_contracts(trading)
+            self._top_up_contracts(fill)
             # Then flex finish times, because a fifth shift of any available
             # length may overshoot while half an hour on an existing one
             # lands exactly.
@@ -2122,10 +2404,46 @@ class _RosterBuilder:
             if not seniors:
                 return  # the shop has nobody senior at all; nothing to place
 
-            # Their usual shapes first, so the fix looks like a normal shift.
+            # Their usual shapes first, so the fix looks like a normal shift —
+            # but a shape somebody else OWNS is tried last.
+            #
+            # This pass runs before the slot fill, so without that a manager
+            # would be dropped straight onto the opening that a floor
+            # assistant has worked every week for months, and ownership would
+            # never get a say. Senior cover is still guaranteed: an owned
+            # shape is only skipped while an unowned one will do.
+            # Where to put them, best first:
+            #
+            #   0  a shape one of the seniors already owns — their own shift
+            #   1  a shape nobody owns
+            #   2  somebody else's shift, weakest claim first
+            #
+            # This pass runs before the slot fill, so without an ordering a
+            # manager would be dropped onto whichever shape is most common —
+            # usually the opening that a floor assistant has worked every
+            # week for months. Senior cover is still guaranteed; it just
+            # takes the least disruptive place to stand.
+            senior_ids = {e["employee_id"] for e in seniors}
+
+            def placement_rank(pattern):
+                owner = slot_owners.owner_of(
+                    self.slot_owners, day, pattern.start, pattern.end,
+                )
+                if owner in senior_ids:
+                    return (0, -pattern.count)
+                if owner is None:
+                    return (1, -pattern.count)
+                return (
+                    2,
+                    slot_owners.ownership_strength(
+                        self.slot_owners, day, pattern.start, pattern.end,
+                    ),
+                    -pattern.count,
+                )
+
             patterns = sorted(
                 (p for p in (self.demand.patterns if self.demand else []) if p.covers()),
-                key=lambda p: p.count, reverse=True,
+                key=placement_rank,
             )
             assigned_today = self.assigned_by_day.setdefault(day, set())
             placed = False
@@ -2490,6 +2808,12 @@ class _RosterBuilder:
             return
 
         for day in DAYS:
+            # A frozen day is not re-solved, so it is not re-stretched either:
+            # the promise of a single-day rebalance is that nothing else moves,
+            # and half an hour on somebody's Friday finish is still a change
+            # the manager did not ask for.
+            if self.only_day not in (None, day):
+                continue
             previous = DAYS[(DAYS.index(day) - 1) % 7]
             for hour in self._open_hours(day):
                 required = self.demand.required(day, hour)
@@ -2615,6 +2939,8 @@ class _RosterBuilder:
                 s for s in self.result.shifts
                 if s["employee_id"] == employee_id and s.get("start") and s.get("end")
                 and not s.get("pinned")  # a pinned shift is not ours to resize
+                # Nor is a shift on a day we were told not to touch.
+                and self.only_day in (None, s.get("day"))
                 and not (s.get("paid_holiday") or s.get("unpaid_holiday") or s.get("sick"))
             ]
             if not mine:
@@ -2852,8 +3178,15 @@ def solve_roster(
     demand: Optional[Any] = None,
     history_rosters: Optional[List[Dict[str, Any]]] = None,
     locked_shifts: Optional[List[Dict[str, Any]]] = None,
+    seed: Optional[int] = None,
+    only_day: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build a week's roster. Pure function — same inputs, same output.
+
+    `seed` varies the choices that are genuinely arbitrary: who takes a slot
+    nobody owns, when several people are equally entitled to it. The same seed
+    always gives the same roster, so a version can be reproduced. Settled
+    shifts do not move whatever the seed is.
 
     `demand` is an optional DemandProfile. With one, the solver fills to a
     learned hourly staffing curve using the shop's own shift patterns. Without
@@ -2862,6 +3195,6 @@ def solve_roster(
     """
     builder = _RosterBuilder(
         shop, employees, holidays, fixed_shifts, ai_rules, week_start,
-        weights or {}, demand, history_rosters, locked_shifts,
+        weights or {}, demand, history_rosters, locked_shifts, seed, only_day,
     )
     return builder.solve().to_dict()

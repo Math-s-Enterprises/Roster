@@ -1,5 +1,6 @@
 """Roster generation, editing, approval, dispatch and import."""
 import logging
+import random
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List
@@ -9,8 +10,8 @@ from fastapi import APIRouter, HTTPException, Query, status
 from collections import Counter
 
 from app import config
-from app.models import RosterGenReq, RosterUpdate, SickReport
-from app.services import llm, mailer, sick_cover
+from app.models import ExtraShiftReq, RosterGenReq, RosterUpdate, SickReport
+from app.services import corrections, llm, mailer, sick_cover
 from app.services.demand import build_profile
 from app.services.hierarchy import sort_employees
 from app.services.roster_validation import validate_shifts
@@ -18,11 +19,13 @@ from app.services.learning import compute_weights
 from app.services.scheduler import (
     ABSOLUTE_MAX_SHIFT_HOURS,
     DAYS,
+    MAX_WORKING_DAYS,
     break_minutes,
     paid_hours,
     shift_duration_minutes,
     shift_paid_hours,
     solve_roster,
+    violates_minor_curfew,
 )
 from app.services.shop_service import log_activity
 from app.tenancy import ShopScope, CurrentScope
@@ -191,10 +194,29 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
             "department": payload.department,
             "archived": {"$ne": True},
         })
+        # Extra shifts are held exactly like pins. They are a decision the
+        # manager made for a reason the app cannot see — a delivery, a
+        # renovation — and a rebalance that quietly removed them would be
+        # removing the very thing they came here to add.
         locked_shifts = [
             s for s in (current or {}).get("shifts", [])
-            if s.get("pinned") and s.get("start") and s.get("end")
+            if (s.get("pinned") or s.get("extra"))
+            and s.get("start") and s.get("end")
         ]
+
+        # Rebalancing ONE day freezes the other six by handing every shift on
+        # them in as locked. Locking rather than skipping is deliberate:
+        # those hours still count against weekly caps, the five-day limit and
+        # the rest gap, so two extra hours on Wednesday cannot quietly push
+        # somebody over their week.
+        if payload.only_day:
+            already = {id(s) for s in locked_shifts}
+            locked_shifts += [
+                s for s in (current or {}).get("shifts", [])
+                if s.get("day") != payload.only_day
+                and s.get("start") and s.get("end")
+                and id(s) not in already
+            ]
 
     employee_ids = {e["employee_id"] for e in employees}
     holidays = await scope.holidays.find(limit=1000)
@@ -218,10 +240,22 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
     # is consistent from generation through to display and export.
     employees = sort_employees(employees, shop)
 
+    # A fresh Generate offers a different arrangement each time; a Rebalance
+    # does not. Rebalancing exists to rearrange the week around a decision the
+    # manager just made, so anything it changes beyond that is noise they have
+    # to read past.
+    #
+    # Only genuinely arbitrary choices vary — a slot somebody owns is theirs
+    # whatever the seed. See _pick_for_slot.
+    #
+    # The seed is stored on the roster: a version that cannot be reproduced
+    # cannot be explained when the manager asks why somebody got a shift.
+    seed = None if payload.keep_pinned else random.randrange(1_000_000_000)
+
     result = solve_roster(
         shop, employees, holidays, fixed_shifts, rules, payload.week_start,
         weights, demand, history_rosters=approved,
-        locked_shifts=locked_shifts,
+        locked_shifts=locked_shifts, seed=seed, only_day=payload.only_day,
     )
 
     # The narrative summary is decoration on a complete result. If the model
@@ -243,7 +277,13 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
         "roster_id": f"rst_{uuid.uuid4().hex[:12]}",
         "week_start": payload.week_start,
         "version": _next_version(previous),
+        "seed": seed,
         **result,
+        # A frozen copy of what the solver proposed, never touched by edits.
+        # Editing overwrites `shifts` in place, so without this the manager's
+        # corrections are destroyed the moment they touch the roster — and
+        # those corrections are the most useful signal the product has.
+        "generated_shifts": [dict(s) for s in result["shifts"]],
         "ai_summary": ai_summary,
         "approved": False,
         "department": payload.department,
@@ -574,12 +614,27 @@ async def approve_roster(
             "archived_at": _now(),
         })
 
+    # What the manager changed about the solver's proposal. Computed at the
+    # moment of approval, because that is when their decisions are final —
+    # and stored rather than derived later, so it survives the roster being
+    # edited again through the sick-cover route.
+    changes = corrections.diff_roster(
+        roster.get("generated_shifts") or [], roster.get("shifts") or []
+    )
+
     await scope.rosters.update_one({"roster_id": roster_id}, {
         "approved": True,
         "approved_at": _now(),
         # Recorded on the roster, so a week that went out with known gaps
         # says so afterwards rather than looking like a clean approval.
         "approved_with_gaps": len(critical) if critical else 0,
+        "corrections": changes,
+        # The number the product exists to reduce. Zero means the manager
+        # approved what the solver proposed, unchanged.
+        "edit_count": corrections.edit_count(changes),
+        # Rosters generated before the snapshot existed cannot be compared,
+        # so they are marked rather than counted as a perfect zero.
+        "corrections_measurable": bool(roster.get("generated_shifts")),
     })
     await log_activity(
         scope.shop_id, "roster_approved",
@@ -847,6 +902,124 @@ async def undo_sick(
         + (f" — {covered} no longer covering" if covered else ""),
     )
     return {"ok": True, "cover_removed": len(dropped)}
+
+
+@router.post("/rosters/{roster_id}/extra")
+async def add_extra_shift(
+    roster_id: str, payload: ExtraShiftReq, scope: ShopScope = CurrentScope
+):
+    """Roster somebody ABOVE the usual level, deliberately.
+
+    A delivery, a renovation, an unusually busy Saturday. This is the exact
+    inverse of pinning: a pin says "*this* person fills that slot", an extra
+    says "this person *as well as* the slots". So an extra shift never
+    cancels one, and the normal cover is still built underneath it.
+
+    What still applies: the hours are real, so they count against the weekly
+    cap, the contract and the five-day limit — an extra shift that quietly
+    created a sixth working day would be a trap. The legal limits are not the
+    manager's to waive here either; that is what the sick-cover flow is for,
+    where an override is named and recorded.
+    """
+    roster = await scope.rosters.find_one({"roster_id": roster_id})
+    if not roster:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such roster.")
+    if roster.get("approved"):
+        raise HTTPException(status.HTTP_409_CONFLICT, {
+            "message": f"Week of {roster['week_start']} is approved.",
+            "reasons": ["Unapprove it first, or use the sick-cover flow for "
+                        "a same-day change."],
+        })
+
+    employees = {e["employee_id"]: e for e in await scope.employees.find(limit=1000)}
+    person = employees.get(payload.employee_id)
+    if not person:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such employee.")
+
+    shifts = list(roster.get("shifts", []))
+    span = shift_duration_minutes(payload.start, payload.end) / 60
+    reasons: List[str] = []
+
+    if violates_minor_curfew(person, payload.start, payload.end):
+        reasons.append(
+            f"{person['name']} is under 18 — no work before 08:00 or after 19:00."
+        )
+    if span > ABSOLUTE_MAX_SHIFT_HOURS:
+        reasons.append(
+            f"{span:.1f}h is over the {ABSOLUTE_MAX_SHIFT_HOURS}h maximum for one shift."
+        )
+    same_day = [
+        s for s in shifts
+        if s.get("employee_id") == payload.employee_id
+        and s.get("day") == payload.day
+    ]
+    if any(s.get("paid_holiday") or s.get("unpaid_holiday") for s in same_day):
+        reasons.append(f"{person['name']} has booked leave on {payload.day}.")
+    clashing = [
+        s for s in same_day
+        if s.get("start") and s.get("end")
+        and sick_cover._overlaps(payload.start, payload.end, s["start"], s["end"])
+    ]
+    if clashing:
+        reasons.append(
+            f"{person['name']} is already working "
+            f"{clashing[0]['start']}-{clashing[0]['end']} on {payload.day}."
+        )
+
+    worked_days = {
+        s["day"] for s in shifts
+        if s.get("employee_id") == payload.employee_id and s.get("start")
+        and not (s.get("paid_holiday") or s.get("unpaid_holiday") or s.get("sick"))
+    }
+    if payload.day not in worked_days and len(worked_days) >= MAX_WORKING_DAYS:
+        reasons.append(
+            f"{person['name']} is already on {len(worked_days)} days — a sixth "
+            f"would break the five-day limit."
+        )
+
+    if reasons:
+        raise HTTPException(status.HTTP_409_CONFLICT, {
+            "message": f"{person['name']} cannot work {payload.start}-{payload.end} "
+                       f"on {payload.day}.",
+            "reasons": reasons,
+        })
+
+    shifts.append({
+        "shift_id": f"sh_{uuid.uuid4().hex[:8]}",
+        "employee_id": payload.employee_id,
+        "day": payload.day,
+        "start": payload.start,
+        "end": payload.end,
+        "span_hours": round(span, 2),
+        "break_minutes": break_minutes(span),
+        "paid_hours": round(paid_hours(payload.start, payload.end), 2),
+        "fixed": False,
+        # Both flags. `extra` keeps it off the demand slots; `pinned` keeps a
+        # rebalance from moving the person out from under it.
+        "extra": True,
+        "pinned": True,
+        "extra_reason": payload.reason,
+    })
+
+    rates = {e: emp.get("hourly_rate", 0) for e, emp in employees.items()}
+    await scope.rosters.update_one({"roster_id": roster_id}, {
+        "shifts": shifts,
+        "labor_cost": sum(
+            shift_paid_hours(s) * rates.get(s["employee_id"], 0)
+            for s in shifts if not (s.get("unpaid_holiday") or s.get("sick"))
+        ),
+        "total_hours": sum(
+            shift_paid_hours(s) for s in shifts
+            if not (s.get("unpaid_holiday") or s.get("sick") or s.get("paid_holiday"))
+        ),
+    })
+    await log_activity(
+        scope.shop_id, "shift_extra_added",
+        f"{person['name']} added as extra cover on {payload.day} "
+        f"{payload.start}-{payload.end}"
+        + (f" — {payload.reason}" if payload.reason else ""),
+    )
+    return {"ok": True, "shifts": shifts}
 
 
 @router.post("/rosters/{roster_id}/unapprove")

@@ -340,6 +340,27 @@ class RosterGenReq(BaseModel):
     # Rebalance rather than start over: hold the shifts the manager placed by
     # hand and re-solve everyone else around them.
     keep_pinned: bool = False
+    # Re-solve ONE day and leave the other six exactly as they are. Their
+    # hours still count against weekly caps and the five-day limit — this
+    # narrows what may be changed, not what is taken into account.
+    only_day: Optional[DayKey] = None
+
+
+class CorrectionDecision(BaseModel):
+    """Accepting or refusing one learned suggestion."""
+    signature: str = Field(min_length=1, max_length=200)
+
+
+class ExtraShiftReq(BaseModel):
+    """Somebody rostered above the usual level for a known reason."""
+    employee_id: str
+    day: DayKey
+    start: str
+    end: str
+    reason: str = Field("", max_length=200)
+
+    _v_start = field_validator("start")(_validate_hhmm)
+    _v_end = field_validator("end")(_validate_hhmm)
 
 
 class ShiftIn(BaseModel):
@@ -361,6 +382,12 @@ class ShiftIn(BaseModel):
     # Set by hand and held through a rebalance. Sent explicitly as False to
     # release one, so the solver may move that person again.
     pinned: Optional[bool] = None
+    # Deliberately ON TOP of normal staffing — a delivery, a renovation, an
+    # unusually busy Saturday. The exact inverse of pinned: a pin says "THIS
+    # person fills that slot", an extra says "this person AS WELL AS the
+    # slots", so an extra shift never cancels one and is never reported as
+    # overstaffing.
+    extra: bool = False
 
     _v_start = field_validator("start")(lambda v: _validate_hhmm(v) if v else "")
     _v_end = field_validator("end")(lambda v: _validate_hhmm(v) if v else "")

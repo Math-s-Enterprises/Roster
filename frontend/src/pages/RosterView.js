@@ -6,7 +6,7 @@ import { Crown } from "lucide-react";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import jsPDF from "jspdf";
-import { Wand2, Send, Check, FileDown, Printer, AlertTriangle, RefreshCw, Mail, X, Sparkles, HelpCircle, UserX, ChevronUp, ChevronDown, Pin, Unlock } from "lucide-react";
+import { Wand2, Send, Check, FileDown, Printer, AlertTriangle, RefreshCw, Mail, X, Sparkles, HelpCircle, UserX, UserPlus, ChevronUp, ChevronDown, Pin, Unlock } from "lucide-react";
 
 export default function RosterView() {
   const { user } = useAuth();
@@ -29,6 +29,12 @@ export default function RosterView() {
   const [refused, setRefused] = useState(null);
   const [confirmUnapprove, setConfirmUnapprove] = useState(false);
   const [sickShift, setSickShift] = useState(null);
+  const [extraOpen, setExtraOpen] = useState(false);
+  // How many drafts this week has been through. Counted from the
+  // stored version rather than a local tally, so it survives a
+  // reload and is honest about what actually happened.
+  const attempts = Number(String(roster?.version || "v1.0")
+    .replace(/^v\d+\./, "")) + 1 || 1;
   const [undoSick, setUndoSick] = useState(null);
 
   const load = async () => {
@@ -110,19 +116,32 @@ export default function RosterView() {
    * you changed by hand are pinned; rebalancing holds them and re-solves
    * everyone else around them, so a small correction does not cost you the
    * rest of your edits.
+   *
+   * `onlyDay` narrows it to one day. "Two people are off on Wednesday" does
+   * not want the whole week rearranged — every other day that moves is
+   * something you have to read and mostly undo. The other six days are held
+   * exactly as they are, though their hours still count, so a change on
+   * Wednesday cannot push somebody over their week.
+   *
+   * Regenerate (no pins, no day) also varies the shifts nobody has a settled
+   * claim on, so pressing it twice offers genuinely different arrangements
+   * without handing back somebody's regular opening.
    */
-  const generate = async (keepPinned = false) => {
+  const generate = async (keepPinned = false, onlyDay = null) => {
     setGenerating(true);
     try {
       const r = await api.post("/roster/generate", {
         week_start: week, department, keep_pinned: keepPinned,
+        only_day: onlyDay,
       });
       setRoster(r.data);
       const held = (r.data.shifts || []).filter((s) => s.pinned).length;
       toast.success(
-        keepPinned
-          ? `Rebalanced around ${held} pinned shift${held === 1 ? "" : "s"}`
-          : `Generated ${r.data.version} · coverage ${r.data.compliance_score}`,
+        onlyDay
+          ? `${DAY_LABELS[onlyDay]} re-solved — the rest of the week is untouched`
+          : keepPinned
+            ? `Rebalanced around ${held} pinned shift${held === 1 ? "" : "s"}`
+            : `Generated ${r.data.version} · coverage ${r.data.compliance_score}`,
       );
       load();
     } catch (err) {
@@ -434,8 +453,12 @@ export default function RosterView() {
             </button>
           ) : (
             <>
-              {/* Rebalance is the safe one once you have made edits, so it
-                  takes the emerald and Regenerate steps back to an outline. */}
+              {/* Rebalance is the primary action once anything is pinned.
+                  Editing the tenth of a roster that is wrong keeps the other
+                  nine tenths AND tells the scheduler something; regenerating
+                  throws away both the attempt and the reason it was wrong.
+                  The cheap action should be the one that improves the
+                  product, so it gets the filled button. */}
               {pinnedCount > 0 && (
                 <button
                   data-testid="btn-rebalance"
@@ -446,6 +469,16 @@ export default function RosterView() {
                 >
                   {generating ? <RefreshCw size={14} className="animate-spin" /> : <Pin size={14} />}
                   Rebalance ({pinnedCount})
+                </button>
+              )}
+              {roster && (
+                <button
+                  data-testid="btn-extra"
+                  onClick={() => setExtraOpen(true)}
+                  className="btn btn-secondary"
+                  title="Roster somebody on top of the normal cover — a delivery, a renovation, an unusually busy day"
+                >
+                  <UserPlus size={14} /> Add extra
                 </button>
               )}
               <button
@@ -475,6 +508,30 @@ export default function RosterView() {
             </div>
           </div>
           <Link to="/pricing" className="btn btn-secondary">Upgrade</Link>
+        </div>
+      )}
+
+      {/* Said once, at the third draft of one week, and only while nothing is
+          pinned — with pins there is already a Rebalance button doing the
+          right thing and this would be nagging.
+
+          Deliberately not "regenerating is pointless". It is not: it offers a
+          different arrangement of the shifts nobody has a settled claim on.
+          But it starts from the same inputs, so it cannot fix a roster that
+          is wrong for a reason the scheduler does not know yet — and editing
+          is what tells it. */}
+      {roster && !roster.approved && attempts >= 3 && pinnedCount === 0 && (
+        <div className="card p-4 mb-6 no-print flex items-start gap-3">
+          <Sparkles size={15} className="mt-0.5 shrink-0" style={{ color: "var(--accent)" }} />
+          <div className="text-[13px]" style={{ color: "var(--ink-secondary)" }}>
+            <span style={{ color: "var(--ink)" }}>
+              This is draft {attempts} of the same week.
+            </span>{" "}
+            If a shift keeps coming out wrong, change that shift and press
+            Rebalance — the rest of the week is kept, and the scheduler learns
+            what you changed. Regenerating gives you a different arrangement,
+            but it starts from the same information.
+          </div>
         </div>
       )}
 
@@ -709,6 +766,23 @@ export default function RosterView() {
                           {dayGaps.length}h unfilled
                         </button>
                       )}
+                      {/* Re-solve just this day. Lives on the day header
+                          because the day is already the subject there — and
+                          it is hidden on an approved week, where nothing may
+                          change without unapproving first. */}
+                      {roster && !roster.approved && (
+                        <button
+                          type="button"
+                          data-testid={`rebalance-${d}`}
+                          disabled={generating}
+                          onClick={() => generate(true, d)}
+                          className="mt-1 text-[10px] no-print hover:underline block mx-auto disabled:opacity-40"
+                          style={{ color: "var(--ink-mute-2)" }}
+                          title={`Re-solve ${DAY_LABELS[d]} only — every other day stays exactly as it is`}
+                        >
+                          rebalance day
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -849,10 +923,16 @@ export default function RosterView() {
                                     {s.start}–{s.end}
                                   </span>
                                 )}
-                                {s.pinned && (
+                                {/* Extra outranks the pin as a label: every
+                                    extra shift is pinned too, and "pinned" is
+                                    the less interesting of the two facts. */}
+                                {s.extra ? (
+                                  <UserPlus size={10} className="shrink-0 mt-0.5"
+                                            style={{ color: "var(--accent)" }} />
+                                ) : s.pinned ? (
                                   <Pin size={10} className="shrink-0 mt-0.5"
                                        style={{ color: "var(--ink-mute)" }} />
-                                )}
+                                ) : null}
                                 {confirm && (
                                   <HelpCircle size={11} className="shrink-0 mt-0.5"
                                               style={{ color: "var(--warn)" }} />
@@ -862,6 +942,13 @@ export default function RosterView() {
                                 <div className="font-mono text-[11px] mt-0.5"
                                      style={{ color: "var(--ink-mute)" }}>
                                   {dur.toFixed(1)}h
+                                </div>
+                              )}
+                              {s.extra && (
+                                <div className="text-[10px] mt-1 truncate"
+                                     style={{ color: "var(--accent)" }}
+                                     title={s.extra_reason || "Extra cover"}>
+                                  Extra{s.extra_reason ? ` · ${s.extra_reason}` : ""}
                                 </div>
                               )}
                               {s.fixed && (
@@ -981,6 +1068,16 @@ export default function RosterView() {
           shift={undoSick}
           onClose={() => setUndoSick(null)}
           onDone={() => { setUndoSick(null); load(); }}
+        />
+      )}
+
+      {extraOpen && (
+        <ExtraStaffModal
+          rosterId={roster?.roster_id}
+          employees={emps}
+          week={week}
+          onClose={() => setExtraOpen(false)}
+          onDone={() => { setExtraOpen(false); load(); }}
         />
       )}
 
@@ -1611,6 +1708,176 @@ function DispatchModal({ roster, emps, onClose, onSend, sending, result }) {
             </ul>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+
+/**
+ * Roster somebody ABOVE the normal cover.
+ *
+ * The inverse of pinning, and the difference matters. Pinning says "*this*
+ * person fills that slot", so the solver places one fewer person. Adding
+ * somebody as extra says "this person *as well as* the usual cover", so the
+ * normal shifts are all still filled and they are on top.
+ *
+ * That is why this is its own action rather than a checkbox on the shift
+ * editor: clicking an empty cell and saving means "put them here", which
+ * pins. Choosing "Add extra" means something genuinely different, and the two
+ * should not look like the same gesture.
+ *
+ * The hours are real — they count against the weekly cap, the contract and
+ * the five-day limit — and the legal limits still apply. The server refuses
+ * with named reasons rather than this form guessing at them, because it is
+ * the only place that can see the whole week.
+ */
+function ExtraStaffModal({ rosterId, employees, week, onClose, onDone }) {
+  const [employeeId, setEmployeeId] = useState("");
+  const [day, setDay] = useState(DAYS[0]);
+  const [start, setStart] = useState("09:00");
+  const [end, setEnd] = useState("17:00");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [refused, setRefused] = useState(null);
+
+  const active = (employees || []).filter((e) => e.is_active !== false);
+  const person = active.find((e) => e.employee_id === employeeId);
+  const hours = shiftHours(start, end);
+
+  const submit = async () => {
+    if (!employeeId) { toast.error("Choose who is coming in"); return; }
+    setSaving(true);
+    setRefused(null);
+    try {
+      await api.post(`/rosters/${rosterId}/extra`, {
+        employee_id: employeeId, day, start, end, reason,
+      });
+      toast.success(
+        `${person?.name} added on ${DAY_LABELS[day]} — on top of the usual cover`,
+      );
+      onDone();
+    } catch (err) {
+      // A refusal carries structured reasons so they can be listed one per
+      // line. Rendering the object straight into JSX would crash the page.
+      const refusal = refusalReasons(err);
+      if (refusal) {
+        setRefused(refusal);
+        return;
+      }
+      toast.error(errorMessage(err, "Could not add the extra shift"));
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="max-w-md w-full card elevated p-8 relative" onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose} className="btn btn-ghost absolute top-3 right-3 p-2"><X size={16} /></button>
+
+        <div className="mb-6">
+          <div className="font-medium flex items-center gap-2">
+            <UserPlus size={15} style={{ color: "var(--accent)" }} /> Add extra staff
+          </div>
+          <div className="text-[13px] mt-1" style={{ color: "var(--ink-mute)" }}>
+            On top of the normal cover, not instead of it. The usual shifts are
+            still filled.
+          </div>
+        </div>
+
+        <label className="block mb-3">
+          <div className="text-[11px] mb-1" style={{ color: "var(--ink-mute)" }}>Who</div>
+          <select
+            data-testid="extra-employee"
+            value={employeeId}
+            onChange={(e) => setEmployeeId(e.target.value)}
+            className="w-full px-3 py-2"
+          >
+            <option value="">Choose someone…</option>
+            {active.map((e) => (
+              <option key={e.employee_id} value={e.employee_id}>
+                {e.name} · {e.role}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block mb-3">
+          <div className="text-[11px] mb-1" style={{ color: "var(--ink-mute)" }}>Day</div>
+          <select
+            data-testid="extra-day"
+            value={day}
+            onChange={(e) => setDay(e.target.value)}
+            className="w-full px-3 py-2"
+          >
+            {DAYS.map((d) => (
+              <option key={d} value={d}>
+                {DAY_LABELS[d]} · {fmtDayDate(dateForDay(week, d))}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <div className="text-[11px] mb-1" style={{ color: "var(--ink-mute)" }}>Start</div>
+            <input data-testid="extra-start" type="time" value={start}
+                   onChange={(e) => setStart(e.target.value)}
+                   className="w-full px-3 py-2 font-mono" />
+          </label>
+          <label className="block">
+            <div className="text-[11px] mb-1" style={{ color: "var(--ink-mute)" }}>End</div>
+            <input data-testid="extra-end" type="time" value={end}
+                   onChange={(e) => setEnd(e.target.value)}
+                   className="w-full px-3 py-2 font-mono" />
+          </label>
+        </div>
+
+        <label className="block mt-3">
+          <div className="text-[11px] mb-1" style={{ color: "var(--ink-mute)" }}>
+            Why (optional)
+          </div>
+          <input
+            data-testid="extra-reason"
+            value={reason}
+            maxLength={200}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Stock delivery, refit, expected rush…"
+            className="w-full px-3 py-2 text-[13px]"
+          />
+          <div className="text-[11px] mt-1" style={{ color: "var(--ink-mute-2)" }}>
+            Shown on the roster, so a week that cost more than usual says why.
+          </div>
+        </label>
+
+        {refused && (
+          <div className="status-danger mt-4 p-3 text-[13px]">
+            <div className="flex items-center gap-2 font-medium">
+              <AlertTriangle size={13} /> {refused.message}
+            </div>
+            <ul className="mt-2 space-y-1">
+              {refused.reasons.map((r, i) => (
+                <li key={i}>• {r}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="card-soft p-3 mt-4 text-[11px]" style={{ color: "var(--ink-mute)" }}>
+          {hours > 0
+            ? `${hours.toFixed(1)}h — counts towards their weekly hours, their contract and the five-day limit.`
+            : "Finish must be after the start."}
+          {" "}Kept when you rebalance.
+        </div>
+
+        <button
+          data-testid="extra-save"
+          onClick={submit}
+          disabled={saving || !employeeId || hours <= 0}
+          className="btn btn-primary w-full mt-4"
+        >
+          {saving ? <RefreshCw size={14} className="animate-spin" /> : <UserPlus size={14} />}
+          Add as extra
+        </button>
       </div>
     </div>
   );

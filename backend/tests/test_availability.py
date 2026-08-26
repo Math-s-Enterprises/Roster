@@ -629,3 +629,56 @@ class TestRoleAliases:
             "role_aliases": {"Shop Floor": "Floor Assistant"},
         }
         assert match_role("Shop Floor", shop) == "Shop Floor"
+
+
+class TestSummerBreakIsRecognised:
+    """A student's cap lifts during their break — whichever field says so.
+
+    `on_summer_break` used to read the legacy `is_student` flag while the
+    Employees screen writes `employment_type`. So a student set up through
+    the current interface kept their term-time cap all year, and nothing
+    reported it: a cap that fails to lift produces a smaller roster, not an
+    error.
+    """
+
+    BREAK = {"start_date": "2026-06-01", "end_date": "2026-09-15",
+             "max_weekly_hours": 35}
+
+    def _student(self, **extra):
+        return {
+            "employee_id": "conor", "name": "Conor", "max_weekly_hours": 20,
+            "term_time_max_hours": 20, "summer_break": dict(self.BREAK), **extra,
+        }
+
+    def test_the_modern_field_lifts_the_cap(self):
+        from app.services.availability import weekly_hour_cap
+
+        student = self._student(employment_type="student")
+        assert weekly_hour_cap(student, "2026-08-31") == 35
+
+    def test_the_legacy_flag_still_works(self):
+        """Records written before employment_type existed must not break."""
+        from app.services.availability import weekly_hour_cap
+
+        assert weekly_hour_cap(self._student(is_student=True), "2026-08-31") == 35
+
+    def test_outside_the_break_the_term_cap_applies(self):
+        from app.services.availability import weekly_hour_cap
+
+        student = self._student(employment_type="student")
+        assert weekly_hour_cap(student, "2026-10-05") == 20
+
+    def test_an_hourly_employee_has_no_break(self):
+        from app.services.availability import on_summer_break
+        from datetime import date
+
+        hourly = self._student(employment_type="hourly")
+        assert on_summer_break(hourly, date(2026, 8, 31)) is False
+
+    def test_a_legal_summer_week_is_not_a_breach(self):
+        """The case that started this: 30.5h against a 20h term-time cap
+        looked like 152%, when the real ceiling that week was 35."""
+        from app.services.availability import weekly_hour_cap
+
+        cap = weekly_hour_cap(self._student(employment_type="student"), "2026-08-31")
+        assert 30.5 <= cap

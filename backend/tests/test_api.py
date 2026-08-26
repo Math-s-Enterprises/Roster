@@ -655,6 +655,99 @@ class TestPinAndRebalance:
         assert not any(s.get("pinned") for s in body["shifts"])
 
 
+class TestCorrectionCapture:
+    """The manager's edits are the highest-signal data the product has.
+
+    Editing overwrites `shifts` in place, so without a frozen snapshot of what
+    the solver proposed, every correction is destroyed the moment the manager
+    touches the roster.
+    """
+
+    def _week(self, client, token):
+        ids = {}
+        for name in ("Alex", "Sam"):
+            ids[name] = client.post("/api/employees", json={
+                **EMPLOYEE, "name": name, "email": f"{name.lower()}@e.com",
+            }, headers=auth(token)).json()["employee_id"]
+        week = _future_monday()
+        roster = client.post(
+            "/api/roster/generate", json={"week_start": week}, headers=auth(token)
+        ).json()
+        return roster["roster_id"], week, ids
+
+    def _get(self, client, token, rid):
+        return client.get(f"/api/rosters/{rid}", headers=auth(token)).json()
+
+    def test_generation_snapshots_what_the_solver_proposed(self, client):
+        token = register(client)
+        rid, _, _ = self._week(client, token)
+        roster = self._get(client, token, rid)
+
+        assert roster["generated_shifts"], "the proposal must be recorded"
+        assert len(roster["generated_shifts"]) == len(roster["shifts"])
+
+    def test_the_snapshot_survives_editing(self, client):
+        """The whole point: `shifts` moves, `generated_shifts` does not."""
+        token = register(client)
+        rid, _, ids = self._week(client, token)
+        before = self._get(client, token, rid)["generated_shifts"]
+
+        edited = [
+            {"employee_id": s["employee_id"], "day": s["day"],
+             "start": "10:00", "end": "18:00"}
+            for s in before if s.get("start")
+        ][:1]
+        client.put(f"/api/rosters/{rid}", json={"shifts": edited}, headers=auth(token))
+
+        after = self._get(client, token, rid)
+        assert after["generated_shifts"] == before, "the proposal must not move"
+        assert after["shifts"] != before, "but the roster did"
+
+    def test_approving_records_what_changed(self, client):
+        token = register(client)
+        rid, _, _ = self._week(client, token)
+        proposed = self._get(client, token, rid)["generated_shifts"]
+        first = next(s for s in proposed if s.get("start"))
+
+        client.put(f"/api/rosters/{rid}", json={"shifts": [
+            {"employee_id": first["employee_id"], "day": first["day"],
+             "start": "10:00", "end": "18:00"},
+        ]}, headers=auth(token))
+        client.post(f"/api/rosters/{rid}/approve?acknowledge_gaps=true",
+                    headers=auth(token))
+
+        roster = self._get(client, token, rid)
+        assert roster["corrections_measurable"] is True
+        assert roster["edit_count"] == len(roster["corrections"])
+        moved = [c for c in roster["corrections"] if c["kind"] == "moved"]
+        assert moved and moved[0]["to_slot"] == "10:00-18:00"
+
+    def test_approving_an_untouched_roster_records_zero_edits(self, client):
+        """The outcome the product is aiming at — worth measuring explicitly."""
+        token = register(client)
+        rid, _, _ = self._week(client, token)
+        client.post(f"/api/rosters/{rid}/approve?acknowledge_gaps=true",
+                    headers=auth(token))
+
+        roster = self._get(client, token, rid)
+        assert roster["edit_count"] == 0
+        assert roster["corrections"] == []
+
+    def test_a_roster_with_no_snapshot_is_marked_unmeasurable(self, client):
+        """Rosters from before this feature must not read as a perfect zero."""
+        from app.services.corrections import diff_roster, edit_count
+
+        assert diff_roster([], []) == []
+        assert edit_count(diff_roster([], [])) == 0
+        # The flag, not the count, is what distinguishes "no edits" from
+        # "cannot tell" — asserted here so the distinction is not lost.
+        token = register(client)
+        rid, _, _ = self._week(client, token)
+        client.post(f"/api/rosters/{rid}/approve?acknowledge_gaps=true",
+                    headers=auth(token))
+        assert self._get(client, token, rid)["corrections_measurable"] is True
+
+
 class TestSickOnApprovedRoster:
     """Somebody calling in at 6am is the one case the approval lock cannot
     serve. Unapproving would take the whole week out of learning and let it
@@ -902,6 +995,34 @@ class TestSetupStatus:
                "Nobody" in steps["details"]["detail"]
         assert steps["employment"]["done"] is False
 
+    def test_reviewing_someone_counts_even_if_nothing_changed(self, client):
+        """The bug that made this step impossible to finish.
+
+        Whether pay and age had been reviewed was worked out by comparing
+        them against the importer's defaults — which cannot tell a
+        placeholder from somebody who genuinely is 25, genuinely is on that
+        rate and genuinely does work 40 hours. For them the step could never
+        be ticked, however many times the record was opened and saved.
+
+        Saving is the act of reviewing, so saving is what counts.
+        """
+        token = register(client)
+        _seed_imported_week(client, token, "2026-03-02")
+        employee = client.get("/api/employees", headers=auth(token)).json()[0]
+
+        # Saved with the SAME values the importer wrote.
+        saved = client.put(f"/api/employees/{employee['employee_id']}", json={
+            "name": employee["name"], "role": employee["role"],
+            "age": 25, "hourly_rate": 13.0, "max_weekly_hours": 40.0,
+        }, headers=auth(token))
+        assert saved.status_code == 200, saved.text
+
+        _, steps = self._steps(client, token)
+        assert steps["details"]["done"] is True, (
+            "somebody who really is 25 on the default rate can never finish "
+            "this step if only the numbers are checked"
+        )
+
     def test_adding_someone_completes_the_team_step(self, client):
         token = register(client)
         client.post("/api/employees", json=EMPLOYEE, headers=auth(token))
@@ -917,7 +1038,10 @@ class TestSetupStatus:
         _, steps = self._steps(client, token)
 
         assert steps["details"]["done"] is False
-        assert "1 still on placeholder" in steps["details"]["detail"]
+        # NAMED, not counted: "4 still on placeholder values" against a team
+        # of 25 means opening records one at a time to find them.
+        assert "Jane Doe" in steps["details"]["detail"]
+        assert [w["name"] for w in steps["details"]["who"]] == ["Jane Doe"]
 
         employee = client.get("/api/employees", headers=auth(token)).json()[0]
         updated = client.put(f"/api/employees/{employee['employee_id']}", json={
@@ -2337,3 +2461,322 @@ class TestSystemRulesAreNotDuplicated:
 
         assert f"{ABSOLUTE_MAX_SHIFT_HOURS} hours" in rules["Maximum shift length"]
         assert f"{MIN_REST_HOURS:g} consecutive hours" in rules["Rest between shifts"]
+
+
+class TestTwentyFourHourShopIsActuallyOpen:
+    """Turning on 24h must set the hours, whatever else the shop has.
+
+    Both the hours and the starter templates used to sit behind "has no
+    templates yet". So a shop that already had templates could be switched to
+    24h and keep 09:00-21:00 opening hours — and because the coverage floor
+    only checks open hours, the small hours were then unstaffed AND
+    unreported.
+    """
+
+    def test_switching_to_24h_opens_every_hour(self, client):
+        token = register(client)
+        client.put("/api/shop", json={"open_24h": True}, headers=auth(token))
+        shop = client.get("/api/shop", headers=auth(token)).json()
+
+        assert shop["open_24h"] is True
+        assert all(h["open"] == "00:00" for h in shop["hours"])
+        assert all(h["close"] == "23:59" for h in shop["hours"])
+        assert not any(h["closed"] for h in shop["hours"])
+
+    def test_it_works_even_when_templates_already_exist(self, client):
+        """The reported bug, exactly."""
+        token = register(client)
+        client.put("/api/shop", json={"shift_templates": [
+            {"name": "Morning", "start": "07:00", "end": "15:00", "min_staff": 2},
+        ]}, headers=auth(token))
+
+        client.put("/api/shop", json={"open_24h": True}, headers=auth(token))
+        shop = client.get("/api/shop", headers=auth(token)).json()
+
+        assert all(h["open"] == "00:00" for h in shop["hours"]), (
+            "a 24-hour shop that is not open 24 hours is a contradiction"
+        )
+
+    def test_existing_templates_are_not_replaced(self, client):
+        """Only a shop with none gets the starter set."""
+        token = register(client)
+        client.put("/api/shop", json={"shift_templates": [
+            {"name": "Mine", "start": "07:00", "end": "15:00", "min_staff": 2},
+        ]}, headers=auth(token))
+        client.put("/api/shop", json={"open_24h": True}, headers=auth(token))
+
+        shop = client.get("/api/shop", headers=auth(token)).json()
+        assert [t["name"] for t in shop["shift_templates"]] == ["Mine"]
+
+    def test_a_shop_with_no_templates_gets_the_starter_set(self, client):
+        token = register(client)
+        client.put("/api/shop", json={"open_24h": True}, headers=auth(token))
+        shop = client.get("/api/shop", headers=auth(token)).json()
+        assert len(shop["shift_templates"]) == 3
+
+    def test_turning_it_off_leaves_your_hours_alone(self, client):
+        token = register(client)
+        hours = [
+            {"day": d, "open": "05:30", "close": "23:00", "closed": False}
+            for d in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+        ]
+        client.put("/api/shop", json={"open_24h": False, "hours": hours},
+                   headers=auth(token))
+        shop = client.get("/api/shop", headers=auth(token)).json()
+        assert shop["hours"][0]["open"] == "05:30"
+
+
+class TestExtraStaffEndpoint:
+    """Adding somebody above the normal cover, and what it refuses."""
+
+    WEEK = "2026-09-07"
+    _DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+    def _setup(self, client):
+        """Enough staff that somebody has a free day.
+
+        With two employees everyone is already on five days, so every extra
+        shift is correctly refused as a sixth — which is the guard working,
+        but leaves nothing to test the happy path with.
+        """
+        token = register(client)
+        client.post("/api/employees", json=EMPLOYEE, headers=auth(token))
+        for name in ("Bea", "Cara", "Dev", "Erin", "Finn"):
+            client.post(
+                "/api/employees",
+                json={**EMPLOYEE, "name": name,
+                      "email": f"{name.lower()}@example.com"},
+                headers=auth(token),
+            )
+        roster = client.post(
+            "/api/roster/generate", json={"week_start": self.WEEK},
+            headers=auth(token),
+        ).json()
+        return token, roster
+
+    def _somebody_with_a_free_day(self, client, token, roster):
+        """(employee_id, day) that breaks no rule on its own."""
+        worked = {}
+        for shift in roster["shifts"]:
+            if shift.get("start"):
+                worked.setdefault(shift["employee_id"], set()).add(shift["day"])
+        for employee in client.get("/api/employees", headers=auth(token)).json():
+            days = worked.get(employee["employee_id"], set())
+            if len(days) >= 5:
+                continue
+            free = [d for d in self._DAYS if d not in days]
+            if free:
+                return employee["employee_id"], free[0]
+        raise AssertionError("fixture has nobody with a free day")
+
+    def test_an_extra_shift_is_marked_as_one(self, client):
+        token, roster = self._setup(client)
+        employee_id, day = self._somebody_with_a_free_day(client, token, roster)
+
+        response = client.post(
+            f"/api/rosters/{roster['roster_id']}/extra",
+            json={
+                "employee_id": employee_id, "day": day,
+                "start": "10:00", "end": "14:00", "reason": "Stock delivery",
+            },
+            headers=auth(token),
+        )
+        assert response.status_code == 200, response.text
+
+        added = [s for s in response.json()["shifts"] if s.get("extra")]
+        assert len(added) == 1
+        assert added[0]["extra_reason"] == "Stock delivery"
+        # Pinned too, so a later rebalance cannot move the person out from
+        # under a decision the manager made deliberately.
+        assert added[0]["pinned"] is True
+
+    def test_an_overlapping_shift_is_refused_with_a_reason(self, client):
+        token, roster = self._setup(client)
+        existing = next(
+            s for s in roster["shifts"] if s.get("start") and s.get("end")
+        )
+
+        response = client.post(
+            f"/api/rosters/{roster['roster_id']}/extra",
+            json={
+                "employee_id": existing["employee_id"], "day": existing["day"],
+                "start": existing["start"], "end": existing["end"],
+            },
+            headers=auth(token),
+        )
+        assert response.status_code == 409
+        detail = response.json()["detail"]
+        assert detail["reasons"], "a refusal has to say what is wrong"
+        assert any("already working" in r for r in detail["reasons"])
+
+    def test_an_over_long_shift_is_refused(self, client):
+        token, roster = self._setup(client)
+        employee_id, day = self._somebody_with_a_free_day(client, token, roster)
+
+        response = client.post(
+            f"/api/rosters/{roster['roster_id']}/extra",
+            json={
+                "employee_id": employee_id, "day": day,
+                "start": "06:00", "end": "20:00",     # 14 hours
+            },
+            headers=auth(token),
+        )
+        assert response.status_code == 409
+        assert any(
+            "maximum for one shift" in r
+            for r in response.json()["detail"]["reasons"]
+        )
+
+    def test_an_approved_week_is_refused(self, client):
+        token, roster = self._setup(client)
+        employee_id, day = self._somebody_with_a_free_day(client, token, roster)
+        client.post(
+            f"/api/rosters/{roster['roster_id']}/approve", headers=auth(token),
+        )
+
+        response = client.post(
+            f"/api/rosters/{roster['roster_id']}/extra",
+            json={
+                "employee_id": employee_id, "day": day,
+                "start": "10:00", "end": "14:00",
+            },
+            headers=auth(token),
+        )
+        assert response.status_code == 409
+
+
+class TestCorrectionsReport:
+    """What the scheduler has learned, and accepting or refusing it."""
+
+    def _shop_with_repeated_edits(self, client, token, times=3):
+        """Approve several weeks where the manager made the same edit.
+
+        Built through the real endpoints rather than hand-written rows: the
+        corrections are computed at approval from the frozen generated copy,
+        so faking the database would test nothing that runs in production.
+        """
+        employee_id = client.post(
+            "/api/employees", json=EMPLOYEE, headers=auth(token),
+        ).json()["employee_id"]
+        for name in ("Bea", "Cara", "Dev"):
+            client.post(
+                "/api/employees",
+                json={**EMPLOYEE, "name": name, "email": f"{name.lower()}@e.com"},
+                headers=auth(token),
+            )
+
+        # Every week is GENERATED before any is approved. Approving teaches
+        # the scheduler immediately, so approving as we go meant the first
+        # correction was learned and weeks two and three needed no edit —
+        # only one correction ever reached the report, and the repeat this
+        # test is about never happened. (Which is the product working; it
+        # just makes for a fixture that proves nothing.)
+        drafts = [
+            client.post(
+                "/api/roster/generate",
+                json={"week_start": (date(2026, 9, 7) + timedelta(weeks=i)).isoformat()},
+                headers=auth(token),
+            ).json()
+            for i in range(times)
+        ]
+
+        for roster in drafts:
+
+            # Take that employee off Wednesday every single week.
+            # Times default to "" not None: leave carries no times, and the
+            # model rejects null — which made this PUT 422 silently, so the
+            # roster was approved unedited and the whole fixture proved
+            # nothing.
+            kept = [
+                {
+                    "employee_id": s["employee_id"], "day": s["day"],
+                    "start": s.get("start") or "", "end": s.get("end") or "",
+                    "paid_holiday": bool(s.get("paid_holiday")),
+                    "unpaid_holiday": bool(s.get("unpaid_holiday")),
+                    "sick": bool(s.get("sick")),
+                }
+                for s in roster["shifts"]
+                if not (s["employee_id"] == employee_id and s["day"] == "wed")
+            ]
+            saved = client.put(
+                f"/api/rosters/{roster['roster_id']}", json={"shifts": kept},
+                headers=auth(token),
+            )
+            assert saved.status_code == 200, saved.text
+            client.post(
+                f"/api/rosters/{roster['roster_id']}/approve", headers=auth(token),
+            )
+        return employee_id
+
+    def test_the_report_counts_what_was_changed(self, client):
+        token = register(client)
+        self._shop_with_repeated_edits(client, token, times=3)
+
+        report = client.get("/api/reports/corrections", headers=auth(token)).json()
+        assert report["weeks_measured"] == 3
+        assert report["total_corrections"] >= 3
+        assert report["trend"], "the falling-edits line is the point of the screen"
+
+    def test_names_are_resolved_for_display(self, client):
+        token = register(client)
+        self._shop_with_repeated_edits(client, token, times=3)
+
+        report = client.get("/api/reports/corrections", headers=auth(token)).json()
+        assert all(
+            p.get("employee_name") for p in report["patterns"]
+        ), "a screen showing employee_id would be useless to a manager"
+
+    def test_a_repeated_edit_becomes_an_offer_that_can_be_applied(self, client):
+        token = register(client)
+        employee_id = self._shop_with_repeated_edits(client, token, times=3)
+
+        report = client.get("/api/reports/corrections", headers=auth(token)).json()
+        offer = next(
+            (s for s in report["suggestions"]
+             if s["action"] == "day_off" and s["employee_id"] == employee_id),
+            None,
+        )
+        assert offer, f"no day-off offer in {report['suggestions']}"
+
+        applied = client.post(
+            "/api/reports/corrections/apply",
+            json={"signature": offer["signature"]}, headers=auth(token),
+        )
+        assert applied.status_code == 200, applied.text
+
+        # Applied to the REAL setting, visible in the ordinary UI — not to a
+        # hidden weight the manager cannot inspect.
+        employee = next(
+            e for e in client.get("/api/employees", headers=auth(token)).json()
+            if e["employee_id"] == employee_id
+        )
+        assert "wed" in employee["preferred_days_off"]
+
+    def test_an_applied_offer_is_not_offered_again(self, client):
+        token = register(client)
+        self._shop_with_repeated_edits(client, token, times=3)
+
+        report = client.get("/api/reports/corrections", headers=auth(token)).json()
+        offer = report["suggestions"][0]
+        client.post(
+            "/api/reports/corrections/apply",
+            json={"signature": offer["signature"]}, headers=auth(token),
+        )
+
+        after = client.get("/api/reports/corrections", headers=auth(token)).json()
+        assert offer["signature"] not in [s["signature"] for s in after["suggestions"]]
+
+    def test_a_dismissed_offer_stays_dismissed(self, client):
+        token = register(client)
+        self._shop_with_repeated_edits(client, token, times=3)
+
+        report = client.get("/api/reports/corrections", headers=auth(token)).json()
+        offer = report["suggestions"][0]
+        client.post(
+            "/api/reports/corrections/dismiss",
+            json={"signature": offer["signature"]}, headers=auth(token),
+        )
+
+        after = client.get("/api/reports/corrections", headers=auth(token)).json()
+        assert offer["signature"] not in [s["signature"] for s in after["suggestions"]]
+        assert after["dismissed_count"] == 1

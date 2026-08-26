@@ -153,8 +153,18 @@ def _parse_date(value: Optional[str]) -> Optional[date]:
 
 
 def on_summer_break(employee: Dict[str, Any], on: date) -> bool:
-    """Whether a student is inside their configured break period."""
-    if not employee.get("is_student"):
+    """Whether a student is inside their configured break period.
+
+    Asks `employment_type`, not the raw `is_student` flag. The flag is the
+    older field; the Employees screen now writes employment_type, so a
+    student set up through the current interface was never recognised as
+    being on a break and kept their term-time cap all year — invisibly,
+    because nothing reports a cap that failed to lift.
+
+    employment_type() falls back to is_student, so records written before
+    that field existed still behave correctly.
+    """
+    if employment_type(employee) != "student":
         return False
     break_period = employee.get("summer_break") or {}
     start = _parse_date(break_period.get("start_date"))
