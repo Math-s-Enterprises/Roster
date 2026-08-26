@@ -116,9 +116,60 @@ reject it. **Verify before describing, especially when he will act on it.**
 **I used the wrong email.** Used his Claude account address in a script
 instruction when his app login is different. Small, but it wasted a run.
 
+**I write regression tests that pass without the fix.** Three times in one
+session. Each looked green and proved nothing:
+
+- The owner-reservation test gave the early slot's history only to its owner,
+  so the second person was never a contender for it
+- The "Regenerate actually varies" test matched on start time alone, and
+  Monday runs TWO shifts starting 16:00 — it collected two names whatever the
+  code did
+- The Rebalance Day tests passed with the freeze disabled, because when every
+  other day is fully locked, re-solving them changes nothing anyway
+
+**Fix, and it is cheap: break the fix deliberately and re-run before moving
+on.** `cp file /tmp/bak`, disable the branch, run the test, restore. If it
+still passes, the test is decoration. This caught all three.
+
+**I claim work is finished when it is not.** Said "everything in the queue is
+done" with Phases 2–5 of the corrections work outstanding. He said *"nope,
+everything in the queue is not done"*. **Before saying done, re-read the list
+rather than recalling it** — the doc was right there.
+
+**I infer intent from data when I should record it.** The setup checklist
+worked out whether pay and age had been reviewed by comparing them to the
+importer's defaults. It cannot tell a placeholder from somebody who genuinely
+is 25 on that rate working 40 hours — their step could never be completed.
+**"Has a human looked at this?" is provenance, not a property of the values.**
+Same distinction as §5 of CLAUDE.md, from the other side: derive state where
+you can, but a DECISION has to be recorded.
+
+**I keep blaming the environment before the code.** "Restart the backend",
+"stale module", "warm --reload" — three times, and each time the app was
+current and the cause was in the logic. He restarted everything twice on my
+say-so. **Build the check instead of guessing** (`ml/check_live_code.py` now
+answers it in one command).
+
 ---
 
 ## 4. What worked — keep doing
+
+**Build the diagnostic instead of theorising.** The Emma question went through
+four wrong explanations from me — stale code, ownership ranking, apportionment
+— before `explain_day.py` showed the actual arithmetic. Every one of those
+guesses cost a round trip; the tool ended it. Five such scripts now exist and
+they are the highest-value thing built this session.
+
+**Separate the layers before debugging.** "Emma is missing" had two completely
+different possible causes that look identical on screen: the slot is not in
+the day's plan at all, or it is and somebody outranked her. No amount of
+tuning who-beats-whom helps with the first. Ask which layer before designing.
+
+**Say plainly when a refusal is correct.** Twice the app was right and he
+thought it was broken — the five-day guard blocking my own test fixture, and
+the checklist flagging four genuinely untouched records. Saying "no, this is
+correct, and here is why" is more useful than fixing a non-bug. But both times
+the MESSAGE deserved the complaint even though the LOGIC did not.
 
 **Measure before designing.** Before making 11-hour rest a constraint, I
 checked it against 2009 real shift pairs from his manager's rosters: 99.6%
@@ -160,10 +211,41 @@ not want a yes-man.
   "Assistant Manager", "Shop Floor" vs "Floor Assistant". Hence `role_aliases`.
 - Windows / PowerShell. Venv at `backend\venv`, activate before running scripts.
 - Workbook lives at `C:\Users\anees\Downloads\new roster 26.xlsx`
+- Second app login also in use: **aneeshthimmapurmath@gmail.com** (current
+  shop, 25 staff, 24 approved weeks). The older `anishbond…` account is the
+  earlier shop.
+- **Code Runner's ▶ button uses global Python**, so anything in `ml/` fails
+  with `ModuleNotFoundError: motor`. Always
+  `.\venv\Scripts\python.exe ml\script.py --email …` from `backend\`.
+- `craco build` takes longer than a sandbox tool call allows. Frontend changes
+  can be Babel-parse-checked but NOT build-verified here — say so rather than
+  implying the build passed.
 
 ---
 
-## 6. Still parked, by his choice
+## 6. Where the product stands
+
+Built this session, all general behaviour with no shop-specific code:
+
+- **Slot ownership** — 60% of the weeks a slot ran, over 4+ weeks. Owner beats
+  contract need; owners are reserved from earlier slots; leavers cannot own.
+- **Seeded Regenerate** — varies only unowned slots, weighted. Rebalance does
+  not seed.
+- **Extra staff** and **Rebalance Day**.
+- **Corrections learning Phases 2–4** — the falling edit count, suggestions
+  that write real settings, Rebalance made primary.
+
+Still outstanding: **Phase 5** (re-run `measure_edit_burden.py` and prove the
+numbers moved). That is the only honest verdict on the whole session, and it
+needs several more approved weeks before it can be run.
+
+Watch for: anyone appearing in `under_contract`. That is the signal the
+owner-first change starved a full-timer and option B (look-ahead before
+displacing an owner) is actually needed. It has not happened yet.
+
+---
+
+## 7. Still parked, by his choice
 
 - **Resend email setup** — `RESEND_API_KEY` empty; password reset and dispatch
   silently do nothing
