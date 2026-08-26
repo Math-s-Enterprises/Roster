@@ -120,10 +120,19 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
 
     # ---- employees ------------------------------------------------------
     print(f"\n{'=' * 70}\nEMPLOYEES ({len(employees)})\n{'=' * 70}")
-    print(f"  {'name':16}{'role':18}{'max/wk':>7}{'  preferred days off'}")
+    # "cap" is what the solver enforces THIS week, which is not always the
+    # contract field: a student on summer break has a higher ceiling. Showing
+    # the raw field made a legal 30.5h week look like 152% of 20.
+    from app.services import availability as avail
+
+    print(f"  {'name':16}{'role':18}{'cap/wk':>7}{'  preferred days off'}")
     for e in sorted(employees, key=lambda x: x["name"]):
         off = ",".join(e.get("preferred_days_off") or []) or "-"
-        print(f"  {e['name'][:15]:16}{(e.get('role') or '?')[:17]:18}{e.get('max_weekly_hours', 0):7.0f}  {off}")
+        cap = avail.weekly_hour_cap(e, week)
+        raw = float(e.get("max_weekly_hours") or 0)
+        note = f"   (contract {raw:.0f}, lifted for summer break)" if cap != raw else ""
+        print(f"  {e['name'][:15]:16}{(e.get('role') or '?')[:17]:18}"
+              f"{cap:7.0f}  {off}{note}")
 
     # ---- demand ---------------------------------------------------------
     profile = build_profile(shop, approved, {e["employee_id"]: e.get("role", "") for e in employees})
@@ -134,6 +143,57 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
         print("  patterns offered to the solver:")
         for p in profile.patterns[:10]:
             print(f"    {p.start}-{p.end}  (used {p.count}x historically)")
+
+    # ---- who owns which shift -------------------------------------------
+    # The question "why didn't Emma get Monday 06:00" has a factual answer,
+    # and guessing at it wastes everybody's time. This prints it.
+    from app.services import slot_owners as so
+
+    owners = so.build_owners(
+        approved,
+        {e['employee_id'] for e in employees if avail.is_active(e)},
+    )
+    names = {e["employee_id"]: e.get("name", e["employee_id"]) for e in employees}
+
+    print(f"\n{'=' * 70}\nWHO OWNS WHICH SHIFT\n{'=' * 70}")
+    print(f"  owned at {so.OWNERSHIP_SHARE:.0%} of the WEEKS it ran, "
+          f"minimum {so.MIN_OCCURRENCES} weeks\n")
+
+    for day in DAYS:
+        slots = profile.slots_for(day)
+        if not slots:
+            continue
+        print(f"  {day}")
+        # A shape the shop runs twice has two regulars, one per instance.
+        # Printing the top name against both hides the second person, who is
+        # exactly who the solver puts on the other one.
+        seen = {}
+        for start, end in slots:
+            instance = seen.get((start, end), 0)
+            seen[(start, end)] = instance + 1
+
+            hist = owners.get((day, start, end))
+            owner = so.owner_of(owners, day, start, end)
+            if hist and instance < len(hist.people):
+                who_id, count = hist.people[instance]
+                share = count / hist.weeks
+                if share >= so.OWNERSHIP_SHARE:
+                    label = names.get(who_id, who_id)
+                    suffix = f"  [instance {instance + 1}]" if instance else ""
+                    print(f"      {start}-{end:<6} {label} "
+                          f"({share:.0%} of {hist.weeks} weeks){suffix}")
+                    continue
+            if owner and hist and instance == 0:
+                share = hist.people[0][1] / hist.weeks
+                who = f"{names.get(owner, owner)} ({share:.0%} of {hist.weeks} weeks)"
+            elif hist:
+                top = ", ".join(
+                    f"{names.get(e, e)} {c}" for e, c in hist.people[:3]
+                )
+                who = f"nobody owns it — {top}  (ran {hist.weeks} weeks)"
+            else:
+                who = "no history"
+            print(f"      {start}-{end:<6} {who}")
 
     # ---- the roster -----------------------------------------------------
     if not roster:

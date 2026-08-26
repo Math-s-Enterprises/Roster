@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import db  # noqa: E402
+from app.services import availability as avail  # noqa: E402
 from app.services.scheduler import DAYS, paid_hours, shift_duration_minutes  # noqa: E402
 
 COLUMN = 16
@@ -87,12 +88,22 @@ async def run(email: str, week: str | None, historical: bool) -> None:
         name = (employee.get("name") or employee_id)[:17]
         role = (employee.get("role") or "?")[:3]
         row = "".join(by_employee[employee_id].get(d, "·").ljust(COLUMN) for d in DAYS)
-        mine = [s for s in roster["shifts"] if s["employee_id"] == employee_id]
+        # Leave entries carry no times — somebody on holiday has no span —
+        # so they are excluded before any arithmetic. Including them crashed
+        # this script on an empty string.
+        mine = [
+            s for s in roster["shifts"]
+            if s["employee_id"] == employee_id and s.get("start") and s.get("end")
+        ]
         span = sum(shift_duration_minutes(s["start"], s["end"]) / 60 for s in mine)
         # Paid hours are what count against a contract; span is clock time.
         # Older rosters predate the split, so fall back to the span.
         paid = sum(s.get("paid_hours", paid_hours(s["start"], s["end"])) for s in mine)
-        contract = employee.get("max_weekly_hours") or 0
+        # The cap the SOLVER enforces for this week, not the raw contract
+        # field. A student on summer break has a higher ceiling, and showing
+        # the term-time number made a legal 30.5h week read as 152% of 20 —
+        # a breach that was not happening.
+        contract = avail.weekly_hour_cap(employee, roster.get("week_start", ""))
         fill = f"{paid / contract:4.0%}" if contract else "   -"
         print(f"{name:18}{role:4}{row}{paid:6.1f}p{span:6.1f}s{fill}")
 

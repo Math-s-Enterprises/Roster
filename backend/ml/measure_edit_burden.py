@@ -1,0 +1,141 @@
+"""How much work the manager still has to do after the scheduler runs.
+
+WHY
+---
+The product's goal is that after a month of use, a manager believes the
+generated roster is better than one they would write themselves. That is
+measurable as two numbers, and both must fall:
+
+    generations per approved week   how many attempts before one was good
+                                    enough to approve. One week took 16.
+
+    edits per approved roster       how much of the proposal the manager
+                                    had to change. Only available for
+                                    rosters generated after the snapshot
+                                    feature existed.
+
+This script is the baseline. Run it before changing anything, and again
+afterwards — the same discipline that settled the 11-hour rest rule, which
+was checked against 2009 real shift pairs before becoming a constraint.
+
+A NOTE ON HONESTY
+-----------------
+Early history is polluted: those 16 generations happened while the solver was
+genuinely bad and being rewritten weekly. `--since` reports from a cut-off so
+the baseline reflects the current solver rather than its ancestors.
+
+USAGE
+-----
+    python ml/measure_edit_burden.py --shop-id shop_645772aee6b5
+    python ml/measure_edit_burden.py --shop-id ... --since 2026-08-01
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import statistics
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app import db  # noqa: E402
+
+
+def _bar(value: float, scale: float, width: int = 24) -> str:
+    filled = int(round((value / scale) * width)) if scale else 0
+    return "█" * max(0, min(width, filled))
+
+
+async def main(shop_id: str | None, since: str | None) -> int:
+    query: dict = {}
+    if shop_id:
+        query["shop_id"] = shop_id.strip()
+
+    rosters = await db.rosters.find(query, {"_id": 0}).to_list(5000)
+    # Imported history is not the scheduler's work and must not be counted as
+    # a roster it produced perfectly first time.
+    rosters = [r for r in rosters if not r.get("historical")]
+    if since:
+        rosters = [r for r in rosters if str(r.get("week_start", "")) >= since]
+
+    if not rosters:
+        print("No generated rosters found" + (f" since {since}." if since else "."))
+        print("Check the shop id — this is not the same as 'nothing to measure'.")
+        return 1
+
+    by_week: dict[str, list[dict]] = defaultdict(list)
+    for roster in rosters:
+        by_week[str(roster.get("week_start"))].append(roster)
+
+    approved_weeks = {
+        week: rs for week, rs in by_week.items()
+        if any(r.get("approved") for r in rs)
+    }
+
+    print(f"Shop: {shop_id or 'all'}"
+          + (f"   from week {since}" if since else ""))
+    print(f"Weeks with an approved roster: {len(approved_weeks)}")
+    print(f"Weeks generated but never approved: "
+          f"{len(by_week) - len(approved_weeks)}\n")
+
+    if not approved_weeks:
+        print("Nothing approved yet — no baseline to measure.")
+        return 0
+
+    # ---- generations per approved week ---------------------------------
+    counts = {week: len(rs) for week, rs in approved_weeks.items()}
+    values = sorted(counts.values())
+    worst = sorted(counts.items(), key=lambda kv: -kv[1])[:8]
+
+    print("GENERATIONS PER APPROVED WEEK   (target: 1)")
+    print(f"  median {statistics.median(values):.1f}"
+          f"   mean {statistics.mean(values):.1f}"
+          f"   worst {max(values)}")
+    print(f"  weeks needing just one attempt: "
+          f"{sum(1 for v in values if v == 1)} of {len(values)}\n")
+
+    scale = float(max(values))
+    for week, count in worst:
+        print(f"    {week}  {count:>3}  {_bar(count, scale)}")
+
+    # ---- edits per approved roster -------------------------------------
+    measurable = [
+        r for rs in approved_weeks.values() for r in rs
+        if r.get("approved") and r.get("corrections_measurable")
+    ]
+    print(f"\nEDITS PER APPROVED ROSTER   (target: 0)")
+    if not measurable:
+        print("  Not measurable yet. Rosters only record what the manager")
+        print("  changed if they were generated after the snapshot feature")
+        print("  existed — approve a freshly generated week and re-run.")
+    else:
+        edits = sorted(r.get("edit_count", 0) for r in measurable)
+        print(f"  median {statistics.median(edits):.1f}"
+              f"   mean {statistics.mean(edits):.1f}"
+              f"   worst {max(edits)}")
+        print(f"  approved with no edits at all: "
+              f"{sum(1 for e in edits if e == 0)} of {len(edits)}")
+
+        kinds: dict[str, int] = defaultdict(int)
+        for roster in measurable:
+            for correction in roster.get("corrections") or []:
+                kinds[correction.get("kind", "?")] += 1
+        if kinds:
+            print("\n  What the manager changes most:")
+            top = max(kinds.values())
+            for kind, count in sorted(kinds.items(), key=lambda kv: -kv[1]):
+                print(f"    {kind:<8} {count:>4}  {_bar(count, top)}")
+
+    print("\nRe-run this after any change meant to reduce either number.")
+    return 0
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--shop-id", help="limit to one shop")
+    parser.add_argument("--since", help="only weeks starting on/after YYYY-MM-DD")
+    args = parser.parse_args()
+
+    raise SystemExit(asyncio.run(main(args.shop_id, args.since)))

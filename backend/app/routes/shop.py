@@ -134,8 +134,17 @@ async def create_employee(payload: EmployeeIn, scope: ShopScope = CurrentScope):
 async def update_employee(
     employee_id: str, payload: EmployeeIn, scope: ShopScope = CurrentScope
 ):
+    # Saving an employee records that somebody looked at this record.
+    #
+    # The setup checklist used to work out whether pay and age had been
+    # reviewed by comparing them against the importer's defaults. That cannot
+    # tell a placeholder from somebody who really is 25, really is on the
+    # default rate and really does work 40 hours — so their step could never
+    # be ticked, however many times it was edited. Provenance answers the
+    # actual question; the values never could.
     modified = await scope.employees.update_one(
-        {"employee_id": employee_id}, payload.model_dump()
+        {"employee_id": employee_id},
+        {**payload.model_dump(), "details_confirmed": True},
     )
     if modified == 0 and not await scope.employees.find_one({"employee_id": employee_id}):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")

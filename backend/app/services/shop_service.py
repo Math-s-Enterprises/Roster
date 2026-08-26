@@ -147,22 +147,31 @@ async def ensure_shop(user: Dict[str, Any]) -> Dict[str, Any]:
 def apply_24h_defaults(update: Dict[str, Any], current_shop: Dict[str, Any]) -> Dict[str, Any]:
     """When a shop is switched to 24-hour operation, give it working defaults.
 
-    Without this the shop would be marked 24h while still holding 09:00-21:00
-    hours and no templates, and the solver would produce a roster that leaves
-    the small hours unstaffed.
+    Two independent things happen here, and they used to be wrongly coupled:
+
+      hours      a 24-hour shop is open 00:00-23:59, always. This is not
+                 optional and does not depend on anything else.
+      templates  a starting set of morning/afternoon/night shapes, only for
+                 a shop that has none.
+
+    Both used to sit behind "has no templates". So a shop that already had
+    templates could be switched to 24h and keep 09:00-21:00 opening hours —
+    which is exactly the state the docstring warned about. Worse, the
+    coverage floor then only checked 09:00-21:00, so the small hours were
+    unstaffed AND unreported.
     """
     if not update.get("open_24h"):
         return update
 
-    already_has_templates = bool(
-        current_shop.get("shift_templates") or update.get("shift_templates")
-    )
-    if not already_has_templates:
+    # Always. A 24-hour shop that is not open 24 hours is a contradiction.
+    update["hours"] = [
+        {"day": day, "open": "00:00", "close": "23:59", "closed": False}
+        for day in DAYS
+    ]
+
+    if not (current_shop.get("shift_templates") or update.get("shift_templates")):
         update["shift_templates"] = [dict(t) for t in DEFAULT_24H_TEMPLATES]
-        update["hours"] = [
-            {"day": day, "open": "00:00", "close": "23:59", "closed": False}
-            for day in DAYS
-        ]
+
     return update
 
 

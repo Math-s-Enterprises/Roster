@@ -36,8 +36,28 @@ IMPORT_DEFAULT_AGE = 25
 IMPORT_DEFAULT_MAX_HOURS = 40.0
 
 
+def _name_list(people: List[Dict[str, Any]], limit: int = 4) -> str:
+    """"Jane, Steve and 2 others" — a step you can act on without hunting."""
+    names = [p.get("name") or "?" for p in people]
+    if len(names) <= limit:
+        if len(names) == 1:
+            return names[0]
+        return ", ".join(names[:-1]) + " and " + names[-1]
+    shown = ", ".join(names[:limit])
+    return f"{shown} and {len(names) - limit} more"
+
+
 def _on_import_defaults(employee: Dict[str, Any]) -> bool:
-    """All three untouched — one alone is a plausible real value."""
+    """Whether this record still holds values nobody has looked at.
+
+    A saved edit sets `details_confirmed`, and that settles it. Comparing
+    values is only a fallback for records written before the flag existed:
+    it cannot distinguish a placeholder from somebody who genuinely is 25, on
+    the default rate, working 40 hours — and for them the step could never be
+    completed, which is a checklist that lies to the person following it.
+    """
+    if employee.get("details_confirmed"):
+        return False
     return (
         float(employee.get("hourly_rate") or 0) == IMPORT_DEFAULT_RATE
         and int(employee.get("age") or 0) == IMPORT_DEFAULT_AGE
@@ -127,11 +147,19 @@ def build_steps(
             # An empty team must not read "All reviewed" — technically true of
             # nobody, and it would tell a new shop it had finished a step it
             # has not begun.
+            # NAMED, not counted. "4 still on placeholder values" against a
+            # team of 25 means opening records one at a time to find them,
+            # and a step that cannot be acted on is a step that does not get
+            # done. Four names is the whole job.
             "detail": (
                 "Nobody to review yet" if not active
-                else f"{len(placeholders)} still on placeholder values"
+                else _name_list(placeholders) + " still on placeholder pay and age"
                 if placeholders else "All reviewed"
             ),
+            "who": [
+                {"employee_id": e["employee_id"], "name": e.get("name", "?")}
+                for e in placeholders
+            ],
             "action": {"label": "Review team", "path": "/employees"},
         },
         {
@@ -141,9 +169,13 @@ def build_steps(
                    "each person. A contract means 42.5 hours are owed whatever the "
                    "week looks like, so getting this wrong makes every roster wrong.",
             "done": len(active) > 0 and not untyped,
+            "who": [
+                {"employee_id": e["employee_id"], "name": e.get("name", "?")}
+                for e in untyped
+            ],
             "detail": (
                 "Nobody to set yet" if not active
-                else f"{len(untyped)} without a type" if untyped else "All set"
+                else _name_list(untyped) + " without a type" if untyped else "All set"
             ),
             "action": {"label": "Set types", "path": "/employees"},
         },
