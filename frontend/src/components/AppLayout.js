@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import {
   Archive, CalendarDays, Clock, Crown, LayoutDashboard, LogOut, Menu,
-  Receipt, Settings, ShieldCheck, ThermometerSnowflake, Upload, Users, Wand2, X,
+  Receipt, Settings, ShieldCheck, ThermometerSnowflake, Upload, Users, Wand2, X, TrendingDown,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -41,6 +41,7 @@ const NAV_GROUPS = [
     items: [
       { to: "/import", label: "Import Rosters", icon: Upload },
       { to: "/reports/hours", label: "Hours & Wages", icon: Receipt },
+      { to: "/reports/learning", label: "What It Learned", icon: TrendingDown },
       { to: "/sick-report", label: "Sick Report", icon: ThermometerSnowflake },
     ],
   },

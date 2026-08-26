@@ -35,6 +35,10 @@ rosters = db.rosters
 activity_logs = db.activity_logs
 payment_transactions = db.payment_transactions
 roster_imports = db.roster_imports
+# Suggestions the manager has said no to, or already applied. A
+# decision is not derivable from the data that prompted it, so unlike
+# almost everything else in this app it is stored.
+correction_dismissals = db.correction_dismissals
 
 
 async def _dedupe_system_rules() -> None:
@@ -84,6 +88,7 @@ async def ensure_indexes() -> None:
         (ai_rules, "ai_rules"),
         (activity_logs, "activity_logs"),
         (roster_imports, "roster_imports"),
+        (correction_dismissals, "correction_dismissals"),
     ):
         await coll.create_index("shop_id", name=f"idx_{name}_shop")
 

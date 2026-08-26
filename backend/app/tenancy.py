@@ -88,6 +88,20 @@ class ScopedCollection:
         result = await self._collection.update_one(self._filter(extra), {"$set": changes})
         return result.modified_count
 
+    async def upsert(self, extra: Dict[str, Any], changes: Dict[str, Any]) -> None:
+        """Update if it exists, insert if it does not — in one operation.
+
+        Read-then-insert races itself whenever two requests arrive together,
+        which the browser does routinely on page load. The shop_id goes into
+        BOTH the filter and the inserted document, so a row created this way
+        is scoped exactly like one from insert().
+        """
+        await self._collection.update_one(
+            self._filter(extra),
+            {"$set": {**changes, "shop_id": self._shop_id}},
+            upsert=True,
+        )
+
     async def delete_one(self, extra: Dict[str, Any]) -> int:
         result = await self._collection.delete_one(self._filter(extra))
         return result.deleted_count
@@ -112,6 +126,9 @@ class ShopScope:
         self.rosters = ScopedCollection(db.rosters, self.shop_id)
         self.activity_logs = ScopedCollection(db.activity_logs, self.shop_id)
         self.imports = ScopedCollection(db.roster_imports, self.shop_id)
+        self.correction_dismissals = ScopedCollection(
+            db.correction_dismissals, self.shop_id,
+        )
 
 
 async def get_shop_scope(user: Dict[str, Any] = Depends(get_current_user)) -> ShopScope:

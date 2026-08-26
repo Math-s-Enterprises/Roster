@@ -19,6 +19,7 @@ import PastRosters from "@/pages/PastRosters";
 import ImportRosters from "@/pages/ImportRosters";
 import SickReport from "@/pages/SickReport";
 import HoursReport from "@/pages/HoursReport";
+import LearningReport from "@/pages/LearningReport";
 import Pricing from "@/pages/Pricing";
 import { PaymentCancel, PaymentSuccess } from "@/pages/PaymentResult";
 
@@ -97,6 +98,7 @@ export default function App() {
             <Route path="import" element={<ImportRosters />} />
             <Route path="sick-report" element={<SickReport />} />
             <Route path="reports/hours" element={<HoursReport />} />
+            <Route path="reports/learning" element={<LearningReport />} />
             <Route path="pricing" element={<Pricing />} />
             <Route path="payment/success" element={<PaymentSuccess />} />
             <Route path="payment/cancel" element={<PaymentCancel />} />

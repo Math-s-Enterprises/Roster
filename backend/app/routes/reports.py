@@ -1,11 +1,14 @@
-"""Reports: sick leave and holiday accrual."""
+"""Reports: sick leave, holiday accrual, and what the scheduler has learned."""
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.services import sick_balance
+from app.models import CorrectionDecision
+from app.services import corrections, sick_balance
 from app.services.scheduler import shift_paid_hours
+from app.services.shop_service import log_activity
 from app.tenancy import ShopScope, CurrentScope
 
 router = APIRouter(tags=["reports"])
@@ -154,3 +157,148 @@ async def employee_holiday_balance(employee_id: str, scope: ShopScope = CurrentS
     totals = await _accrual_totals(scope)
     bucket = totals.get(employee_id, {"worked": 0.0, "used": 0.0})
     return {"employee_id": employee_id, **_balance(bucket["worked"], bucket["used"])}
+
+
+# ---------------------------------------------------------------------------
+# What the scheduler has learned from being corrected
+# ---------------------------------------------------------------------------
+@router.get("/reports/corrections")
+async def corrections_report(scope: ShopScope = CurrentScope):
+    """The edits the manager made, tallied, plus what to do about them.
+
+    Two things in one payload because they answer one question. The trend
+    says whether the scheduler is getting better at this shop; the patterns
+    say what it is still getting wrong. A falling number with no patterns left
+    is the product working.
+
+    Nothing here is cached — it is recomputed from approved rosters on every
+    request, in line with the rest of the app. A stored summary starts lying
+    the moment a week is unapproved.
+    """
+    rosters = [r async for r in scope.rosters.stream({"approved": True})]
+    dismissed = [
+        d["signature"] for d in await scope.correction_dismissals.find(limit=500)
+    ]
+    employees = {
+        e["employee_id"]: e.get("name", e["employee_id"])
+        for e in await scope.employees.find(limit=1000)
+    }
+
+    summary = corrections.summarise(rosters)
+    offers = corrections.suggestions(rosters, dismissed)
+
+    # Names are resolved here rather than in the service, which stays a pure
+    # function over rosters and is testable without a database.
+    def named(item: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(item)
+        if item.get("employee_id"):
+            out["employee_name"] = employees.get(item["employee_id"], "Someone who has left")
+        if item.get("replaced_employee_id"):
+            out["replaced_employee_name"] = employees.get(
+                item["replaced_employee_id"], "Someone who has left",
+            )
+        return out
+
+    return {
+        **summary,
+        "trend": corrections.edit_trend(rosters),
+        "patterns": [named(p) for p in summary["patterns"]],
+        "suggestions": [named(s) for s in offers],
+        "dismissed_count": len(dismissed),
+        "min_repeats": corrections.MIN_REPEATS,
+    }
+
+
+@router.post("/reports/corrections/dismiss")
+async def dismiss_suggestion(
+    payload: CorrectionDecision, scope: ShopScope = CurrentScope
+):
+    """Say no to a suggestion, permanently.
+
+    If the scheduler has concluded something wrong, the manager has to be able
+    to say so on a screen rather than by fixing another bad roster. Stored
+    rather than derived, because a decision is not derivable from the data
+    that prompted it.
+    """
+    await scope.correction_dismissals.upsert(
+        {"signature": payload.signature},
+        {"signature": payload.signature, "dismissed_at": datetime.now().isoformat()},
+    )
+    return {"ok": True}
+
+
+@router.post("/reports/corrections/apply")
+async def apply_suggestion(
+    payload: CorrectionDecision, scope: ShopScope = CurrentScope
+):
+    """Accept a suggestion by writing the real setting behind it.
+
+    Deliberately no hidden state: this creates a fixed shift, or edits an
+    employee record. Afterwards it lives in the ordinary UI, where somebody
+    who has never heard of this feature can see it and change it back.
+    """
+    rosters = [r async for r in scope.rosters.stream({"approved": True})]
+    offer = next(
+        (s for s in corrections.suggestions(rosters)
+         if s["signature"] == payload.signature),
+        None,
+    )
+    if not offer:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "That suggestion no longer applies — the corrections behind it "
+            "have changed.",
+        )
+
+    employee = await scope.employees.find_one({"employee_id": offer["employee_id"]})
+    if not employee:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "That employee has left.")
+
+    if offer["action"] == "fixed_shift":
+        existing = await scope.fixed_shifts.find_one({
+            "employee_id": offer["employee_id"], "day": offer["day"],
+        })
+        if existing:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"{employee.get('name')} already has a fixed shift on {offer['day']}.",
+            )
+        await scope.fixed_shifts.insert({
+            "fixed_id": f"fs_{uuid.uuid4().hex[:10]}",
+            "employee_id": offer["employee_id"],
+            "day": offer["day"],
+            "start": offer["start"],
+            "end": offer["end"],
+        })
+        detail = (f"fixed shift for {employee.get('name')} on {offer['day']} "
+                  f"{offer['start']}-{offer['end']}")
+
+    elif offer["action"] == "day_off":
+        days = list(employee.get("preferred_days_off") or [])
+        if offer["day"] not in days:
+            days.append(offer["day"])
+        await scope.employees.update_one(
+            {"employee_id": offer["employee_id"]}, {"preferred_days_off": days},
+        )
+        detail = f"{offer['day']} added to {employee.get('name')}'s days off"
+
+    elif offer["action"] == "earliest_start":
+        availability = dict(employee.get("availability") or {})
+        availability["earliest_start"] = offer["start"]
+        await scope.employees.update_one(
+            {"employee_id": offer["employee_id"]}, {"availability": availability},
+        )
+        detail = (f"{employee.get('name')} set to start no earlier than "
+                  f"{offer['start']}")
+
+    else:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown suggestion.")
+
+    # Dismissed as well as applied: the corrections that prompted it are still
+    # in the history, so without this it would be offered again next week.
+    await scope.correction_dismissals.upsert(
+        {"signature": payload.signature},
+        {"signature": payload.signature, "applied_at": datetime.now().isoformat()},
+    )
+    await log_activity(scope.shop_id, "correction_applied", f"Learned: {detail}")
+    return {"ok": True, "detail": detail}
