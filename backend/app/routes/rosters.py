@@ -3,15 +3,21 @@ import logging
 import random
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 
 from collections import Counter
 
 from app import config
-from app.models import ExtraShiftReq, RosterGenReq, RosterUpdate, SickReport
-from app.services import corrections, llm, mailer, sick_cover
+from app.models import (
+    ExtraShiftReq,
+    ForceApproval,
+    RosterGenReq,
+    RosterUpdate,
+    SickReport,
+)
+from app.services import compliance, corrections, llm, mailer, sick_cover
 from app.services.demand import build_profile
 from app.services.hierarchy import sort_employees
 from app.services.roster_validation import validate_shifts
@@ -28,6 +34,7 @@ from app.services.scheduler import (
     violates_minor_curfew,
 )
 from app.services.shop_service import log_activity
+from app.security import verify_password
 from app.tenancy import ShopScope, CurrentScope
 
 log = logging.getLogger("roster.rosters")
@@ -434,16 +441,34 @@ async def update_roster(
             continue
         introduced.append(problem)
 
-    if introduced:
-        # Structured so the UI can list each reason rather than run them
-        # together into one unreadable sentence.
+    # One structural invariant still refuses, and only this one: the same
+    # person twice on the same day. It is not a rule about working conditions
+    # that a manager could reasonably override — it is a malformed roster.
+    # corrections.diff_roster identifies a shift by (employee, day) and says
+    # so in its own docstring; two rows with that key make the diff ambiguous
+    # and would quietly corrupt the corrections history, which is the most
+    # valuable data this product has.
+    duplicates = [p for p in verdict.blocking if "rostered twice on" in p]
+    if duplicates:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, {
-            "message": "That change would break the roster's rules.",
-            "reasons": introduced,
+            "message": "Somebody is rostered twice on the same day.",
+            "reasons": duplicates,
         })
 
-    # Problems that were already there still need saying — as something to
-    # fix, not a wall in front of an unrelated change.
+    # Every OTHER breach is SAVED, and reported.
+    #
+    # It used to be refused. That reads as the app knowing better than the
+    # manager, and it does not: somebody swapping two shifts at 6am knows
+    # things the app cannot see — a swap agreed between two people, an offer
+    # to cover, somebody going home early anyway. Refusing made a roster
+    # impossible to finish and taught people to work around the edit screen,
+    # which is where the corrections signal comes from.
+    #
+    # Nothing is lost by allowing it. The breach is attached to the person in
+    # the grid, and approval — the moment a draft becomes the schedule people
+    # are told to work — refuses until it is either fixed or deliberately
+    # overridden by somebody who re-enters their password. The decision stays
+    # with the manager; the record stays with the roster.
     pre_existing = [p for p in verdict.blocking if p not in introduced]
 
     rates = {e["employee_id"]: e.get("hourly_rate", 0) for e in employees}
@@ -467,10 +492,16 @@ async def update_roster(
         # Warnings from the edit replace the generator's, which described a
         # roster that no longer exists. Kept so they survive a page reload
         # rather than living only in a toast that has already gone.
+        # Everything worth telling them, in one list. `introduced` is kept
+        # first and separate in the response below, because "this change did
+        # that" is a different sentence from "this was already true".
         "edit_warnings": verdict.warnings + pre_existing,
         "updated_at": _now(),
     })
-    return await scope.rosters.find_one({"roster_id": roster_id})
+    saved = await scope.rosters.find_one({"roster_id": roster_id})
+    # What THIS edit caused, so the UI can name it rather than showing the
+    # week's whole backlog of problems after every keystroke.
+    return {**saved, "introduced": introduced}
 
 
 @router.get("/rosters/{roster_id}/suggestions")
@@ -542,6 +573,35 @@ async def suggest_for_gap(
     return {"day": day, "start": start, "end": end, "candidates": candidates[:12]}
 
 
+@router.get("/rosters/{roster_id}/audit")
+async def audit_roster(roster_id: str, scope: ShopScope = CurrentScope):
+    """Every rule this week breaks, grouped by the person it affects.
+
+    Read by the grid to highlight names, and by the approve dialog to say what
+    is being overridden. Recomputed on every request rather than stored: the
+    manager is editing while they read it, and a cached answer would be wrong
+    the moment they moved a shift.
+    """
+    roster = await scope.rosters.find_one({"roster_id": roster_id})
+    if not roster:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Roster not found")
+
+    breaches = compliance.audit(
+        roster.get("shifts") or [],
+        shop=scope.shop,
+        employees=await scope.employees.find(limit=1000),
+        week_start=roster["week_start"],
+        holidays=await scope.holidays.find(limit=1000),
+    )
+    return {
+        "roster_id": roster_id,
+        "people": compliance.group_by_employee(breaches),
+        "total": len(breaches),
+        "blocking": compliance.blocking(breaches),
+        "can_force": bool(breaches) and not compliance.blocking(breaches),
+    }
+
+
 @router.post("/rosters/{roster_id}/approve")
 async def approve_roster(
     roster_id: str,
@@ -550,6 +610,7 @@ async def approve_roster(
         description="Approve despite hours where nobody is in the shop. "
                     "Recorded against the roster.",
     ),
+    payload: Optional[ForceApproval] = None,
     scope: ShopScope = CurrentScope,
 ):
     """Approve a roster and retire the other drafts for that week.
@@ -591,6 +652,44 @@ async def approve_roster(
             ],
             "approved_roster_id": rival["roster_id"],
         })
+
+    # ---- rules the finished week breaks -----------------------------------
+    #
+    # Editing no longer refuses: the manager can build whatever week the shop
+    # actually needs, because they know things the app does not. This is where
+    # it is accounted for. A week with breaches can still become real, but only
+    # deliberately, by somebody who proves who they are — and the log records
+    # what they overrode.
+    breaches = compliance.audit(
+        roster.get("shifts") or [],
+        shop=scope.shop,
+        employees=await scope.employees.find(limit=1000),
+        week_start=roster["week_start"],
+        holidays=await scope.holidays.find(limit=1000),
+    )
+    hard = compliance.blocking(breaches)
+    if hard:
+        raise HTTPException(status.HTTP_409_CONFLICT, {
+            "message": "This roster cannot be approved, with or without a "
+                       "password.",
+            "reasons": [b["message"] for b in hard],
+        })
+
+    forced = bool(payload and payload.force)
+    if breaches and not forced:
+        raise HTTPException(status.HTTP_409_CONFLICT, {
+            "message": f"{len(breaches)} rule(s) are broken in this week.",
+            "reasons": [b["message"] for b in breaches[:8]],
+            "needs_force": True,
+        })
+
+    if forced:
+        if not verify_password(payload.password or "", scope.user.get("password_hash")):
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "That password is not right. Force approval needs the password "
+                "of the account authorising it.",
+            )
 
     critical = roster.get("critical_issues") or []
     if critical and not acknowledge_gaps:
@@ -635,7 +734,25 @@ async def approve_roster(
         # Rosters generated before the snapshot existed cannot be compared,
         # so they are marked rather than counted as a perfect zero.
         "corrections_measurable": bool(roster.get("generated_shifts")),
+        # A forced week says so for ever. Whoever reads this roster later —
+        # the manager, an inspector, the person who worked six days — sees
+        # that somebody decided, who they were, and exactly what was broken.
+        "force_approved": forced,
+        "force_approved_by": scope.user.get("email") if forced else None,
+        "force_approved_reason": (payload.reason if forced and payload else None),
+        "overridden_rules": [
+            {"employee_id": b["employee_id"], "name": b["name"],
+             "rule": b["rule"], "message": b["message"]}
+            for b in breaches
+        ] if forced else [],
     })
+    if forced:
+        await log_activity(
+            scope.shop_id, "roster_force_approved",
+            f"{scope.user.get('email')} force-approved week of "
+            f"{roster['week_start']} with {len(breaches)} rule(s) broken"
+            + (f" — {payload.reason}" if payload and payload.reason else ""),
+        )
     await log_activity(
         scope.shop_id, "roster_approved",
         f"Approved {roster['version']} for week of {roster['week_start']} "

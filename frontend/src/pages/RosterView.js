@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api, errorMessage, refusalReasons, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, roleAccent, shiftHours, shiftPaidHours, dateForDay, fmtDayDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import RosterPrintSheet from "@/components/RosterPrintSheet";
 import { Link } from "react-router-dom";
 import { Crown } from "lucide-react";
 import { toast } from "sonner";
@@ -30,6 +31,19 @@ export default function RosterView() {
   const [confirmUnapprove, setConfirmUnapprove] = useState(false);
   const [sickShift, setSickShift] = useState(null);
   const [extraOpen, setExtraOpen] = useState(false);
+  // How many sheets of paper the printed rota may use, and whether the
+  // chooser is open. Two separate things: closing the dialog must not reset
+  // the choice, or the sheet re-renders at one page in the moment between
+  // dismissing the dialog and the print job reading the DOM — silently
+  // printing something other than what was asked for.
+  const [printPages, setPrintPages] = useState(1);
+  const [printOpen, setPrintOpen] = useState(false);
+  // Which rules this week breaks, per person. Refetched after every save,
+  // because the manager is editing while they read it — a cached answer is
+  // wrong the moment they move a shift.
+  const [audit, setAudit] = useState(null);
+  const [breachFor, setBreachFor] = useState(null);
+  const [forceOpen, setForceOpen] = useState(false);
   // How many drafts this week has been through. Counted from the
   // stored version rather than a local tally, so it survives a
   // reload and is honest about what actually happened.
@@ -211,11 +225,24 @@ export default function RosterView() {
    * we ask — approving a week with known gaps is sometimes the right call,
    * but it should be a decision rather than a click that looked clean.
    */
-  const approve = async (acknowledgeGaps = false) => {
+  useEffect(() => {
+    if (!roster?.roster_id) { setAudit(null); return; }
+    api.get(`/rosters/${roster.roster_id}/audit`)
+      .then((r) => setAudit(r.data))
+      // A failed audit must not blank the grid. Worst case the names are not
+      // highlighted and approval still refuses on the server, which is the
+      // check that actually matters.
+      .catch(() => setAudit(null));
+  }, [roster?.roster_id, roster?.shifts]);
+
+  const breachesFor = (employeeId) =>
+    (audit?.people || []).find((p) => p.employee_id === employeeId);
+
+  const approve = async (acknowledgeGaps = false, force = null) => {
     try {
       const url = `/rosters/${roster.roster_id}/approve`
         + (acknowledgeGaps ? "?acknowledge_gaps=true" : "");
-      const r = await api.post(url);
+      const r = await api.post(url, force || undefined);
       if (!r.data.approved_with_gaps) {
         confetti({
           particleCount: 140, spread: 80, origin: { y: 0.4 },
@@ -235,6 +262,14 @@ export default function RosterView() {
       // Checked by shape, because rendering the object would crash the page.
       if (err.response?.status === 409 && typeof detail === "string") {
         setPendingApproval(detail);
+        return;
+      }
+      // A week that breaks rules can still be approved, by somebody who
+      // proves who they are. A week that breaks the HARD floor cannot, and
+      // that refusal must not offer a password box — implying the right
+      // credentials would help would be a lie.
+      if (err.response?.status === 409 && detail?.needs_force) {
+        setForceOpen(true);
         return;
       }
       if (detail?.reasons) {
@@ -793,12 +828,36 @@ export default function RosterView() {
                 const empHours = (roster.shifts || [])
                   .filter((s) => s.employee_id === e.employee_id)
                   .reduce((a, s) => a + shiftPaidHours(s), 0);
+                const trouble = breachesFor(e.employee_id);
                 return (
                   <div key={e.employee_id} className="grid grid-cols-8 gap-2 mb-1.5 items-stretch group">
                     <div className="flex items-center gap-1 px-2.5 py-2 rounded-md"
-                         style={{ background: "var(--canvas-soft)" }}>
+                         style={{
+                           background: trouble
+                             ? "var(--danger-soft)" : "var(--canvas-soft)",
+                           border: trouble
+                             ? "1px solid var(--danger-hairline)" : "1px solid transparent",
+                         }}>
                       <div className="min-w-0 flex-1">
-                        <div className="text-[13px] truncate leading-tight">{e.name}</div>
+                        {/* A highlighted name is a question, so it has to be
+                            answerable in one click — the manager wants to know
+                            WHAT is wrong with this person, not that something
+                            is. */}
+                        {trouble ? (
+                          <button
+                            type="button"
+                            data-testid={`breach-${e.employee_id}`}
+                            onClick={() => setBreachFor(trouble)}
+                            className="text-[13px] truncate leading-tight text-left w-full"
+                            style={{ color: "var(--danger)" }}
+                            title="Click to see which rules this breaks"
+                          >
+                            {e.name}
+                            <AlertTriangle size={10} className="inline ml-1 mb-0.5" />
+                          </button>
+                        ) : (
+                          <div className="text-[13px] truncate leading-tight">{e.name}</div>
+                        )}
                         <div className="flex items-center gap-1.5 mt-1">
                           <span className={`text-[10px] px-1.5 py-0.5 rounded ${roleClass(e.role)}`}>
                             {e.role}
@@ -1001,13 +1060,8 @@ export default function RosterView() {
             <button onClick={exportPDF} className="btn btn-secondary"><FileDown size={14} /> PDF</button>
             <button onClick={exportCSV} className="btn btn-secondary"><FileDown size={14} /> CSV</button>
             <button
-              onClick={() => {
-                const pages = parseInt(prompt("How many pages? (1-4)", "1") || "1", 10);
-                document.documentElement.style.setProperty(
-                  "--print-scale", String(1 / Math.max(1, Math.min(4, pages))),
-                );
-                setTimeout(() => window.print(), 50);
-              }}
+              data-testid="btn-print"
+              onClick={() => setPrintOpen(true)}
               className="btn btn-secondary"
             >
               <Printer size={14} /> Print
@@ -1068,6 +1122,43 @@ export default function RosterView() {
           shift={undoSick}
           onClose={() => setUndoSick(null)}
           onDone={() => { setUndoSick(null); load(); }}
+        />
+      )}
+
+      {/* Always rendered, never visible on screen — the print stylesheet
+          hides the interactive grid and shows this instead. Rendering it
+          only on demand would mean the browser printing before React had
+          laid it out. */}
+      {roster && (
+        <RosterPrintSheet
+          roster={roster}
+          employees={gridEmployees}
+          shop={shop}
+          pages={printPages}
+        />
+      )}
+
+      {printOpen && (
+        <PrintDialog
+          value={printPages}
+          onChange={setPrintPages}
+          people={gridEmployees.length}
+          onClose={() => setPrintOpen(false)}
+        />
+      )}
+
+      {breachFor && (
+        <BreachModal person={breachFor} onClose={() => setBreachFor(null)} />
+      )}
+
+      {forceOpen && (
+        <ForceApproveModal
+          audit={audit}
+          onClose={() => setForceOpen(false)}
+          onConfirm={async (password, reason) => {
+            await approve(false, { force: true, password, reason });
+            setForceOpen(false);
+          }}
         />
       )}
 
@@ -1878,6 +1969,256 @@ function ExtraStaffModal({ rosterId, employees, week, onClose, onDone }) {
           {saving ? <RefreshCw size={14} className="animate-spin" /> : <UserPlus size={14} />}
           Add as extra
         </button>
+      </div>
+    </div>
+  );
+}
+
+
+/**
+ * How many sheets of paper the rota may use.
+ *
+ * Asked rather than assumed, because it is a real trade-off and only the
+ * person at the printer knows which way it goes. A shop with 25 staff does
+ * not want ten sheets; a shop that pins the rota where people read it at a
+ * glance does not want six-point type. Neither is the right default for the
+ * other.
+ *
+ * It replaces a browser prompt() that took a number and then scaled by
+ * 1/pages — which meant "1 page" applied no compression at all and printed
+ * exactly as many sheets as it always had.
+ */
+function PrintDialog({ value, onChange, people, onClose }) {
+  // Mirrors RosterPrintSheet's arithmetic so the warning is honest: rows are
+  // people, plus a heading per role, plus the day header.
+  const estimateRows = people + 4;
+  const rowMm = Math.min(9, Math.max(3.2, (152 * value) / estimateRows));
+  const tooTight = rowMm <= 3.3;
+
+  const options = [
+    { pages: 1, label: "One sheet", hint: "Everything on a single page" },
+    { pages: 2, label: "Two sheets", hint: "Larger type, easier to read" },
+    { pages: 3, label: "Three sheets", hint: "Largest — for a noticeboard" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4 no-print"
+         onClick={onClose}>
+      <div className="max-w-sm w-full card elevated p-8 relative"
+           onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose} className="btn btn-ghost absolute top-3 right-3 p-2">
+          <X size={16} />
+        </button>
+
+        <div className="mb-1 font-medium flex items-center gap-2">
+          <Printer size={15} /> Print the rota
+        </div>
+        <div className="text-[13px] mb-5" style={{ color: "var(--ink-mute)" }}>
+          {people} {people === 1 ? "person" : "people"} on this week.
+        </div>
+
+        <div className="space-y-2">
+          {options.map((option) => (
+            <button
+              key={option.pages}
+              data-testid={`print-${option.pages}`}
+              onClick={() => onChange(option.pages)}
+              className="w-full text-left p-3 rounded-md"
+              style={{
+                border: `1px solid ${value === option.pages
+                  ? "var(--ink)" : "var(--hairline)"}`,
+                background: value === option.pages
+                  ? "var(--canvas-soft)" : "transparent",
+              }}
+            >
+              <div className="text-[13px]">{option.label}</div>
+              <div className="text-[11px]" style={{ color: "var(--ink-mute-2)" }}>
+                {option.hint}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {tooTight && (
+          <div className="status-warn p-3 mt-4 text-[11px]">
+            With {people} people this will be very small type. Two sheets will
+            be easier to read.
+          </div>
+        )}
+
+        <button
+          data-testid="print-go"
+          onClick={() => {
+            // The sheet is already rendered at this row height; closing the
+            // dialog first keeps it out of the printed page.
+            onClose();
+            setTimeout(() => window.print(), 80);
+          }}
+          className="btn btn-primary w-full mt-5"
+        >
+          <Printer size={14} /> Print
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+/**
+ * Why this person's name is highlighted.
+ *
+ * Named numbers, not rule names. "Rostered 48h against a 44h limit — 4h over"
+ * tells a manager what to change; "weekly_hours_exceeded" makes them go and
+ * look it up. The sentences come from the server, which is the only place
+ * that can see the whole week.
+ */
+function BreachModal({ person, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
+         onClick={onClose}>
+      <div className="max-w-md w-full card elevated p-8 relative"
+           onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose} className="btn btn-ghost absolute top-3 right-3 p-2">
+          <X size={16} />
+        </button>
+
+        <div className="font-medium mb-1">{person.name}</div>
+        <div className="text-[13px] mb-5" style={{ color: "var(--ink-mute)" }}>
+          {person.breaches.length}{" "}
+          {person.breaches.length === 1 ? "rule is" : "rules are"} broken this week.
+        </div>
+
+        <div className="space-y-2">
+          {person.breaches.map((breach, i) => (
+            <div key={i} className="card-soft p-3 flex items-start gap-2">
+              <AlertTriangle
+                size={13}
+                className="mt-0.5 shrink-0"
+                style={{ color: breach.overridable ? "var(--warn)" : "var(--danger)" }}
+              />
+              <div className="min-w-0">
+                <div className="text-[13px]">{breach.message}</div>
+                {!breach.overridable && (
+                  <div className="text-[11px] mt-1" style={{ color: "var(--danger)" }}>
+                    This one cannot be approved, with or without a password.
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-[11px] mt-5" style={{ color: "var(--ink-mute-2)" }}>
+          You can leave these as they are — the roster saves either way.
+          Approving the week is what needs them fixed, or deliberately
+          overridden.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Approving a week that breaks rules.
+ *
+ * The password is the account's own, re-entered. It is not security theatre
+ * and it is not a second factor: it exists so the record names a PERSON
+ * rather than a session somebody left open on the back-office machine. A
+ * six-day week is a decision with a consequence, and whoever takes it should
+ * be identifiable afterwards.
+ *
+ * The list of what is being overridden is shown in full, deliberately. An
+ * override you can grant without reading is the same as no override at all.
+ */
+function ForceApproveModal({ audit, onClose, onConfirm }) {
+  const [password, setPassword] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const breaches = (audit?.people || []).flatMap((p) => p.breaches);
+
+  const submit = async () => {
+    if (!password) { toast.error("Enter your password to authorise this"); return; }
+    setBusy(true);
+    try {
+      await onConfirm(password, reason);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
+         onClick={onClose}>
+      <div className="max-w-md w-full card elevated p-8 relative"
+           onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose} className="btn btn-ghost absolute top-3 right-3 p-2">
+          <X size={16} />
+        </button>
+
+        <div className="font-medium flex items-center gap-2 mb-1">
+          <AlertTriangle size={15} style={{ color: "var(--warn)" }} />
+          Approve anyway
+        </div>
+        <div className="text-[13px] mb-4" style={{ color: "var(--ink-mute)" }}>
+          This week breaks {breaches.length}{" "}
+          {breaches.length === 1 ? "rule" : "rules"}. Approving it makes it the
+          schedule your team is told to work.
+        </div>
+
+        <div className="card-soft p-3 mb-4 max-h-44 overflow-auto">
+          {breaches.map((breach, i) => (
+            <div key={i} className="text-[12px] py-1"
+                 style={{ color: "var(--ink-secondary)" }}>
+              • {breach.message}
+            </div>
+          ))}
+        </div>
+
+        <label className="block mb-3">
+          <div className="text-[11px] mb-1" style={{ color: "var(--ink-mute)" }}>
+            Why (optional, kept on the record)
+          </div>
+          <input
+            data-testid="force-reason"
+            value={reason}
+            maxLength={300}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Two people off sick, agreed with the team"
+            className="w-full px-3 py-2 text-[13px]"
+          />
+        </label>
+
+        <label className="block">
+          <div className="text-[11px] mb-1" style={{ color: "var(--ink-mute)" }}>
+            Your password
+          </div>
+          <input
+            data-testid="force-password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            autoFocus
+            className="w-full px-3 py-2 text-[13px]"
+          />
+          <div className="text-[11px] mt-1" style={{ color: "var(--ink-mute-2)" }}>
+            Recorded against this roster with your name and the list above.
+          </div>
+        </label>
+
+        <div className="flex gap-2 mt-5">
+          <button onClick={onClose} className="btn btn-secondary flex-1">
+            Go back and fix it
+          </button>
+          <button
+            data-testid="force-confirm"
+            onClick={submit}
+            disabled={busy || !password}
+            className="btn btn-primary flex-1"
+          >
+            {busy ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+            Approve anyway
+          </button>
+        </div>
       </div>
     </div>
   );

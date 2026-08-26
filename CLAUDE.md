@@ -196,6 +196,32 @@ under-16 curfew · over 12 hours · overlapping hours · booked annual leave.
 
 Everything else is offered with the price named, and the override recorded.
 
+## 4b. Editing warns; approving is where the rules bite
+
+An edit that breaks a rule is **saved**, not refused. Refusing read as the app
+knowing better than the manager, and it does not: somebody moving a shift at
+6am knows things the app cannot see. It also made a roster impossible to
+finish and taught people to work around the edit screen — which is where the
+corrections signal comes from.
+
+So: warn, allow, mark the person in the grid, and refuse at **approval** —
+the moment a draft becomes the schedule people are told to work. A week with
+breaches goes through only on **force approval**, which re-asks for the
+account password and records who overrode what (`compliance.py`,
+`overridden_rules` on the roster, plus the activity log).
+
+**Two breaches no password clears** (`compliance.HARD_FLOOR`):
+
+- `minor_curfew` — an under-16 outside 08:00–19:00. Criminal law, not a
+  company rule, and a signed-off record of it is discoverable.
+- `double_booked` — one person in two places at once. Not a judgement call;
+  forcing it produces a roster that cannot physically happen.
+
+**One structural check still refuses the edit itself:** the same person twice
+on one day. `corrections.diff_roster` identifies a shift by `(employee, day)`
+and says so in its own docstring — two rows with that key make the diff
+ambiguous and would quietly corrupt the corrections history.
+
 ## 5. Derive state, never store it
 
 A `step_3_done: true` flag starts lying the moment the data behind it changes.

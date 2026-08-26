@@ -359,3 +359,89 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
     margin-bottom: 12px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   The printed rota
+   ---------------------------------------------------------------------------
+   A sheet for a staffroom wall, not a screenshot of an app. Hidden on screen;
+   the only thing that prints. The interactive grid is suppressed entirely
+   during print, because overriding two dozen screen styles produced something
+   that still looked like a web page.
+--------------------------------------------------------------------------- */
+#print-sheet { display: none; }
+
+@media print {
+  /* The grid is for editing. This is for reading from across a room. */
+  #roster-print { display: none !important; }
+
+  #print-sheet {
+    display: block !important;
+    color: #000 !important;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .print-sheet-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 1.5pt solid #000;
+    padding-bottom: 2mm;
+    margin-bottom: 3mm;
+  }
+  .print-shop { font-size: 1.9em; font-weight: 600; letter-spacing: -0.01em; }
+  .print-week { font-size: 1em; }
+
+  .print-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .print-table th,
+  .print-table td {
+    border: 0.5pt solid #999;
+    padding: 0 1mm;
+    text-align: center;
+    overflow: hidden;
+    white-space: nowrap;
+    /* Times are the content; letting them wrap turns a 5mm row into 10mm and
+       breaks the page-fitting arithmetic. */
+    text-overflow: clip;
+  }
+  .print-table thead th {
+    background: #ececec !important;
+    font-weight: 600;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .print-date {
+    display: block;
+    font-weight: 400;
+    font-size: 0.78em;
+  }
+
+  /* Names are what somebody scans for, so they get the left edge and the
+     only left-aligned column. */
+  .print-name-col {
+    width: 22%;
+    text-align: left !important;
+    padding-left: 2mm !important;
+  }
+  .print-hours-col { width: 6%; }
+
+  .print-role-row td {
+    text-align: left !important;
+    font-weight: 600;
+    font-size: 0.92em;
+    background: #f6f6f6 !important;
+    padding-left: 2mm !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .print-off { color: #bbb !important; }
+
+  /* Never split a person's row, or a role away from its first name. */
+  .print-table tr { page-break-inside: avoid; }
+  .print-role-row { page-break-after: avoid; }
+  .print-table thead { display: table-header-group; }
+}

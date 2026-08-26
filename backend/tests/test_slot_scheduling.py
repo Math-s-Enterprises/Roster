@@ -1139,3 +1139,102 @@ class TestRebalanceOneDay:
         assert max(len(d) for d in days.values()) <= 5, (
             "somebody ended up on six days — the frozen days were not counted"
         )
+
+
+class TestNobodyIsPlacedTwiceOnADay:
+    """The bug a single-day rebalance exposed.
+
+    Fixed shifts were applied without checking whether the person was already
+    placed that day. Normally nothing else has placed them yet, so it never
+    showed. Rebalance Day hands the other six days in as LOCKED shifts, which
+    are laid down first — so everyone with a fixed shift got a second one on
+    top, and their week was counted twice.
+
+    It was invisible in the grid, which draws one cell per person per day: the
+    roster read 40h while the stored total said 60h.
+    """
+
+    def _shop_with_a_fixed_shift(self):
+        """The person needs HEADROOM under their cap for this to bite.
+
+        _apply_fixed_shifts also refuses a shift that would exceed the weekly
+        cap, so on a 40h cap the duplicate was rejected by that check instead
+        and the bug stayed hidden. It only appears for somebody whose cap
+        leaves room for the second copy — which is exactly why it showed up
+        for two people at the reference shop and nobody else.
+        """
+        # The reference shop's exact conditions, which is what it took to
+        # reproduce: breaks paid, a salaried 40h contract, and a
+        # max_weekly_hours well above it. The cap is what limits the damage —
+        # Megan ended on 60h, six shifts of ten, because the seventh would
+        # have exceeded 60 and was refused by the cap check instead.
+        shop = make_shop(breaks_are_paid=True)
+        team = make_team(size=10)
+        team[0].update({
+            "employment_type": "full_time_contract",
+            "contract_span_hours": 40,
+            "max_weekly_hours": 60,
+        })
+        fixed = [{
+            "employee_id": "e0", "day": d, "start": "06:00", "end": "16:00",
+        } for d in ("mon", "tue", "wed", "thu")]
+        return shop, team, fixed
+
+    def test_a_locked_day_does_not_re_add_the_fixed_shift(self):
+        shop, team, fixed = self._shop_with_a_fixed_shift()
+        hist = history()
+        profile = build_profile(
+            shop, hist, {e["employee_id"]: e["role"] for e in team}
+        )
+
+        first = solve_roster(
+            shop, team, [], fixed, [], WEEK, None, profile, history_rosters=hist,
+        )
+        # Exactly what the Rebalance Day route hands back in.
+        locked = [
+            s for s in first["shifts"]
+            if s["day"] != "sat" and s.get("start") and s.get("end")
+        ]
+        again = solve_roster(
+            shop, team, [], fixed, [], WEEK, None, profile, history_rosters=hist,
+            locked_shifts=locked, only_day="sat",
+        )
+
+        seen = {}
+        for shift in again["shifts"]:
+            if not shift.get("start"):
+                continue
+            key = (shift["employee_id"], shift["day"])
+            seen[key] = seen.get(key, 0) + 1
+
+        doubled = [k for k, count in seen.items() if count > 1]
+        assert not doubled, f"placed twice on the same day: {doubled}"
+
+    def test_the_reported_hours_match_the_shifts_shown(self):
+        """The symptom as the manager met it: the grid said 40h, the total
+        said 60h. One cell per person per day is what the grid can draw, so a
+        duplicate is invisible there and only the total gives it away."""
+        shop, team, fixed = self._shop_with_a_fixed_shift()
+        hist = history()
+        profile = build_profile(
+            shop, hist, {e["employee_id"]: e["role"] for e in team}
+        )
+        first = solve_roster(
+            shop, team, [], fixed, [], WEEK, None, profile, history_rosters=hist,
+        )
+        locked = [
+            s for s in first["shifts"]
+            if s["day"] != "sat" and s.get("start") and s.get("end")
+        ]
+        again = solve_roster(
+            shop, team, [], fixed, [], WEEK, None, profile, history_rosters=hist,
+            locked_shifts=locked, only_day="sat",
+        )
+
+        mine = [s for s in again["shifts"] if s["employee_id"] == "e0" and s.get("start")]
+        # What the grid can show: one shift per day.
+        visible = len({s["day"] for s in mine})
+        assert len(mine) == visible, (
+            f"e0 has {len(mine)} shifts across {visible} days — the extra ones "
+            f"are invisible in the grid but counted in the total"
+        )

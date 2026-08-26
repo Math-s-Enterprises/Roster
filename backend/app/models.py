@@ -346,6 +346,18 @@ class RosterGenReq(BaseModel):
     only_day: Optional[DayKey] = None
 
 
+class ForceApproval(BaseModel):
+    """Approving a week that breaks rules, deliberately.
+
+    The password is the account's own, re-entered. It is not a second factor
+    and does not pretend to be — it establishes WHO authorised the override,
+    so the record names a person rather than a session that was left open.
+    """
+    force: bool = False
+    password: str = ""
+    reason: str = Field("", max_length=300)
+
+
 class CorrectionDecision(BaseModel):
     """Accepting or refusing one learned suggestion."""
     signature: str = Field(min_length=1, max_length=200)

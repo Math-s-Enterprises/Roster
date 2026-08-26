@@ -160,7 +160,19 @@ def apply_24h_defaults(update: Dict[str, Any], current_shop: Dict[str, Any]) -> 
     coverage floor then only checked 09:00-21:00, so the small hours were
     unstaffed AND unreported.
     """
-    if not update.get("open_24h"):
+    # The flag AFTER this update, not just what the update mentions.
+    #
+    # Updates are partial (exclude_unset), so a save that changes anything
+    # else carries no `open_24h` at all. Reading only the payload meant a
+    # 24-hour shop reverted to whatever `hours` the settings form happened to
+    # be holding — usually 09:00-21:00 — every time something unrelated was
+    # saved. It appeared to work when the switch itself was toggled and to
+    # undo itself at random afterwards, which is the worst way for a setting
+    # to fail: the manager cannot tell what they did to cause it.
+    #
+    # `False` explicitly turns it off; absent means unchanged.
+    open_24h = update.get("open_24h", current_shop.get("open_24h"))
+    if not open_24h:
         return update
 
     # Always. A 24-hour shop that is not open 24 hours is a contradiction.

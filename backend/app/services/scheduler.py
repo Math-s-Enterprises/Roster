@@ -1227,6 +1227,18 @@ class _RosterBuilder:
             fixed = self.fixed_by_employee_day.get(employee_id, {}).get(day)
             if not fixed:
                 continue
+
+            # Already placed today — by booked leave, a pin, or a locked day.
+            #
+            # Defensive, not a fix for a reproduced bug. Every other pass
+            # checks this and this one did not; a second shift for the same
+            # person on the same day would be invisible in the grid, which
+            # draws one cell per person per day, while still counting twice in
+            # every total. The weekly-cap check below happens to reject most
+            # duplicates as a side effect, which is why nothing had shown.
+            if employee_id in assigned_today:
+                continue
+
             start, end = fixed
 
             if date_iso in self.employee_off_dates.get(employee_id, set()):
@@ -1770,6 +1782,81 @@ class _RosterBuilder:
         weights = [1.0 / (index + 1) for index in range(len(pool))]
         return self.rng.choices(pool, weights=weights, k=1)[0]
 
+    def _drop_duplicate_days(self) -> None:
+        """Nobody appears twice on one day. Enforced at the boundary.
+
+        Every pass is supposed to guarantee this and they each check it their
+        own way, so the invariant was never stated in one place — and when it
+        broke at the reference shop I could not reproduce which pass had done
+        it. Two people came out on 60h with six shifts of ten, four of them
+        real and two duplicated. Invisible in the grid, which draws one cell
+        per person per day, and wrong in every total that counts rows.
+
+        So it is asserted once, here, over the finished week. Cheaper than
+        auditing five passes, and it holds whatever a sixth pass does later.
+
+        The LONGER shift is kept. A duplicate is one of two things: the same
+        shift laid down twice, in which case they are identical and it does
+        not matter; or a real shift plus a shorter fragment, in which case the
+        real one is the one to keep.
+        """
+        best: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        removed: List[Dict[str, Any]] = []
+
+        for shift in self.result.shifts:
+            if not (shift.get("start") and shift.get("end")):
+                continue    # leave carries no times and cannot collide
+            key = (shift["employee_id"], shift["day"])
+            existing = best.get(key)
+            if existing is None:
+                best[key] = shift
+                continue
+            keep, drop = sorted(
+                (existing, shift),
+                key=lambda s: -shift_duration_minutes(s["start"], s["end"]),
+            )
+            best[key] = keep
+            removed.append(drop)
+
+        if not removed:
+            return
+
+        for shift in removed:
+            self.result.shifts.remove(shift)
+            # Undo the accounting, or the hours stay wrong even though the
+            # row is gone — which is the same bug wearing a different hat.
+            span = shift_duration_minutes(shift["start"], shift["end"]) / 60
+            employee_id = shift["employee_id"]
+            self.span_used[employee_id] = max(
+                0.0, self.span_used.get(employee_id, 0.0) - span,
+            )
+            self.hours_used[employee_id] = max(
+                0.0,
+                self.hours_used[employee_id]
+                - paid_hours(shift["start"], shift["end"],
+                             breaks_paid=self.breaks_paid),
+            )
+            for covered_day, hour in self.hours_covered(
+                shift["day"], shift["start"], shift["end"],
+                wrap_week=self.wrap_week,
+            ):
+                self.on_duty[covered_day][hour] = max(
+                    0, self.on_duty[covered_day][hour] - 1,
+                )
+
+        # Reported, not silently swallowed: a duplicate means a pass placed
+        # somebody it should not have, and hiding that would leave the real
+        # fault to be found again by a manager rather than by a test.
+        names = ", ".join(sorted({
+            f"{self.employees_by_id.get(s['employee_id'], {}).get('name', s['employee_id'])}"
+            f" ({s['day']})"
+            for s in removed
+        }))
+        self.result.issues.append(
+            f"Removed {len(removed)} duplicate shift(s) — somebody was placed "
+            f"twice on the same day: {names}. Please report this."
+        )
+
     def _fit_length_to_contract(
         self, employee: Dict[str, Any], day: str, start: str, end: str
     ) -> str:
@@ -2280,6 +2367,7 @@ class _RosterBuilder:
         # Senior cover is repaired in pass 2a, so a second warning here would
         # only restate what that pass already reported when it could not.
 
+        self._drop_duplicate_days()
         self._finalise()
         return self.result
 

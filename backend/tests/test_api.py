@@ -524,12 +524,17 @@ def test_a_pre_existing_breach_is_still_reported(client):
     assert any("20h contract" in w for w in body.get("edit_warnings", []))
 
 
-def test_an_edit_that_makes_things_worse_is_still_refused(client):
-    """Only what the edit introduces is held against it — but that much is."""
+def test_an_edit_that_makes_things_worse_is_saved_and_named(client):
+    """CHANGED, deliberately: this used to assert a 400.
+
+    The distinction it protects still matters and is still tested — what the
+    EDIT introduced is reported separately from what was already wrong, so the
+    manager is not shown the week's whole backlog after every change. What has
+    changed is that being told no longer means being stopped.
+    """
     token = register(client)
     roster_id, _, b, shifts = _week_with_a_pre_existing_breach(client, token)
 
-    # Push the second employee to six days: a breach the edit introduces.
     worse = shifts + [
         {"employee_id": b, "day": d, "start": "15:00", "end": "20:00"}
         for d in ("mon", "tue", "thu", "fri", "sat")
@@ -537,8 +542,10 @@ def test_an_edit_that_makes_things_worse_is_still_refused(client):
     response = client.put(
         f"/api/rosters/{roster_id}", json={"shifts": worse}, headers=auth(token),
     )
-    assert response.status_code == 400
-    assert any("6 days" in r for r in response.json()["detail"]["reasons"])
+    assert response.status_code == 200, response.text
+    assert any("6 days" in r for r in response.json()["introduced"]), (
+        "the edit caused this, so it has to be named as what the edit caused"
+    )
 
 
 class TestPinAndRebalance:
@@ -1824,7 +1831,19 @@ class TestRosters:
         ]}, headers=auth(token))
         assert response.status_code == 409
 
-    def test_over_long_shift_is_rejected_on_edit(self, client):
+    def test_over_long_shift_is_saved_and_reported_on_edit(self, client):
+        """CHANGED, deliberately: this used to assert a 400.
+
+        Refusing the edit read as the app knowing better than the manager, and
+        it does not — somebody moving a shift at 6am knows things the app
+        cannot see. It also made a roster impossible to finish, and taught
+        people to work around the edit screen, which is where the corrections
+        signal comes from.
+
+        The rule has not been dropped. It moves to approval, where the week
+        becomes the schedule people are actually told to work, and where an
+        override has to be authenticated and is recorded.
+        """
         token = register(client)
         employee_id = client.post(
             "/api/employees", json=EMPLOYEE, headers=auth(token)
@@ -1836,11 +1855,18 @@ class TestRosters:
         response = client.put(f"/api/rosters/{roster_id}", json={"shifts": [
             {"employee_id": employee_id, "day": "mon", "start": "06:00", "end": "23:00"}
         ]}, headers=auth(token))
-        assert response.status_code == 400
-        # Refusals carry a list of reasons so the UI can show them one per
-        # line, rather than one run-together sentence.
-        detail = response.json()["detail"]
-        assert any("maximum shift length" in reason for reason in detail["reasons"])
+        assert response.status_code == 200, response.text
+        assert any(
+            "maximum shift length" in reason
+            for reason in response.json()["introduced"]
+        ), "saved, but the manager still has to be told what it did"
+
+        # And the week cannot become real while it stands.
+        approval = client.post(
+            f"/api/rosters/{roster_id}/approve", headers=auth(token),
+        )
+        assert approval.status_code == 409
+        assert approval.json()["detail"]["needs_force"] is True
 
     def test_duplicate_shift_for_one_person_is_rejected(self, client):
         token = register(client)
@@ -2780,3 +2806,195 @@ class TestCorrectionsReport:
         after = client.get("/api/reports/corrections", headers=auth(token)).json()
         assert offer["signature"] not in [s["signature"] for s in after["suggestions"]]
         assert after["dismissed_count"] == 1
+
+
+class TestForceApproval:
+    """A week that breaks rules can become real — deliberately, and on record.
+
+    Two things are being balanced. The manager knows things the app does not,
+    so they must be able to finish a roster the app disagrees with. And a
+    roster is what people are told to work, so a breach must not go through
+    as a click somebody could make without noticing.
+    """
+
+    PASSWORD = "password123"
+
+    def _roster_with_a_six_day_week(self, client, token):
+        employee_id = client.post(
+            "/api/employees", json=EMPLOYEE, headers=auth(token),
+        ).json()["employee_id"]
+        for name in ("Bea", "Cara"):
+            client.post(
+                "/api/employees",
+                json={**EMPLOYEE, "name": name, "email": f"{name.lower()}@e.com"},
+                headers=auth(token),
+            )
+        roster = client.post(
+            "/api/roster/generate", json={"week_start": "2026-10-05"},
+            headers=auth(token),
+        ).json()
+
+        six_days = [
+            {"employee_id": employee_id, "day": d, "start": "09:00", "end": "17:00"}
+            for d in ("mon", "tue", "wed", "thu", "fri", "sat")
+        ]
+        others = [
+            {"employee_id": s["employee_id"], "day": s["day"],
+             "start": s.get("start") or "", "end": s.get("end") or "",
+             "paid_holiday": bool(s.get("paid_holiday")),
+             "unpaid_holiday": bool(s.get("unpaid_holiday")),
+             "sick": bool(s.get("sick"))}
+            for s in roster["shifts"] if s["employee_id"] != employee_id
+        ]
+        saved = client.put(
+            f"/api/rosters/{roster['roster_id']}",
+            json={"shifts": six_days + others}, headers=auth(token),
+        )
+        assert saved.status_code == 200, saved.text
+        return roster["roster_id"], employee_id
+
+    def test_the_breach_is_attached_to_the_person(self, client):
+        """The grid highlights a name, so the audit has to be per-person."""
+        token = register(client)
+        roster_id, employee_id = self._roster_with_a_six_day_week(client, token)
+
+        audit = client.get(
+            f"/api/rosters/{roster_id}/audit", headers=auth(token),
+        ).json()
+        mine = next(p for p in audit["people"] if p["employee_id"] == employee_id)
+
+        assert any(b["rule"] == "days_worked" for b in mine["breaches"])
+        # A sentence with the numbers in it, not a rule name.
+        assert any("6 days" in b["message"] for b in mine["breaches"])
+
+    def test_approval_is_refused_while_a_rule_is_broken(self, client):
+        token = register(client)
+        roster_id, _ = self._roster_with_a_six_day_week(client, token)
+
+        response = client.post(
+            f"/api/rosters/{roster_id}/approve", headers=auth(token),
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"]["needs_force"] is True
+
+    def test_the_wrong_password_does_not_force_it(self, client):
+        token = register(client)
+        roster_id, _ = self._roster_with_a_six_day_week(client, token)
+
+        response = client.post(
+            f"/api/rosters/{roster_id}/approve",
+            json={"force": True, "password": "not-the-password"},
+            headers=auth(token),
+        )
+        assert response.status_code == 401
+        assert client.get(
+            f"/api/rosters/{roster_id}", headers=auth(token),
+        ).json()["approved"] is not True
+
+    def test_the_right_password_forces_it_and_records_what_was_broken(self, client):
+        token = register(client)
+        roster_id, employee_id = self._roster_with_a_six_day_week(client, token)
+
+        response = client.post(
+            f"/api/rosters/{roster_id}/approve",
+            json={"force": True, "password": self.PASSWORD,
+                  "reason": "Cover for a delivery"},
+            headers=auth(token),
+        )
+        assert response.status_code == 200, response.text
+
+        roster = client.get(
+            f"/api/rosters/{roster_id}", headers=auth(token),
+        ).json()
+        assert roster["approved"] is True
+        assert roster["force_approved"] is True
+        assert roster["force_approved_by"] == "owner@example.com"
+        assert roster["force_approved_reason"] == "Cover for a delivery"
+        # Not a count — what was overridden, so it can be read back later by
+        # somebody who was not in the room.
+        assert any(
+            r["rule"] == "days_worked" and r["employee_id"] == employee_id
+            for r in roster["overridden_rules"]
+        )
+
+    def test_a_clean_roster_needs_no_password(self, client):
+        """The override must not become the normal way to approve."""
+        token = register(client)
+        for name in ("Bea", "Cara", "Dev"):
+            client.post(
+                "/api/employees",
+                json={**EMPLOYEE, "name": name, "email": f"{name.lower()}@e.com"},
+                headers=auth(token),
+            )
+        roster = client.post(
+            "/api/roster/generate", json={"week_start": "2026-10-12"},
+            headers=auth(token),
+        ).json()
+
+        audit = client.get(
+            f"/api/rosters/{roster['roster_id']}/audit", headers=auth(token),
+        ).json()
+        assert audit["total"] == 0, f"generated week is not clean: {audit['people']}"
+
+        assert client.post(
+            f"/api/rosters/{roster['roster_id']}/approve", headers=auth(token),
+        ).status_code == 200
+
+
+class TestTwentyFourHourStaysTwentyFourHour:
+    """The setting that undid itself at random.
+
+    apply_24h_defaults read `open_24h` from the UPDATE only. Updates are
+    partial, so a save that changed anything else carried no open_24h — the
+    guard returned early and whatever `hours` the settings form was holding,
+    usually 09:00-21:00, was written over a 24-hour shop's real hours.
+
+    It looked like it worked (toggling the switch does send the flag) and then
+    reverted for no reason the manager could see.
+    """
+
+    def _hours(self, client, token):
+        shop = client.get("/api/shop", headers=auth(token)).json()
+        return {h["day"]: (h["open"], h["close"]) for h in shop["hours"]}
+
+    def test_turning_it_on_opens_every_day(self, client):
+        token = register(client)
+        client.put("/api/shop", json={"open_24h": True}, headers=auth(token))
+
+        hours = self._hours(client, token)
+        assert set(hours.values()) == {("00:00", "23:59")}
+
+    def test_an_unrelated_save_does_not_close_the_shop(self, client):
+        """The reported bug, exactly: change something else, lose the hours."""
+        token = register(client)
+        client.put("/api/shop", json={"open_24h": True}, headers=auth(token))
+
+        # A settings save that says nothing about open_24h but does carry the
+        # hours field — which is what the form sends.
+        client.put("/api/shop", json={
+            "name": "Renamed Shop",
+            "hours": [
+                {"day": d, "open": "09:00", "close": "21:00", "closed": False}
+                for d in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+            ],
+        }, headers=auth(token))
+
+        hours = self._hours(client, token)
+        assert set(hours.values()) == {("00:00", "23:59")}, (
+            f"a 24-hour shop closed itself on an unrelated save: {hours['mon']}"
+        )
+
+    def test_turning_it_off_releases_the_hours(self, client):
+        """False is a decision and must be honoured — absent is not False."""
+        token = register(client)
+        client.put("/api/shop", json={"open_24h": True}, headers=auth(token))
+        client.put("/api/shop", json={
+            "open_24h": False,
+            "hours": [
+                {"day": d, "open": "09:00", "close": "21:00", "closed": False}
+                for d in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+            ],
+        }, headers=auth(token))
+
+        hours = self._hours(client, token)
+        assert hours["mon"] == ("09:00", "21:00")
