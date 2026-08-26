@@ -144,6 +144,25 @@ is 25 on that rate working 40 hours — their step could never be completed.
 Same distinction as §5 of CLAUDE.md, from the other side: derive state where
 you can, but a DECISION has to be recorded.
 
+**I write a diagnosis into a comment before I have tested it.** The worst
+instance this session: two people showed 60h against a 40h contract. I decided
+`_apply_fixed_shifts` was placing them twice after a Rebalance Day, added a
+guard, and wrote a comment stating that as the cause — then tested it and
+found no duplicates at all, through the solver OR the route. The duplicates
+were real in his data; my explanation was invented.
+
+**A comment is a claim. If it says "this happens because X", X has been
+demonstrated.** The guard stayed (nothing should place two shifts for one
+person on one day) but its comment now says "defensive, not a fix for a
+reproduced bug" — which is the truth and is still useful to the next reader.
+
+**When the cause will not come out, move the check to the boundary.** I could
+not find which pass created the duplicates. Rather than keep guessing I
+asserted the invariant once at the end of `solve()` — remove the extra, undo
+its accounting, and REPORT it by name. Cheaper than auditing five passes,
+holds against a sixth, and the report will name the pass next time. That is a
+better outcome than a lucky guess would have been.
+
 **I keep blaming the environment before the code.** "Restart the backend",
 "stale module", "warm --reload" — three times, and each time the app was
 current and the cause was in the logic. He restarted everything twice on my
@@ -164,6 +183,13 @@ they are the highest-value thing built this session.
 different possible causes that look identical on screen: the slot is not in
 the day's plan at all, or it is and somebody outranked her. No amount of
 tuning who-beats-whom helps with the first. Ask which layer before designing.
+
+**His bug reports are precise, and the numbers in them are the diagnosis.**
+"60h but the roster shows 40" plus a dry run listing four duplicate rows was
+enough to prove the bug, locate it to one roster out of sixty, and identify
+which pass was involved — all before I understood the mechanism. When he
+gives a number, do the arithmetic on it: Megan's six shifts of ten stopping
+at exactly 60 pointed straight at `max_weekly_hours = 60` being the limiter.
 
 **Say plainly when a refusal is correct.** Twice the app was right and he
 thought it was broken — the five-day guard blocking my own test fixture, and
@@ -234,6 +260,10 @@ Built this session, all general behaviour with no shop-specific code:
 - **Extra staff** and **Rebalance Day**.
 - **Corrections learning Phases 2–4** — the falling edit count, suggestions
   that write real settings, Rebalance made primary.
+
+Since then: force approval with named breaches and a hard floor that no
+password clears; editing warns instead of refusing; a printed rota built for a
+wall rather than a screen; leave no longer counted as a contract shortfall.
 
 Still outstanding: **Phase 5** (re-run `measure_edit_burden.py` and prove the
 numbers moved). That is the only honest verdict on the whole session, and it
