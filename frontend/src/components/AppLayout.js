@@ -2,9 +2,10 @@ import React, { useState } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import {
   Archive, CalendarDays, Clock, Crown, LayoutDashboard, LogOut, Menu,
-  Receipt, Settings, ShieldCheck, ThermometerSnowflake, Upload, Users, Wand2, X, TrendingDown,
+  Receipt, Settings, ShieldCheck, ThermometerSnowflake, Upload, Users, Wand2, X, TrendingDown, KeyRound,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import ChangePasswordModal from "@/components/ChangePasswordModal";
 
 /**
  * App shell. See DESIGN.md — white canvas, hairline chrome, and no emerald
@@ -49,6 +50,7 @@ const NAV_GROUPS = [
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
@@ -131,12 +133,22 @@ export default function AppLayout() {
             </div>
           </div>
           <button
+            data-testid="btn-change-password"
+            onClick={() => setPasswordOpen(true)}
+            className="btn btn-ghost w-full justify-start text-[13px]"
+          >
+            <KeyRound size={14} /> Change password
+          </button>
+          <button
             data-testid="btn-logout"
             onClick={async () => { await logout(); navigate("/login"); }}
             className="btn btn-ghost w-full justify-start text-[13px]"
           >
             <LogOut size={14} /> Sign out
           </button>
+          {passwordOpen && (
+            <ChangePasswordModal onClose={() => setPasswordOpen(false)} />
+          )}
         </div>
       </aside>
 

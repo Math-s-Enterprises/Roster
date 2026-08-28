@@ -2998,3 +2998,93 @@ class TestTwentyFourHourStaysTwentyFourHour:
 
         hours = self._hours(client, token)
         assert hours["mon"] == ("09:00", "21:00")
+
+
+class TestChangingYourPassword:
+    """Changing it from inside the app, which was not possible before.
+
+    forgot-password emails a reset link and needs email configured; there was
+    nothing at all for somebody who knows their password and wants a new one.
+    That became a real gap when force approval started asking for this
+    password — it went from typed once at signup to used regularly.
+    """
+
+    OLD = "password123"
+    NEW = "a-much-better-one"
+
+    def test_the_new_password_works_and_the_old_one_does_not(self, client):
+        token = register(client)
+        response = client.post("/api/auth/change-password", json={
+            "current_password": self.OLD, "new_password": self.NEW,
+        }, headers=auth(token))
+        assert response.status_code == 200, response.text
+
+        assert client.post("/api/auth/login", json={
+            "email": "owner@example.com", "password": self.NEW,
+        }).status_code == 200
+        assert client.post("/api/auth/login", json={
+            "email": "owner@example.com", "password": self.OLD,
+        }).status_code == 401
+
+    def test_the_current_password_is_required(self, client):
+        """Being logged in proves a session exists, not that the person at the
+        keyboard is the account holder. Without this, anyone passing an
+        unlocked laptop could lock the owner out."""
+        token = register(client)
+        response = client.post("/api/auth/change-password", json={
+            "current_password": "not-it", "new_password": self.NEW,
+        }, headers=auth(token))
+        assert response.status_code == 401
+
+        # And nothing changed.
+        assert client.post("/api/auth/login", json={
+            "email": "owner@example.com", "password": self.OLD,
+        }).status_code == 200
+
+    def test_other_devices_are_signed_out(self, client):
+        """The promise this makes, and the half that is easy to miss.
+
+        Deleting server-side sessions is not enough: a bearer token cannot be
+        revoked, so every one already issued keeps working until it expires —
+        up to JWT_EXPIRY_DAYS of somebody else still being logged in as you,
+        which is precisely the situation you change a password to end.
+        """
+        phone = register(client)                    # the "other device"
+        laptop = client.post("/api/auth/login", json={
+            "email": "owner@example.com", "password": self.OLD,
+        }).json()["token"]
+
+        assert client.get("/api/auth/me", headers=auth(phone)).status_code == 200
+
+        changed = client.post("/api/auth/change-password", json={
+            "current_password": self.OLD, "new_password": self.NEW,
+        }, headers=auth(laptop))
+        assert changed.status_code == 200
+
+        assert client.get("/api/auth/me", headers=auth(phone)).status_code == 401, (
+            "the other device is still logged in — deleting sessions alone "
+            "does not revoke a bearer token"
+        )
+
+    def test_the_device_that_changed_it_stays_signed_in(self, client):
+        """Signing yourself out reads as the change having failed."""
+        token = register(client)
+        response = client.post("/api/auth/change-password", json={
+            "current_password": self.OLD, "new_password": self.NEW,
+        }, headers=auth(token))
+
+        fresh = response.json()["token"]
+        assert client.get("/api/auth/me", headers=auth(fresh)).status_code == 200
+
+    def test_the_same_password_twice_is_refused(self, client):
+        token = register(client)
+        response = client.post("/api/auth/change-password", json={
+            "current_password": self.OLD, "new_password": self.OLD,
+        }, headers=auth(token))
+        assert response.status_code == 400
+
+    def test_a_short_password_is_refused(self, client):
+        token = register(client)
+        assert client.post("/api/auth/change-password", json={
+            "current_password": self.OLD, "new_password": "short",
+        }, headers=auth(token)).status_code == 422

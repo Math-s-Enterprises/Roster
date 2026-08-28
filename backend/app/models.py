@@ -346,6 +346,18 @@ class RosterGenReq(BaseModel):
     only_day: Optional[DayKey] = None
 
 
+class ChangePassword(BaseModel):
+    """Changing your own password while logged in.
+
+    The CURRENT password is required even though the caller is already
+    authenticated. Being logged in proves a browser session exists; it does
+    not prove the person at the keyboard is the account holder. Without this,
+    anyone passing an unlocked laptop could lock the owner out permanently.
+    """
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=8, max_length=200)
+
+
 class ForceApproval(BaseModel):
     """Approving a week that breaks rules, deliberately.
 

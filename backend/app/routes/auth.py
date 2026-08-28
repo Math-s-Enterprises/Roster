@@ -8,7 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pymongo.errors import DuplicateKeyError
 
 from app import config, db
-from app.models import ForgotPasswordReq, GoogleAuthReq, LoginReq, ResetPasswordReq, SignupReq
+from app.models import (
+    ChangePassword,
+    ForgotPasswordReq,
+    GoogleAuthReq,
+    LoginReq,
+    ResetPasswordReq,
+    SignupReq,
+)
 from app.security import (
     create_access_token,
     generate_reset_token,
@@ -67,7 +74,10 @@ async def signup(payload: SignupReq):
         raise HTTPException(status.HTTP_409_CONFLICT, "That email is already registered")
 
     await ensure_shop(document)
-    return {"token": create_access_token(user_id), "user": _public_user(document)}
+    return {
+        "token": create_access_token(user_id, document.get("token_version", 0)),
+        "user": _public_user(document),
+    }
 
 
 @router.post("/login")
@@ -79,7 +89,12 @@ async def login(payload: LoginReq):
         raise _INVALID_CREDENTIALS
 
     await ensure_shop(user)
-    return {"token": create_access_token(user["user_id"]), "user": _public_user(user)}
+    return {
+        "token": create_access_token(
+            user["user_id"], user.get("token_version", 0),
+        ),
+        "user": _public_user(user),
+    }
 
 
 @router.post("/google")
@@ -120,7 +135,12 @@ async def google_sign_in(payload: GoogleAuthReq):
                 raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not create account")
 
     await ensure_shop(user)
-    return {"token": create_access_token(user["user_id"]), "user": _public_user(user)}
+    return {
+        "token": create_access_token(
+            user["user_id"], user.get("token_version", 0),
+        ),
+        "user": _public_user(user),
+    }
 
 
 @router.post("/forgot-password")
@@ -174,14 +194,21 @@ async def reset_password(payload: ResetPasswordReq):
     if result.modified_count == 0:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That reset link is invalid or has expired.")
 
+    owner = await db.users.find_one({"user_id": record["user_id"]}, {"_id": 0})
     await db.users.update_one(
         {"user_id": record["user_id"]},
-        {"$set": {"password_hash": hash_password(payload.password)}},
+        {"$set": {
+            "password_hash": hash_password(payload.password),
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+            # Closes what the comment below used to concede: bearer tokens
+            # issued before a reset kept working until they expired, so
+            # somebody resetting a password BECAUSE it was compromised left
+            # the other party logged in for up to JWT_EXPIRY_DAYS. That is
+            # the one situation where a reset most needs to mean something.
+            "token_version": int((owner or {}).get("token_version") or 0) + 1,
+        }},
     )
-    # Any password reset invalidates existing server-side sessions, so a
-    # stolen cookie from before the reset stops working. Bearer tokens
-    # already issued still work until they expire (JWT_EXPIRY_DAYS) — the
-    # same tradeoff every stateless-token login makes.
+    # Server-side sessions go too, so a stolen cookie stops working.
     await db.user_sessions.delete_many({"user_id": record["user_id"]})
 
     return {"message": "Your password has been reset. You can now log in."}
@@ -199,6 +226,66 @@ def _reset_is_live(record: Dict[str, Any]) -> bool:
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
     return expires >= datetime.now(timezone.utc)
+
+
+@router.post("/change-password")
+async def change_password(
+    payload: ChangePassword,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Change your own password, and sign out everywhere else.
+
+    Until now there was no way to do this at all. `forgot-password` emails a
+    reset link, which needs email configured, and there was nothing for
+    somebody who simply knows their password and wants a different one. That
+    became a real gap when force approval started asking for this password —
+    it went from something typed once at signup to something used regularly.
+
+    Everything else is signed out, deliberately. If the reason for changing it
+    is that somebody else knows it, leaving their session alive defeats the
+    point. Two mechanisms, because there are two kinds of credential:
+
+      * server-side sessions are deleted outright
+      * bearer tokens cannot be revoked, so `sessions_valid_from` records the
+        moment older ones stopped counting and get_current_user checks it
+
+    The second half is what makes the promise true. Deleting sessions alone
+    leaves every issued token working until it expires.
+    """
+    if not verify_password(payload.current_password, user.get("password_hash")):
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "That is not your current password.",
+        )
+
+    # Rejected rather than quietly accepted: somebody typing the same value
+    # twice has misunderstood what the form does, and telling them costs
+    # nothing.
+    if payload.current_password == payload.new_password:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "The new password is the same as the old one.",
+        )
+
+    version = int(user.get("token_version") or 0) + 1
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {
+            "password_hash": hash_password(payload.new_password),
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+            # Every token issued under the old number stops matching at once.
+            "token_version": version,
+        }},
+    )
+    await db.user_sessions.delete_many({"user_id": user["user_id"]})
+
+    # A fresh token for THIS device, issued after the cutoff. Without it the
+    # person who just changed their password would be signed out too, which
+    # reads as the change having failed.
+    return {
+        "message": "Password changed. Other devices have been signed out.",
+        "token": create_access_token(user["user_id"], version),
+    }
 
 
 @router.get("/me")

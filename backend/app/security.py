@@ -74,10 +74,27 @@ def hash_reset_token(token: str) -> str:
 # ---------------------------------------------------------------------------
 # Tokens
 # ---------------------------------------------------------------------------
-def create_access_token(user_id: str) -> str:
-    expires = datetime.now(timezone.utc) + timedelta(days=config.JWT_EXPIRY_DAYS)
+def create_access_token(user_id: str, token_version: int = 0) -> str:
+    """A bearer token for this user, stamped with their token version.
+
+    The version is what makes "changing your password signs you out
+    everywhere" true. Deleting server-side sessions is not enough: a bearer
+    token cannot be revoked, so every one already issued keeps working until
+    it expires — up to JWT_EXPIRY_DAYS of somebody else still logged in as
+    you, which is exactly what you change a password to stop.
+
+    A COUNTER rather than a timestamp, and that was not the first attempt.
+    Comparing against "the password last changed at" fails on sub-second
+    precision: a JWT `iat` is whole seconds, so the token issued by the very
+    request that set the cutoff looks older than it. Rounding the cutoff down
+    fixes that and opens a one-second window where an old token still passes.
+    A counter has no windows and no clock in it — the number either matches
+    or it does not.
+    """
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=config.JWT_EXPIRY_DAYS)
     return jwt.encode(
-        {"user_id": user_id, "exp": expires},
+        {"user_id": user_id, "exp": expires, "iat": now, "ver": token_version},
         config.JWT_SECRET,
         algorithm=config.JWT_ALGORITHM,
     )
@@ -89,9 +106,16 @@ def decode_access_token(token: str) -> Optional[str]:
     jwt.decode verifies the signature AND the `exp` claim, so an expired or
     tampered token raises rather than returning stale data.
     """
+    claims = decode_access_claims(token)
+    return claims.get("user_id") if claims else None
+
+
+def decode_access_claims(token: str) -> Optional[Dict[str, Any]]:
+    """The whole payload, for callers that need `iat` as well as the user."""
     try:
-        payload = jwt.decode(token, config.JWT_SECRET, algorithms=[config.JWT_ALGORITHM])
-        return payload.get("user_id")
+        return jwt.decode(
+            token, config.JWT_SECRET, algorithms=[config.JWT_ALGORITHM],
+        )
     except jwt.PyJWTError:
         return None
 
@@ -116,10 +140,12 @@ async def get_current_user(
     is declared once per route instead of reimplemented in each handler.
     """
     if authorization and authorization.startswith("Bearer "):
-        user_id = decode_access_token(authorization[7:])
-        if user_id:
-            user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-            if user:
+        claims = decode_access_claims(authorization[7:])
+        if claims and claims.get("user_id"):
+            user = await db.users.find_one(
+                {"user_id": claims["user_id"]}, {"_id": 0},
+            )
+            if user and _token_still_valid(claims, user):
                 return user
 
     if session_token:
@@ -130,6 +156,20 @@ async def get_current_user(
                 return user
 
     raise _UNAUTHENTICATED
+
+
+def _token_still_valid(claims: Dict[str, Any], user: Dict[str, Any]) -> bool:
+    """False for a token issued before the user's version was last bumped.
+
+    A JWT cannot be revoked — that is the trade for not looking the session up
+    on every request. So the user document carries a counter, the token
+    carries the value it was issued under, and they have to agree.
+
+    Both default to 0, so tokens issued before this existed keep working on
+    accounts that have never changed a password. The first change bumps the
+    counter to 1 and every older token stops matching at once.
+    """
+    return int(claims.get("ver") or 0) == int(user.get("token_version") or 0)
 
 
 def _session_is_live(session: Dict[str, Any]) -> bool:
