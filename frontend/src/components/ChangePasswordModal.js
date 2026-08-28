@@ -16,8 +16,22 @@
  *
  * Because they will, and somebody halfway through something on their phone
  * should find that out before pressing the button rather than after.
+ *
+ * WHY IT IS A PORTAL
+ *
+ * It is opened from a button inside the sidebar, and rendering it there put
+ * it INSIDE the sidebar's DOM. A `position: fixed` element is positioned
+ * against the viewport only while no ancestor creates a containing block —
+ * any transform, filter or backdrop-filter on a parent makes it position
+ * against THAT instead. The sidebar has one, so the dialog was squeezed into
+ * the left column instead of sitting over the page.
+ *
+ * Rendering into document.body means the dialog does not care where it was
+ * opened from. Fixing it with z-index or width would only have papered over
+ * the wrong parent.
  */
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { api, errorMessage, setToken } from "@/lib/api";
 import { toast } from "sonner";
 import { X, KeyRound, RefreshCw } from "lucide-react";
@@ -55,7 +69,7 @@ export default function ChangePasswordModal({ onClose }) {
     } finally { setSaving(false); }
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
          onClick={onClose}>
       <div className="max-w-sm w-full card elevated p-8 relative"
@@ -140,6 +154,7 @@ export default function ChangePasswordModal({ onClose }) {
           Change password
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
