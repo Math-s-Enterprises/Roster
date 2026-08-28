@@ -54,6 +54,17 @@ export const EMPLOYMENT_TYPES = [
 
 const DEFAULT_CONTRACT_SPAN = 42.5;
 const DEFAULT_CONTRACT_TOLERANCE = 1.5;
+// Beyond this, "may fall short by" stops describing slack and starts
+// switching the floor off. The tolerance exists to absorb the fact that a
+// contract can rarely be hit exactly from whole shifts — half an hour here,
+// an hour there. A whole shift's worth of it means a week can come in
+// materially short and nothing will say so.
+//
+// Set to 23 on a 42.5h contract at the reference shop, the floor became
+// 19.5h: somebody could work half their contract and the roster called it
+// fine. It was visible on screen the whole time, in a sentence nobody had
+// reason to re-read.
+const TOLERANCE_WORTH_QUESTIONING = 4;
 
 const emptyForm = {
   name: "", email: "", role: "Cashier", age: 22, hourly_rate: 15,
@@ -563,6 +574,25 @@ export default function Employees() {
                     </span>
                     . A week broken by holiday or sickness is allowed to come in under.
                   </p>
+
+                  {/* A large tolerance does not look wrong — it looks like a
+                      number in a box. Saying what it COSTS is the only way it
+                      gets noticed, because the sentence above already showed
+                      the band and was read past. */}
+                  {Number(form.contract_span_tolerance || 0) > TOLERANCE_WORTH_QUESTIONING && (
+                    <div className="status-warn p-3 mt-3 text-[11px]">
+                      Falling short by up to{" "}
+                      {Number(form.contract_span_tolerance).toFixed(1)}h is a
+                      wide margin — roughly{" "}
+                      {(Number(form.contract_span_tolerance) / 8).toFixed(1)} shifts.
+                      A week as low as{" "}
+                      {(Number(form.contract_span_hours || DEFAULT_CONTRACT_SPAN)
+                        - Number(form.contract_span_tolerance)).toFixed(1)}h
+                      {" "}will pass without a word, so you will not be told when
+                      they are under their contract. Usually this should be an
+                      hour or two.
+                    </div>
+                  )}
                 </div>
               )}
 

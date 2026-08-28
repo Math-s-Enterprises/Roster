@@ -106,6 +106,18 @@ async def run(email: str, week: str, who: str) -> None:
         employee = next(
             (e for e in employees if e["employee_id"] == employee_id), {}
         )
+        # WHY a person gets no hours warning is usually this line, not a bug.
+        # A contract band gives both a floor and a ceiling; an hourly cap
+        # gives only a ceiling, so "short by 4h" cannot exist for them —
+        # there is nothing they are short OF.
+        from app.services import availability as avail
+        kind = avail.employment_type(employee)
+        band = avail.contract_span_band(employee)
+        cap = avail.weekly_hour_cap(employee, roster["week_start"])
+        print(f"  employment: {kind}"
+              + (f"   contract band {band[0]:.1f}-{band[1]:.1f}h (span)"
+                 if band else f"   cap {cap:.1f}h (paid) — CEILING ONLY,"
+                              f" so a short week is never flagged"))
         breaches = compliance.audit(
             roster.get("shifts", []), shop=shop, employees=[employee],
             week_start=roster["week_start"],
