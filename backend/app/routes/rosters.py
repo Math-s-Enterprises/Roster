@@ -18,6 +18,7 @@ from app.models import (
     SickReport,
 )
 from app.services import compliance, corrections, llm, mailer, sick_cover
+from app.services import demand as demand_service
 from app.services.demand import build_profile
 from app.services.hierarchy import sort_employees
 from app.services.roster_validation import validate_shifts
@@ -240,7 +241,12 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
     # people per hour, which roles, and which shift shapes it actually uses.
     # Shops without enough history fall back to block-based coverage.
     demand = build_profile(
-        shop, approved, {e["employee_id"]: e.get("role", "") for e in employees}
+        shop, approved, {e["employee_id"]: e.get("role", "") for e in employees},
+        # Anchors recency weighting and the same-week-last-year lookup to the
+        # week being BUILT, not to whenever the newest roster happens to be.
+        # Building four weeks ahead should weigh history from the point of
+        # view of that week.
+        for_week=payload.week_start,
     )
 
     # Employees are handed to the solver in hierarchy order, so the ordering
@@ -586,12 +592,24 @@ async def audit_roster(roster_id: str, scope: ShopScope = CurrentScope):
     if not roster:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Roster not found")
 
+    employees = await scope.employees.find(limit=1000)
     breaches = compliance.audit(
         roster.get("shifts") or [],
         shop=scope.shop,
-        employees=await scope.employees.find(limit=1000),
+        employees=employees,
         week_start=roster["week_start"],
         holidays=await scope.holidays.find(limit=1000),
+    )
+
+    # How this week compares to the shape the shop normally runs. Separate
+    # from breaches on purpose: a rule being broken is a fact about the law
+    # or a contract, whereas running two fewer people on a Tuesday evening is
+    # a decision. Mixing them would make one look like the other.
+    approved = await _approved_rosters(scope)
+    profile = build_profile(
+        scope.shop, approved,
+        {e["employee_id"]: e.get("role", "") for e in employees},
+        for_week=roster["week_start"],
     )
     return {
         "roster_id": roster_id,
@@ -599,6 +617,13 @@ async def audit_roster(roster_id: str, scope: ShopScope = CurrentScope):
         "total": len(breaches),
         "blocking": compliance.blocking(breaches),
         "can_force": bool(breaches) and not compliance.blocking(breaches),
+        "staffing": demand_service.compare_to_usual(
+            roster.get("shifts") or [], profile,
+        ),
+        "learned_from_weeks": profile.weeks_observed,
+        # Zero until the shop has a year of history. The UI says so rather
+        # than implying a yearly pattern nothing has ever seen.
+        "seasonal_weeks": getattr(profile, "seasonal_weeks", 0),
     }
 
 

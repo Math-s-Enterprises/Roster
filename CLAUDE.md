@@ -250,6 +250,49 @@ generic block coverage below that.
   totals rather than dropping shapes.
 - Overnight hours belong to the day the shift **starts**.
 
+## 7b. Recent weeks count for more
+
+Every week used to count the same, so a deliberate change took the full
+24-week window to be believed. Cut two people from the evening and three
+months later the profile still said five — and still *built* rosters with
+five, so the manager deleted two every week. The product was generating its
+own edit burden.
+
+Weights halve every **8 weeks** (`RECENCY_HALF_LIFE_WEEKS`). The divisor is
+the **sum of the weights**, not the number of weeks — dividing weighted counts
+by a plain count reports a shop as quieter than it is.
+
+- 8 weeks is a judgement, not a measurement. Shortening it to 4 makes a
+  change land in two months instead of four, and also lets **one odd week**
+  move the shape. There is a test for each side; they disagree below about 6.
+- A change is followed within roughly **four months**, not two. That is the
+  honest number and the tests say so.
+
+**Christmas is not drift.** A recency-weighted average reads a busy December
+as permanent growth, then reads January as collapse. So a week about 52 weeks
+before the target keeps a weight floor (`SEASONAL_ECHO_WEIGHT`), which recency
+alone would have reduced to about 0.01.
+
+This does **nothing** until a shop has a year of history — you cannot know
+December is busy without having seen a December. `seasonal_weeks` reports
+whether any were found, and the UI says so rather than implying a yearly
+pattern it has never observed. With only one prior year there is exactly one
+observation of that week, and it deliberately does not outvote twelve recent
+ones: the panel reports last year's figure instead, and the manager decides.
+
+## 7c. "Against the usual" is information, not a rule
+
+A second panel beside Advisories, and the split is the point. Advisories are
+what the **solver** did — stretched a shift, moved a finish. "Against the
+usual" is what **this week** looks like next to every other week the shop has
+run: *"mon 17:00–21:00 — 1 on, this shop usually runs 3."*
+
+It never blocks approval. Running leaner is a business decision the manager is
+entitled to make; what they should not do is make it by accident. Consecutive
+hours collapse into one note, and a gap under 2 hours is not mentioned at all
+— a changeover hour is already handled by stretching a neighbour, and saying
+so as well buries the hour that matters.
+
 ## 8. Time is measured in real time, not clock time
 
 The single most common source of wrong answers in this codebase.

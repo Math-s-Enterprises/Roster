@@ -7,7 +7,7 @@ import { Crown } from "lucide-react";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import jsPDF from "jspdf";
-import { Wand2, Send, Check, FileDown, Printer, AlertTriangle, RefreshCw, Mail, X, Sparkles, HelpCircle, UserX, UserPlus, ChevronUp, ChevronDown, Pin, Unlock } from "lucide-react";
+import { Wand2, Send, Check, FileDown, Printer, AlertTriangle, RefreshCw, Mail, X, Sparkles, HelpCircle, UserX, UserPlus, ChevronUp, ChevronDown, Pin, Unlock, TrendingDown } from "lucide-react";
 
 export default function RosterView() {
   const { user } = useAuth();
@@ -724,8 +724,14 @@ export default function RosterView() {
             </div>
           )}
 
-          {/* Advisories stay monochrome — three severity tiers only work if
-              the lowest one does not compete with the two above it. */}
+          {/* Two panels side by side, and the split is the point.
+              Advisories are what the SOLVER did — stretched a shift, moved a
+              finish. "Against the usual" is what THIS WEEK looks like next to
+              every other week the shop has run. One is a note about the
+              build; the other is a fact about the business, and reading them
+              as the same thing is how a deliberate change gets mistaken for
+              a mistake. */}
+          <div className="grid gap-6 md:grid-cols-2 no-print">
           {roster.issues?.length > 0 && (
             <div className="card p-5 mb-6 no-print">
               <div className="flex items-center gap-2 mb-3">
@@ -743,6 +749,39 @@ export default function RosterView() {
               </ul>
             </div>
           )}
+
+          {audit?.staffing?.length > 0 && (
+            <div className="card p-5 mb-6 no-print">
+              <div className="flex items-center gap-2 mb-1">
+                <TrendingDown size={16} style={{ color: "var(--ink-mute)" }} />
+                <span className="text-sm font-medium">
+                  Against the usual ({audit.staffing.length})
+                </span>
+              </div>
+              <p className="text-[11px] mb-3" style={{ color: "var(--ink-mute-2)" }}>
+                Compared with the last {audit.learned_from_weeks} weeks this
+                shop has worked, recent weeks counting for more.
+                {audit.seasonal_weeks > 0
+                  ? " The same week last year is included."
+                  : " There is under a year of history, so nothing here knows about Christmas yet."}
+              </p>
+              <ul className="space-y-1 text-[13px]" style={{ color: "var(--ink-mute)" }}>
+                {audit.staffing.map((note, idx) => (
+                  <li key={idx} className="flex gap-2">
+                    <span aria-hidden>•</span><span>{note.message}</span>
+                  </li>
+                ))}
+              </ul>
+              {/* Says outright that this is not a rule, because a panel of
+                  red-adjacent sentences reads like one. */}
+              <p className="text-[11px] mt-3" style={{ color: "var(--ink-mute-2)" }}>
+                Nothing here blocks approval. If you have decided to run
+                leaner, keep rostering it this way and the shop's usual will
+                follow within a few months.
+              </p>
+            </div>
+          )}
+          </div>
 
           {/* Weekly grid */}
           {/* Sits on the page colour so the filled cells inside lift off it.

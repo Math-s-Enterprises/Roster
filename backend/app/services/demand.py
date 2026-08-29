@@ -88,6 +88,11 @@ class DemandProfile:
     # floor at 06:00 ended up being counted twice, once in the curve and
     # again as a body added on top.
     day_slots: Dict[str, List[List[str]]] = field(default_factory=dict)
+    # How many weeks from about a year ago fed into this. Zero until a shop
+    # has a year of history — and while it is zero, nothing here knows
+    # anything about Christmas. Reported so the UI can say that rather than
+    # implying a yearly pattern that has never been observed.
+    seasonal_weeks: int = 0
 
     @property
     def is_usable(self) -> bool:
@@ -121,6 +126,7 @@ class DemandProfile:
             ],
             "weeks_observed": self.weeks_observed,
             "staff_per_day": self.staff_per_day,
+            "seasonal_weeks": self.seasonal_weeks,
             "day_slots": self.day_slots,
             "source": self.source,
         }
@@ -139,6 +145,7 @@ class DemandProfile:
             ],
             weeks_observed=data.get("weeks_observed", 0),
             staff_per_day=dict(data.get("staff_per_day") or {}),
+            seasonal_weeks=int(data.get("seasonal_weeks") or 0),
             day_slots={
                 d: [list(s) for s in slots]
                 for d, slots in (data.get("day_slots") or {}).items()
@@ -150,16 +157,102 @@ class DemandProfile:
 # ---------------------------------------------------------------------------
 # Learning
 # ---------------------------------------------------------------------------
+# How quickly an old week stops mattering. At an 8-week half-life, last
+# month counts about 4/5 of this week, three months ago about a third, six
+# months ago about a fifth.
+#
+# WHY WEIGHTING AT ALL: every week used to count the same, so a deliberate
+# change took the full lookback to be believed. Cut two people from the
+# evening and three months later the profile still says five — it still
+# BUILDS rosters with five, and the manager deletes two every week. That is
+# the edit burden this product exists to reduce, caused by the product.
+#
+# Eight weeks is a judgement, not a measurement (see CLAUDE.md 10b). Long
+# enough that one odd week does not move the shape, short enough that a real
+# change is followed within about a month.
+RECENCY_HALF_LIFE_WEEKS = 8.0
+
+# Christmas is not drift. A shop that runs extra staff in December looks, to
+# a recency-weighted average, exactly like a shop that has permanently grown
+# — and then looks like one that has permanently shrunk in January.
+#
+# The defence is last year: a week roughly 52 weeks before the one being
+# built is given a weight floor, so it still carries even though recency
+# alone would have reduced it to nothing (0.5^(52/8) is about 0.01).
+#
+# This does NOTHING until a shop has a year of history. It cannot: you cannot
+# know December is busy without having seen a December. `seasonal_weeks` on
+# the profile reports whether it found any, so the UI can say so rather than
+# implying a yearly pattern it has never seen.
+SEASONAL_ECHO_WEEKS = 52
+SEASONAL_ECHO_TOLERANCE = 2      # a fortnight either side of "same week"
+SEASONAL_ECHO_WEIGHT = 0.6       # what last year's same week is worth
+
+
+def _week_start_date(week_start: Any):
+    try:
+        return datetime.strptime(str(week_start), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _weighted_rosters(
+    rosters: Sequence[Dict[str, Any]],
+    lookback_weeks: int,
+    for_week: Optional[str] = None,
+) -> List[Tuple[Dict[str, Any], float]]:
+    """Each week to learn from, paired with how much it counts.
+
+    Deduplicating by week matters: a week regenerated several times before
+    approval would otherwise be counted several times and skew the curve
+    toward whatever that week happened to look like.
+
+    Newer weeks count more (RECENCY_HALF_LIFE_WEEKS). A week about a year
+    before the target keeps a floor (SEASONAL_ECHO_WEIGHT) so last December
+    still describes this December.
+    """
+    weeks = latest_per_week(list(rosters))
+    if not weeks:
+        return []
+
+    anchor = _week_start_date(for_week) if for_week else None
+    if anchor is None:
+        # No target week given — measure age from the newest week we have, so
+        # the most recent roster is always full weight.
+        anchor = max(
+            (d for d in (_week_start_date(r.get("week_start")) for r in weeks) if d),
+            default=None,
+        )
+    if anchor is None:
+        # Unparseable dates everywhere: fall back to the old flat behaviour
+        # rather than silently weighting everything to zero.
+        return [(r, 1.0) for r in weeks[:lookback_weeks]]
+
+    out: List[Tuple[Dict[str, Any], float]] = []
+    for roster in weeks:
+        started = _week_start_date(roster.get("week_start"))
+        if started is None:
+            continue
+        age = (anchor - started).days / 7.0
+        if age < 0:
+            continue        # a future week is not evidence of anything yet
+
+        seasonal = abs(age - SEASONAL_ECHO_WEEKS) <= SEASONAL_ECHO_TOLERANCE
+        if age >= lookback_weeks and not seasonal:
+            continue
+
+        weight = 0.5 ** (age / RECENCY_HALF_LIFE_WEEKS)
+        if seasonal:
+            weight = max(weight, SEASONAL_ECHO_WEIGHT)
+        out.append((roster, weight))
+    return out
+
+
 def _recent_rosters(
     rosters: Sequence[Dict[str, Any]], lookback_weeks: int
 ) -> List[Dict[str, Any]]:
-    """The most recent N weeks, newest first, one roster per week.
-
-    Deduplicating by week matters: a week that was regenerated several times
-    before approval would otherwise be counted several times and skew the
-    curve toward whatever that week happened to look like.
-    """
-    return latest_per_week(list(rosters))[:lookback_weeks]
+    """Kept for callers that want the weeks without the weights."""
+    return [r for r, _ in _weighted_rosters(rosters, lookback_weeks)]
 
 
 def _hours_covered(start: str, end: str) -> List[int]:
@@ -246,34 +339,56 @@ def learn_demand(
     employee_roles: Dict[str, str],
     *,
     lookback_weeks: int = DEFAULT_LOOKBACK_WEEKS,
+    for_week: Optional[str] = None,
 ) -> DemandProfile:
     """Measure staffing shape from approved rosters.
 
     `employee_roles` maps employee_id -> role, needed because rosters store
     only IDs but the role mix is what makes role-saturation possible.
+
+    `for_week` is the week being built. It anchors both the recency weighting
+    and the search for the same week last year; without it, ages are measured
+    from the newest roster instead, which is right for a report and slightly
+    wrong for a roster being built weeks ahead.
     """
-    recent = _recent_rosters(rosters, lookback_weeks)
-    if not recent:
+    weighted = _weighted_rosters(rosters, lookback_weeks, for_week)
+    if not weighted:
         return DemandProfile(source="none")
 
-    weeks = len(recent)
-    headcount_totals = {d: [0] * HOURS_PER_DAY for d in DAYS}
-    role_totals: Dict[str, Dict[str, List[int]]] = {
-        d: defaultdict(lambda: [0] * HOURS_PER_DAY) for d in DAYS
+    recent = [r for r, _ in weighted]
+    # The DIVISOR is the sum of the weights, not the number of weeks. Dividing
+    # weighted counts by a plain count would report a shop as quieter than it
+    # is, by exactly the amount the old weeks were discounted.
+    weeks = sum(w for _, w in weighted) or 1.0
+    # Reported separately: "learned from 24 weeks" is what a manager
+    # understands, and it is a count of weeks, not a sum of weights.
+    observed = len(weighted)
+    seasonal_weeks = sum(
+        1 for r, _ in weighted
+        if _week_start_date(r.get("week_start")) is not None
+        and abs(
+            ((_week_start_date(for_week) or _week_start_date(recent[0].get("week_start")))
+             - _week_start_date(r.get("week_start"))).days / 7.0
+            - SEASONAL_ECHO_WEEKS
+        ) <= SEASONAL_ECHO_TOLERANCE
+    ) if recent else 0
+    headcount_totals = {d: [0.0] * HOURS_PER_DAY for d in DAYS}
+    role_totals: Dict[str, Dict[str, List[float]]] = {
+        d: defaultdict(lambda: [0.0] * HOURS_PER_DAY) for d in DAYS
     }
     pattern_counts: Counter = Counter()
     # Hours we could not attribute to a role at all (staff who left before
     # their role was recorded on the shift). Used to scale the role mix so it
     # still adds up to the headcount.
-    departed_hours = {d: [0] * HOURS_PER_DAY for d in DAYS}
+    departed_hours = {d: [0.0] * HOURS_PER_DAY for d in DAYS}
     # Distinct people the shop put on each day. Counted per roster and then
     # averaged, so it is "how many bodies does a Sunday take", not a sum.
-    staff_totals = {d: 0 for d in DAYS}
+    staff_totals = {d: 0.0 for d in DAYS}
     # How often each exact shift ran on each day, so the day's shape can be
     # rebuilt rather than inferred.
     slot_counts: Dict[str, Counter] = {d: Counter() for d in DAYS}
 
-    for roster in recent:
+    for roster, weight in weighted:
         on_day: Dict[str, set] = {d: set() for d in DAYS}
         for shift in roster.get("shifts", []):
             if not _is_worked(shift):
@@ -294,17 +409,17 @@ def learn_demand(
             role = employee_roles.get(employee_id) or shift.get("role") or ""
 
             for hour in _hours_covered(start, end):
-                headcount_totals[day][hour] += 1
+                headcount_totals[day][hour] += weight
                 if role:
-                    role_totals[day][role][hour] += 1
+                    role_totals[day][role][hour] += weight
                 else:
-                    departed_hours[day][hour] += 1
+                    departed_hours[day][hour] += weight
 
             pattern_counts[(start, end)] += 1
-            slot_counts[day][(start, end)] += 1
+            slot_counts[day][(start, end)] += weight
 
         for day, people in on_day.items():
-            staff_totals[day] += len(people)
+            staff_totals[day] += len(people) * weight
 
     # Round to nearest, not up. Rounding up looks safer but compounds across
     # 168 hours: measured against the reference shop it inflated the weekly
@@ -352,9 +467,10 @@ def learn_demand(
         headcount=headcount,
         role_mix=role_mix,
         patterns=patterns,
-        weeks_observed=weeks,
+        weeks_observed=observed,
         staff_per_day=staff_per_day,
         day_slots=_build_day_slots(slot_counts, weeks, staff_per_day),
+        seasonal_weeks=seasonal_weeks,
         source="learned",
     )
 
@@ -411,6 +527,7 @@ def build_profile(
     employee_roles: Dict[str, str],
     *,
     lookback_weeks: int = DEFAULT_LOOKBACK_WEEKS,
+    for_week: Optional[str] = None,
 ) -> DemandProfile:
     """Learned profile when there is enough history, otherwise the fallback.
 
@@ -425,7 +542,95 @@ def build_profile(
             profile.patterns = profile_from_shop_hours(shop).patterns
         return profile
 
-    learned = learn_demand(rosters, employee_roles, lookback_weeks=lookback_weeks)
+    learned = learn_demand(
+        rosters, employee_roles,
+        lookback_weeks=lookback_weeks, for_week=for_week,
+    )
     if learned.is_usable and learned.patterns:
         return learned
     return profile_from_shop_hours(shop)
+
+
+# ---------------------------------------------------------------------------
+# Comparing a week against what the shop usually runs
+# ---------------------------------------------------------------------------
+# Below this, a difference is not worth a sentence. One body short for a
+# single hour at a changeover is normal and already handled by stretching a
+# neighbouring shift; saying so as well would bury the hour that matters
+# under twenty that do not.
+MIN_HOURS_WORTH_MENTIONING = 2
+
+
+def compare_to_usual(
+    shifts: Sequence[Dict[str, Any]],
+    profile: "DemandProfile",
+    *,
+    open_hours: Optional[Dict[str, List[int]]] = None,
+) -> List[Dict[str, Any]]:
+    """Where this week departs from the shape the shop normally runs.
+
+    Information, never a refusal. Running leaner is a business decision and
+    the manager is allowed to make it — what they are not allowed to do is
+    make it by accident, which is what happens when nothing says the evening
+    normally has three people in it.
+
+    Consecutive hours with the same shortfall are reported as one span. Hour
+    by hour it would be twenty lines a day and nobody would read the one that
+    mattered.
+    """
+    if not profile or profile.source == "none":
+        return []
+
+    on_duty = {day: [0] * HOURS_PER_DAY for day in DAYS}
+    for shift in shifts:
+        day, start, end = shift.get("day"), shift.get("start"), shift.get("end")
+        if day not in on_duty or not (start and end):
+            continue
+        if shift.get("paid_holiday") or shift.get("unpaid_holiday") or shift.get("sick"):
+            continue
+        # An overnight shift covers hours on the following day too, and those
+        # hours are exactly the ones nobody thinks to check.
+        cursor = DAYS.index(day)
+        for offset, hour in enumerate(_hours_covered(start, end)):
+            index = cursor + (1 if offset and hour < _hours_covered(start, end)[0] else 0)
+            on_duty[DAYS[index % 7]][hour] += 1
+
+    notes: List[Dict[str, Any]] = []
+    for day in DAYS:
+        hours = (open_hours or {}).get(day)
+        run: Optional[Dict[str, Any]] = None
+
+        for hour in range(HOURS_PER_DAY):
+            if hours is not None and hour not in hours:
+                usual = 0
+            else:
+                usual = profile.required(day, hour)
+            have = on_duty[day][hour]
+            gap = usual - have
+
+            if usual <= 0 or gap <= 0:
+                if run and run["hours"] >= MIN_HOURS_WORTH_MENTIONING:
+                    notes.append(run)
+                run = None
+                continue
+
+            if run and run["short_by"] == gap and run["to_hour"] == hour:
+                run["to_hour"] = hour + 1
+                run["hours"] += 1
+            else:
+                if run and run["hours"] >= MIN_HOURS_WORTH_MENTIONING:
+                    notes.append(run)
+                run = {
+                    "day": day, "from_hour": hour, "to_hour": hour + 1,
+                    "hours": 1, "have": have, "usual": usual, "short_by": gap,
+                }
+
+        if run and run["hours"] >= MIN_HOURS_WORTH_MENTIONING:
+            notes.append(run)
+
+    for note in notes:
+        note["message"] = (
+            f"{note['day']} {note['from_hour']:02d}:00–{note['to_hour']:02d}:00 — "
+            f"{note['have']} on, this shop usually runs {note['usual']}."
+        )
+    return notes

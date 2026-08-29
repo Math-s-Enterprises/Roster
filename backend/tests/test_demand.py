@@ -60,10 +60,19 @@ def roster(week_start, shifts):
     }
 
 
-def weekly_history(weeks, shifts_per_week):
-    """`weeks` identical weeks, so averages are exact and easy to assert on."""
+def weekly_history(weeks, shifts_per_week, end="2026-06-29"):
+    """`weeks` identical weeks, ending at `end` and going backwards.
+
+    Genuinely seven days apart. They used to be one DAY apart — thirty
+    "weeks" that between them spanned a month — which was invisible while the
+    lookback was applied by position. Once weeks were weighted by age it
+    mattered immediately: everything was the same age, so nothing aged out.
+    """
+    from datetime import datetime as _dt, timedelta as _td
+
+    last = _dt.strptime(end, "%Y-%m-%d").date()
     return [
-        roster(f"2026-0{1 + i // 28}-{(i % 28) + 1:02d}", shifts_per_week)
+        roster((last - _td(weeks=i)).isoformat(), shifts_per_week)
         for i in range(weeks)
     ]
 
@@ -763,3 +772,199 @@ class TestRestBetweenShiftsInGeneration:
             spans.sort()
             for (_, ends), (starts, _) in zip(spans, spans[1:]):
                 assert (starts - ends) / 60 >= 13, employee_id
+
+
+class TestADeliberateChangeIsFollowed:
+    """The scenario the manager described.
+
+    Cut two people from the evening and keep rostering it that way. Under a
+    flat average every week counted the same, so three months later the
+    profile still said five — and still BUILT rosters with five, so two
+    shifts were deleted every week. The product was generating its own edit
+    burden.
+    """
+
+    def _weeks(self, count, people, end):
+        """`count` weeks ending at `end`, with `people` on Monday evening."""
+        from datetime import datetime as dt, timedelta as td
+
+        last = dt.strptime(end, "%Y-%m-%d").date()
+        out = []
+        for i in range(count):
+            week = (last - td(weeks=i)).isoformat()
+            out.append(roster(week, [
+                (f"e{n}", "mon", "17:00", "21:00") for n in range(people)
+            ]))
+        return out
+
+    def test_the_recent_pattern_wins_within_about_four_months(self):
+        """Sixteen weeks of the new pattern settles it.
+
+        NOT eight — that was the first assertion here and it failed. With an
+        8-week half-life, eight weeks of three against sixteen of five comes
+        to 3.86, which rounds to 4, the same as a flat average. Halving the
+        half-life to four weeks would have passed it, and would also have let
+        a single odd week move the shape (the next test). So the honest
+        number is four months, not two, and the constant stays where the
+        stability test wants it.
+        """
+        recent = self._weeks(16, 3, "2026-06-29")
+        older = self._weeks(16, 5, "2026-03-09")
+
+        profile = learn_demand(recent + older, {}, for_week="2026-07-06")
+        assert profile.required("mon", 18) == 3
+
+    def test_one_odd_week_does_not_move_the_shape(self):
+        """The other half. Recency must not mean the last week wins."""
+        odd = self._weeks(1, 9, "2026-06-29")
+        normal = self._weeks(20, 4, "2026-06-22")
+
+        profile = learn_demand(odd + normal, {}, for_week="2026-07-06")
+        assert profile.required("mon", 18) == 4
+
+    def test_it_moves_towards_the_new_pattern_immediately(self):
+        """Even before it flips the rounded number, it is moving.
+
+        Asserted against the flat average of the same data, so this measures
+        the CHANGE rather than restating today's output — the number a flat
+        average would give is the thing being fixed.
+        """
+        recent = self._weeks(16, 3, "2026-06-29")
+        older = self._weeks(16, 5, "2026-03-09")
+
+        flat = (16 * 3 + 16 * 5) / 32          # 4.0
+        weighted = learn_demand(recent + older, {}, for_week="2026-07-06")
+        assert weighted.required("mon", 18) < flat
+
+
+class TestLastYearIsNotDrift:
+    """Christmas is not a permanent change, and must not be read as one.
+
+    A recency-weighted average sees a busy December as growth, then sees
+    January as collapse. The defence is that the same week last year keeps a
+    weight floor.
+    """
+
+    def _week(self, week_start, people):
+        return roster(week_start, [
+            (f"e{n}", "mon", "17:00", "21:00") for n in range(people)
+        ])
+
+    def test_the_same_week_last_year_still_counts(self):
+        from datetime import datetime as dt, timedelta as td
+
+        target = "2026-12-21"
+        last_year = (dt.strptime(target, "%Y-%m-%d").date() - td(weeks=52)).isoformat()
+
+        # Quiet all autumn, but last December ran seven.
+        history = [
+            self._week(
+                (dt.strptime(target, "%Y-%m-%d").date() - td(weeks=i)).isoformat(), 3,
+            )
+            for i in range(1, 13)
+        ] + [self._week(last_year, 7)]
+
+        profile = learn_demand(history, {}, for_week=target)
+        assert profile.seasonal_weeks == 1, (
+            "last year's matching week was not found, so nothing here knows "
+            "about Christmas"
+        )
+
+        # It is FOUND and it counts, but one week from last year does not
+        # outvote twelve recent ones — and should not. A single observation
+        # is not a season. This is why the panel reports last year's figure
+        # to the manager instead of the profile silently adjusting for it:
+        # with one year of history there is exactly one data point, and the
+        # person who ran the shop last December knows more about it than an
+        # average of one.
+        with_echo = profile.required("mon", 18)
+        without = learn_demand(
+            [r for r in history if r["week_start"] != last_year], {},
+            for_week=target,
+        ).required("mon", 18)
+        assert with_echo >= without
+
+    def test_no_yearly_history_means_no_seasonal_claim(self):
+        """A shop with six months cannot know anything about December, and
+        must not imply that it does."""
+        history = weekly_history(12, [("e1", "mon", "09:00", "17:00")])
+        profile = learn_demand(history, {}, for_week="2026-12-21")
+        assert profile.seasonal_weeks == 0
+
+
+class TestComparingAWeekToUsual:
+    """The panel beside Advisories: what is different, and by how much.
+
+    Never a refusal. Running leaner is a decision the manager is entitled to
+    make — what they should not do is make it by accident, which is what
+    happens when nothing mentions that the evening normally has three people.
+    """
+
+    def _profile(self, people=3):
+        from datetime import datetime as dt, timedelta as td
+
+        last = dt.strptime("2026-06-29", "%Y-%m-%d").date()
+        history = [
+            roster((last - td(weeks=i)).isoformat(), [
+                (f"e{n}", "mon", "17:00", "21:00") for n in range(people)
+            ])
+            for i in range(12)
+        ]
+        return learn_demand(history, {}, for_week="2026-07-06")
+
+    def test_a_thinner_evening_is_reported_with_both_numbers(self):
+        from app.services.demand import compare_to_usual
+
+        notes = compare_to_usual(
+            [{"employee_id": "e0", "day": "mon", "start": "17:00", "end": "21:00"}],
+            self._profile(3),
+        )
+        evening = [n for n in notes if n["day"] == "mon"]
+        assert evening, "one person against a usual three said nothing"
+        assert evening[0]["have"] == 1
+        assert evening[0]["usual"] == 3
+        assert "usually runs 3" in evening[0]["message"]
+
+    def test_matching_the_usual_shape_says_nothing(self):
+        """Silence is the normal case, and a panel that always has something
+        in it is a panel nobody reads."""
+        from app.services.demand import compare_to_usual
+
+        full = [
+            {"employee_id": f"e{n}", "day": "mon", "start": "17:00", "end": "21:00"}
+            for n in range(3)
+        ]
+        assert compare_to_usual(full, self._profile(3)) == []
+
+    def test_consecutive_hours_become_one_note(self):
+        """Hour by hour it would be four lines for one evening, and twenty a
+        day across the week — the one that mattered would be buried."""
+        from app.services.demand import compare_to_usual
+
+        notes = compare_to_usual(
+            [{"employee_id": "e0", "day": "mon", "start": "17:00", "end": "21:00"}],
+            self._profile(3),
+        )
+        assert len(notes) == 1
+        assert notes[0]["from_hour"] == 17 and notes[0]["to_hour"] == 21
+
+    def test_a_single_short_hour_is_not_worth_a_sentence(self):
+        """A changeover hour is already handled by stretching a neighbouring
+        shift. Reporting it too buries the real gaps."""
+        from app.services.demand import compare_to_usual
+
+        covered = [
+            {"employee_id": "e0", "day": "mon", "start": "17:00", "end": "20:00"},
+            {"employee_id": "e1", "day": "mon", "start": "17:00", "end": "20:00"},
+            {"employee_id": "e2", "day": "mon", "start": "17:00", "end": "20:00"},
+        ]
+        # Everyone leaves an hour early, so only 20:00-21:00 is short.
+        assert compare_to_usual(covered, self._profile(3)) == []
+
+    def test_no_history_means_no_opinion(self):
+        from app.services.demand import DemandProfile, compare_to_usual
+
+        assert compare_to_usual(
+            [{"employee_id": "e0", "day": "mon", "start": "09:00", "end": "17:00"}],
+            DemandProfile(source="none"),
+        ) == []
