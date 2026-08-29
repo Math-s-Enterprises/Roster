@@ -3,6 +3,8 @@
 Each class covers one of the requested requirements, named so a failure
 points straight at the rule it broke.
 """
+from datetime import date as _date, timedelta as _td
+
 import pytest
 
 from app.services import availability as avail
@@ -252,7 +254,12 @@ class TestNightStaffStayOnNights:
             for eid, _, _ in self.MORNING + self.NIGHT
         ]
         history = [{
-            "week_start": f"2026-0{5 + w // 4}-{(w % 4) * 7 + 1:02d}",
+            # Seven days apart, and computed rather than spelled out: the
+            # hand-written version rolled the month every four weeks and was
+            # one day short each time it did.
+            "week_start": (
+                _date(2026, 5, 4) + _td(weeks=w)
+            ).isoformat(),
             "approved": True,
             "shifts": [
                 {"employee_id": eid, "day": d, "start": s, "end": e}

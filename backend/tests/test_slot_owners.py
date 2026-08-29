@@ -14,6 +14,23 @@ from app.services.slot_owners import (
 )
 
 
+def week_starting(index: int, first: str = "2026-01-05") -> str:
+    """The Monday `index` weeks after `first`.
+
+    Weeks are SEVEN DAYS apart, which sounds too obvious to need a helper.
+    It was not: these fixtures used to step one day at a time, so eight
+    "weeks" spanned eight days. Nothing here noticed, because ownership uses
+    week_start only as a label to group by — but the identical shortcut in
+    the demand fixtures became wrong the moment weeks were weighted by age,
+    and these would have gone the same way.
+    """
+    from datetime import datetime, timedelta
+
+    monday = datetime.strptime(first, "%Y-%m-%d").date()
+    return (monday + timedelta(weeks=index)).isoformat()
+
+
+
 def week(week_start, *shifts):
     return {
         "week_start": week_start, "approved": True,
@@ -129,11 +146,11 @@ class TestFallbackOrder:
 class TestWhatIsNotSignal:
     def test_leave_does_not_build_ownership(self):
         history = [
-            {"week_start": f"2026-01-{d:02d}", "approved": True, "shifts": [
+            {"week_start": week_starting(w), "approved": True, "shifts": [
                 {"employee_id": "emma", "day": "mon", "start": "06:00",
                  "end": "16:00", "paid_holiday": True},
             ]}
-            for d in range(1, 9)
+            for w in range(8)
         ]
         assert owner_of(build_owners(history), "mon", "06:00", "16:00") is None
 
@@ -141,11 +158,11 @@ class TestWhatIsNotSignal:
         """Extra staff are deliberately above the requirement — being added
         for a busy spell does not make the shift yours."""
         history = [
-            {"week_start": f"2026-01-{d:02d}", "approved": True, "shifts": [
+            {"week_start": week_starting(w), "approved": True, "shifts": [
                 {"employee_id": "emma", "day": "mon", "start": "06:00",
                  "end": "16:00", "extra": True},
             ]}
-            for d in range(1, 9)
+            for w in range(8)
         ]
         assert owner_of(build_owners(history), "mon", "06:00", "16:00") is None
 
@@ -184,7 +201,7 @@ class TestTheDenominatorIsWeeksNotShifts:
                 shifts.append({"employee_id": extras[i], "day": "mon",
                                "start": "06:00", "end": "16:00"})
             out.append({
-                "week_start": f"2026-{1 + i // 28:02d}-{1 + i % 28:02d}",
+                "week_start": week_starting(i),
                 "approved": True, "shifts": shifts,
             })
         return out
@@ -220,7 +237,7 @@ class TestTheDenominatorIsWeeksNotShifts:
                 shifts.append({"employee_id": "john", "day": "tue",
                                "start": "06:00", "end": "16:00"})
             out.append({
-                "week_start": f"2026-{1 + i // 28:02d}-{1 + i % 28:02d}",
+                "week_start": week_starting(i),
                 "approved": True, "shifts": shifts,
             })
 
