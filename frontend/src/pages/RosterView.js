@@ -342,23 +342,71 @@ export default function RosterView() {
     }
   };
 
+  /**
+   * Drop a shift on another cell. If that cell is taken, the two SWAP.
+   *
+   * It used to refuse with "that slot already has a shift", which was the
+   * wrong answer to the commonest reason for dragging in the first place:
+   * two people trading shifts. The manager then had to move one out to an
+   * empty cell, move the other across, and move the first back — three drags
+   * and an intermediate roster that broke the rules, to express one decision.
+   *
+   * A shift is identified here by (employee, day) rather than by shift_id.
+   * Both work today — the server stamps a shift_id on every path that creates
+   * one — so this is not fixing a bug. It is the pairing the rest of the
+   * codebase already treats as a shift's identity: the validator refuses two
+   * rows sharing one, and corrections.diff_roster keys on it. Using the same
+   * identity here means the swap cannot produce a roster those two would
+   * disagree about, and it does not depend on shift_id surviving a round trip
+   * that strips it (`clean` below drops it before every PUT).
+   */
   const moveShift = async (shift, toEmpId, toDay) => {
     if (shift.employee_id === toEmpId && shift.day === toDay) return;
-    const shifts = (roster.shifts || []).map((s) =>
-      s.shift_id === shift.shift_id ? { ...s, employee_id: toEmpId, day: toDay } : s
+
+    const at = (s, employeeId, day) => s.employee_id === employeeId && s.day === day;
+    const occupant = (roster.shifts || []).find(
+      (s) => at(s, toEmpId, toDay) && !at(s, shift.employee_id, shift.day)
     );
-    const dup = shifts.filter((s) => s.shift_id !== shift.shift_id).find((s) => s.employee_id === toEmpId && s.day === toDay);
-    if (dup) { toast.error("That slot already has a shift"); return; }
+
+    // Leave is not swappable for the same reason it is not draggable: the
+    // holiday record lives outside the roster, so moving the cell would leave
+    // the two disagreeing about which day somebody is actually off. The drop
+    // handler already blocks landing ON leave; this covers being called any
+    // other way.
+    if (occupant && (occupant.paid_holiday || occupant.unpaid_holiday || occupant.sick)) {
+      toast.error(`${empMap[toEmpId]?.name || "They"} are on leave that day`);
+      return;
+    }
+
+    const shifts = (roster.shifts || []).map((s) => {
+      if (at(s, shift.employee_id, shift.day)) {
+        return { ...s, employee_id: toEmpId, day: toDay };
+      }
+      if (occupant && at(s, toEmpId, toDay)) {
+        // The hours travel with the shift, not with the person: this is the
+        // two of them trading shifts, so each works what the other had.
+        return { ...s, employee_id: shift.employee_id, day: shift.day };
+      }
+      return s;
+    });
+
     const clean = shifts.map(({ employee_id, day, start, end, paid_holiday, unpaid_holiday, sick }) => ({ employee_id, day, start, end, paid_holiday: !!paid_holiday, unpaid_holiday: !!unpaid_holiday, sick: !!sick }));
     try {
       const r = await api.put(`/rosters/${roster.roster_id}`, { shifts: clean });
       setRoster(r.data);
-      toast.success("Shift moved");
+      toast.success(
+        occupant
+          ? `Swapped ${empMap[shift.employee_id]?.name || "them"} and ${empMap[toEmpId]?.name || "them"}`
+          : "Shift moved"
+      );
+      // Warnings, not refusals — a swap can leave somebody short of their
+      // rest gap, and the manager may know something the app does not. It is
+      // approval that refuses (compliance.py), not the edit.
       (r.data.edit_warnings || []).slice(0, 3).forEach((w) => toast.warning(w));
     } catch (err) {
       const refusal = refusalReasons(err);
       if (refusal) setRefused(refusal);
-      else toast.error(errorMessage(err, "Could not move the shift"));
+      else toast.error(errorMessage(err, occupant ? "Could not swap those shifts" : "Could not move the shift"));
     }
   };
 
