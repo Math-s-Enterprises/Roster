@@ -334,34 +334,81 @@ def _suggest_from(pattern: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 f"You have taken them off {day} {pattern['count']} times."
             ),
             "effect": (
-                f"{day} is added to their preferred days off, on their "
-                f"employee record where you can change it back."
+                f"{day} is added to their preferred days off. Nothing else "
+                f"for you to do — it appears on their employee record, where "
+                f"you can undo it."
             ),
         }
 
     if kind == "moved":
         # A start time that keeps being pushed later is an availability
-        # window. Only the START is read: a finish time is just when somebody
-        # goes home, but a start is what the shift IS to them.
-        was, _, _ = (pattern.get("from_slot") or "").partition("-")
-        now, _, _ = (pattern.get("to_slot") or "").partition("-")
-        if not (was and now) or now <= was:
+        # window. Only the START is read for THIS one: a finish time is just
+        # when somebody goes home, but a start is what the shift IS to them.
+        #
+        # Anything else the manager reshapes the same way three weeks running
+        # falls through to the fixed shift below. That used to return None,
+        # which threw away the commonest edit of all — lengthening a shift,
+        # 06:00-10:00 becoming 06:00-12:00 — because the start had not
+        # changed. A finish time says little about the PERSON but a great
+        # deal about the shift, and the manager redrawing the same one every
+        # week is the clearest statement there is that it has the wrong shape.
+        was_start, _, was_end = (pattern.get("from_slot") or "").partition("-")
+        now_start, _, now_end = (pattern.get("to_slot") or "").partition("-")
+        if not (was_start and now_start and was_end and now_end):
             return None
+
+        if now_start == was_start and now_end != was_end:
+            # SAME start, different finish — the shift is the wrong length.
+            #
+            # Deliberately not widened to "any reshape". An EARLIER start is
+            # already decided the other way (see the test named for it): being
+            # pulled in early says the person was free all along, which is not
+            # a setting. Answering it with a fixed shift instead would
+            # overturn that decision as a side effect of adding this one.
+            return {
+                "signature": pattern["signature"],
+                "count": pattern["count"],
+                "action": "fixed_shift",
+                "employee_id": who,
+                "day": day,
+                "start": now_start,
+                "end": now_end,
+                "headline": "Make this a fixed shift",
+                "because": (
+                    f"You have changed this from {pattern['from_slot']} to "
+                    f"{pattern['to_slot']} {pattern['count']} times."
+                ),
+                "effect": (
+                    f"{day} {now_start}-{now_end} is placed automatically "
+                    f"every week. It becomes an ordinary fixed shift you can "
+                    f"remove at any time."
+                ),
+            }
+
+        if now_start <= was_start:
+            # An EARLIER start, which is not a limit: being pulled in early
+            # says the person was free all along. Kept as an explicit guard
+            # rather than falling through, because without it this block
+            # would happily set an availability floor EARLIER than the one
+            # they already have.
+            return None
+
         return {
             "signature": pattern["signature"],
             "count": pattern["count"],
             "action": "earliest_start",
             "employee_id": who,
             "day": day,
-            "start": now,
-            "headline": f"They cannot start before {now}",
+            "start": now_start,
+            "headline": f"They cannot start before {now_start}",
             "because": (
-                f"You have moved their start from {was} to {now} "
+                f"You have moved their start from {was_start} to {now_start} "
                 f"{pattern['count']} times."
             ),
             "effect": (
-                f"Their availability is set to start no earlier than {now}, "
-                f"on their employee record."
+                f"Their availability is set to start no earlier than "
+                f"{now_start}. Nothing else for you to do — it appears on "
+                f"their employee record, where you can undo it."
             ),
         }
 

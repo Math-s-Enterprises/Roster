@@ -288,6 +288,56 @@ class TestSuggestions:
                  "from_slot": "10:00-18:00", "to_slot": "06:00-14:00"}
         assert suggestions(self._repeated(moved, 4)) == []
 
+    def test_a_shift_that_keeps_being_lengthened_is_offered_as_a_fixed_shift(self):
+        """The commonest edit of all, and it used to be thrown away.
+
+        06:00-10:00 becoming 06:00-12:00 every week is the manager saying the
+        shift is the wrong length. The start never moves, so the availability
+        rule never fired and this produced nothing at all.
+        """
+        from app.services.corrections import suggestions
+
+        moved = {"kind": "moved", "day": "mon", "employee_id": "e6",
+                 "from_slot": "06:00-10:00", "to_slot": "06:00-12:00"}
+        offers = suggestions(self._repeated(moved, 3))
+        assert len(offers) == 1
+        assert offers[0]["action"] == "fixed_shift"
+        assert (offers[0]["start"], offers[0]["end"]) == ("06:00", "12:00")
+        assert offers[0]["day"] == "mon"
+        assert "3 times" in offers[0]["because"]
+
+    def test_a_shift_lengthened_only_twice_is_not_yet_a_pattern(self):
+        from app.services.corrections import suggestions
+
+        moved = {"kind": "moved", "day": "mon", "employee_id": "e6",
+                 "from_slot": "06:00-10:00", "to_slot": "06:00-12:00"}
+        assert suggestions(self._repeated(moved, 2)) == []
+
+    def test_a_shortened_shift_counts_too(self):
+        """The signal is the shape being wrong, not the direction. A shift cut
+        back to 06:00-09:00 three weeks running is the same statement."""
+        from app.services.corrections import suggestions
+
+        moved = {"kind": "moved", "day": "thu", "employee_id": "e7",
+                 "from_slot": "06:00-12:00", "to_slot": "06:00-09:00"}
+        offers = suggestions(self._repeated(moved, 3))
+        assert offers[0]["action"] == "fixed_shift"
+        assert (offers[0]["start"], offers[0]["end"]) == ("06:00", "09:00")
+
+    def test_a_later_start_is_still_availability_not_a_fixed_shift(self):
+        """Regression guard for the branch added above it.
+
+        A later start has a better answer than pinning one day: it is a limit
+        that holds every day of the week. If the new same-start branch ever
+        swallows this case, the app starts pinning Tuesdays instead of
+        learning that somebody cannot start before 10:00.
+        """
+        from app.services.corrections import suggestions
+
+        moved = {"kind": "moved", "day": "tue", "employee_id": "e5",
+                 "from_slot": "06:00-14:00", "to_slot": "10:00-18:00"}
+        assert suggestions(self._repeated(moved, 4))[0]["action"] == "earliest_start"
+
     def test_a_repeated_swap_is_left_to_slot_ownership(self):
         """Two switches for the same fact is one too many: the shop's own
         approved rosters already teach who works a slot."""
