@@ -52,6 +52,7 @@ from typing import Any, Dict, List
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import db                                          # noqa: E402
+from app.services import availability as avail               # noqa: E402
 from app.services.demand import build_profile               # noqa: E402
 from app.services.hierarchy import sort_employees           # noqa: E402
 from app.services.learning import compute_weights           # noqa: E402
@@ -115,7 +116,29 @@ async def run(email: str, week: str) -> None:
 
     print(f"\n{shop['name']} — week of {week}")
     print(f"{len(employees)} employees, {len(approved)} approved rosters, "
-          f"demand profile: {demand.source}\n")
+          f"demand profile: {demand.source}")
+
+    # HOW MANY PEOPLE COULD EVEN BE FLAGGED.
+    #
+    # Only salaried staff with a contract band are checked: an hourly or
+    # student contract is a ceiling, not a floor, so "short of it" does not
+    # exist for them. Without this line, "nobody is below their minimum" is
+    # ambiguous between "the solver reached everybody's contract" and "there
+    # was nobody to reach", and those two readings lead opposite ways.
+    banded = [
+        e for e in employees
+        if avail.is_active(e) and avail.contract_span_band(e)
+    ]
+    print(f"{len(banded)} of them are salaried with a contract band — "
+          f"the only people\nwho can be reported short:")
+    for employee in banded:
+        low, high = avail.contract_span_band(employee)
+        print(f"    {employee.get('name', '?')[:24]:26}"
+              f"{low:.1f}-{high:.1f}h span")
+    if not banded:
+        print("    (none — this check has nothing to measure, and a clean")
+        print("     result below means nothing at all)")
+    print()
 
     # The SAME seed both times. Without this, unowned slots would vary between
     # the runs and the diff would include noise that has nothing to do with
