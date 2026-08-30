@@ -375,6 +375,20 @@ class _RosterBuilder:
     """Mutable state for one solve. Kept in a class so the helper methods
     don't need to thread a dozen parameters through every call."""
 
+    # Does the owner of a slot outrank a full-timer who is below their band?
+    #
+    # This is the single most consequential ordering decision in the solver
+    # (CLAUDE.md §2b) and it was argued both ways before landing on True. It
+    # is a class attribute rather than a bare `0 if ...` so the decision can
+    # be turned OFF and the same week re-solved — which is the only way to
+    # answer "is anybody short BECAUSE an owner kept their shift?" rather
+    # than guessing. `ml/check_contract_cost.py` flips it.
+    #
+    # Production must never set this to False. Contract need is reached by
+    # _top_up_contracts afterwards; taking a settled shift to reach it costs
+    # the manager an edit and buys the contract nothing.
+    OWNER_BEATS_CONTRACT = True
+
     def __init__(
         self,
         shop: Dict[str, Any],
@@ -1698,7 +1712,10 @@ class _RosterBuilder:
 
                     def rank_of(e):
                         return (
-                            0 if history_rank.get(e["employee_id"]) == 0 else 1,
+                            0 if (
+                                self.OWNER_BEATS_CONTRACT
+                                and history_rank.get(e["employee_id"]) == 0
+                            ) else 1,
                             self._contract_need(e, span),
                             # UNRANKED, not len(ranks): with one ranked person
                             # len() is 1, which tied them with everybody who
