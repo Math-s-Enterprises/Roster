@@ -73,6 +73,37 @@ Thanks for the correction."*
 repo when `github.com/Aneeeesh/Roster` already existed and he had told me so.
 *Lesson: search the transcript before assuming something is missing.*
 
+**"Have we built this or not?" — check the code, because twice it was "yes".**
+He asked whether the app suggests a fixed shift when he keeps making the same
+edit. It does: `corrections.py` → `/reports/corrections` → the What It Learned
+page, 28 tests. He then asked whether pressing Agree sets it up automatically
+or sends him to the employee page. It sets it up: `apply_suggestion` writes the
+fixed shift or updates the employee record itself. Answering either from memory
+would have had me rebuild working code. *Read the route before answering a
+"does it do X" question.* The only thing actually wrong was the wording — the
+suggestion said the setting lands "on their employee record where you can
+change it back", which reads as an instruction to go and do it yourself.
+
+**He collapses my design forks by reasoning about the manager.** I split his
+request into A (suggest a fixed shift) and B (fix the learned demand shape) and
+asked which. *"Option A. Because if the manager decides to put that change as a
+fixed shift, there is no need for option B."* He is right that A covers the
+case he has; the residue B would have handled — the shape still being wrong for
+whoever covers when that person is off — is real but hypothetical, and by his
+own §10b rule it waits for evidence.
+
+**When my explanation is too abstract he says so, and the fix is his own shop.**
+*"I did not understand this. Can you explain it to me like a ten-year-old?"*
+came after a paragraph about double-counting and demand profiles. Rewriting it
+as "twenty-four weeks, twenty-four votes, your change is one vote" landed
+immediately. *Explain in shifts and weeks, not in weights and windows.*
+
+**He expects the obvious thing, not a refusal.** On dragging a shift onto an
+occupied cell: *"I want those two shifts to be exchanged."* The app said "that
+slot already has a shift", which is true and useless — two people trading
+shifts is the commonest reason to drag at all. Same instinct as §4b: refusing
+is rarely the right answer to a manager who knows what they want.
+
 ---
 
 ## 3. My recurring failure modes
@@ -106,6 +137,35 @@ garbled comment in `models.py` about `min_rest_hours` that had to be rewritten.
 Made the calendar icon invisible with `filter: invert(1)` plus
 `color-scheme: dark` — black on black. Left dead scaffolding (`if False else
 None`) in a test. **Check the thing next to what you changed.**
+
+**A rename is not a safe refactor, and I keep treating it as one.**
+Renaming `was`/`now` to `was_start`/`now_start` in `_suggest_from` broke two
+things at once: the block below still referenced the old names, and the guard
+`if now <= was: return None` went with them. The second was the dangerous one —
+without it the availability branch would have set somebody's earliest start
+EARLIER than the one they already had, which is the opposite of what that
+setting means and would not have looked wrong in the UI. Caught only because a
+test existed for it. **After a rename, grep the old name before running
+anything.**
+
+**I nearly overturned a decided question as a side effect of an unrelated one.**
+Asked to notice shifts being lengthened, my first version answered *any*
+reshape with a fixed shift — which silently reversed
+`test_an_earlier_start_suggests_nothing`, where somebody had deliberately
+decided that being pulled in early says a person was free all along, not that
+anything needs setting. The test failing is what stopped me; without it the
+behaviour would have changed with no one noticing. **When a new branch widens
+a condition, list what used to fall through it and check each was not a
+decision.**
+
+**I wrote an unverified claim into a comment again.** Same failure as the
+`_apply_fixed_shifts` one below, one session later. I justified keying the swap
+on `(employee, day)` by writing that matching on `shift_id` "would move every
+shift at once" — true of that line in isolation, but the server stamps a
+`shift_id` on every path that creates a shift, so it never happens. Checked
+before committing and rewrote it to give the real reason (consistency with the
+validator and `diff_roster`). **A comment that explains a choice by naming a
+bug is asserting the bug exists. Verify it or do not name it.**
 
 **I have stated things about his own app that were false.**
 Told him no password reset flow existed when `ForgotPasswordReq` and
@@ -176,13 +236,48 @@ answers it in one command).
 **Build the diagnostic instead of theorising.** The Emma question went through
 four wrong explanations from me — stale code, ownership ranking, apportionment
 — before `explain_day.py` showed the actual arithmetic. Every one of those
-guesses cost a round trip; the tool ended it. Five such scripts now exist and
-they are the highest-value thing built this session.
+guesses cost a round trip; the tool ended it. `ml/` now holds around nine of
+them — `check_hours`, `check_contract_cost`, `check_live_code`,
+`check_rest_gaps`, `diagnose`, `explain_day`, `show_roster`, `why_slot`,
+`who_is_placeholder` — alongside the migrations, and they are the
+highest-value thing built across these sessions. **Look for an existing one
+before writing a fresh query.**
 
 **Separate the layers before debugging.** "Emma is missing" had two completely
 different possible causes that look identical on screen: the slot is not in
 the day's plan at all, or it is and somebody outranked her. No amount of
 tuning who-beats-whom helps with the first. Ask which layer before designing.
+
+**A/B the rule instead of reading the symptom.** The question "did owner-first
+starve a full-timer?" cannot be answered by looking at `under_contract` — a
+person can be short because the trading hours are not there at all, and reading
+that as proof owners caused it is how a fix gets built for a problem nobody
+has. `check_contract_cost.py` solves the same week twice with
+`OWNER_BEATS_CONTRACT` on and off, same seed, and diffs. Short in both runs
+means the hours are missing; short only with it on is the evidence. Answer at
+the reference shop: nobody short either way, and 18 placements across 12 people
+would change hands if it were switched off. **Option B is not needed. Do not
+build it without re-running this.**
+
+**Say how big the denominator is, or a clean result means nothing.** First
+version of that script printed "nobody is below their minimum" — which is
+equally true of "the solver reached everybody" and "there was nobody to reach",
+and those lead opposite ways. Only salaried staff with a contract band can be
+reported short at all. It now names them first: 6 of 31, five with tight bands
+(40–40, 45–45, 41–42.5) and Martin on 18.5–42.5, whose floor is so low he
+contributes almost nothing to the result. **Any "no problems found" needs the
+count of things that could have been a problem.**
+
+**Break only the new branch to check a new test.** Disabled the new same-start
+condition with `if False` and left everything else intact: both new tests
+failed, the regression guard still passed. A test that passes without its fix
+protects nothing, and three of them did earlier in this project.
+
+**With no browser, verify the logic in a scratch harness.** The swap fix was
+pure frontend logic, so it went into a standalone node script — seven cases
+including bystanders staying put and, the one that would actually corrupt a
+roster, that no swap can put two people in the same `(person, day)` cell from
+either drag direction. Not the same as seeing it work, and the commit says so.
 
 **His bug reports are precise, and the numbers in them are the diagnosis.**
 "60h but the roster shows 40" plus a dry run listing four duplicate rows was
@@ -263,15 +358,38 @@ Built this session, all general behaviour with no shop-specific code:
 
 Since then: force approval with named breaches and a hard floor that no
 password clears; editing warns instead of refusing; a printed rota built for a
-wall rather than a screen; leave no longer counted as a contract shortfall.
+wall rather than a screen; leave no longer counted as a contract shortfall;
+recency-weighted demand with a seasonal echo, and the "Against the usual"
+panel beside Advisories.
+
+Latest additions:
+
+- **A lengthened shift is now a suggestion.** Same start, different finish,
+  three weeks running → "Make this a fixed shift" at the corrected hours,
+  either direction. This was the commonest edit of all and it produced nothing,
+  because the `moved` branch read only the start time.
+- **Dropping a shift on an occupied cell swaps the two.** It used to refuse.
+- **`OWNER_BEATS_CONTRACT`** is a named switch rather than an inline
+  expression, so the decision can be turned off and measured. Production must
+  never set it False.
+
+**Option B is closed, with evidence.** `check_contract_cost.py` says nobody at
+the reference shop is below their minimum with owner-first on or off, and 18
+placements across 12 people would move if it were switched off. Do not build
+the look-ahead. If a second shop complains, re-run that script first — the
+answer is a fact about Top Oil's rota, not about the algorithm, and §10b's
+constants were calibrated on the same rota.
 
 Still outstanding: **Phase 5** (re-run `measure_edit_burden.py` and prove the
 numbers moved). That is the only honest verdict on the whole session, and it
 needs several more approved weeks before it can be run.
 
-Watch for: anyone appearing in `under_contract`. That is the signal the
-owner-first change starved a full-timer and option B (look-ahead before
-displacing an owner) is actually needed. It has not happened yet.
+**Never seen in a browser, by me:** the printed rota and its page-count
+chooser, force approval with red breach names, Add extra, the rebalance-day
+links, the What It Learned page, the "Against the usual" panel, and the swap
+drag. All are logic-verified and none is eye-verified. He has said he will look
+"when everything is done" — offer to drive Chrome through them rather than
+letting him find the broken one.
 
 ---
 
