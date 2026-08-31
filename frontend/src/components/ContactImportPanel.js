@@ -46,6 +46,7 @@ export default function ContactImportPanel({ missingCount, total, onDone }) {
   const [replace, setReplace] = useState(false);
   const [preview, setPreview] = useState(null);
   const [fileName, setFileName] = useState("");
+  const [dragging, setDragging] = useState(false);
   const input = useRef(null);
 
   const upload = async (file, replaceExisting = replace) => {
@@ -139,28 +140,69 @@ export default function ContactImportPanel({ missingCount, total, onDone }) {
         </button>
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <input
-          ref={input}
-          data-testid="contact-file"
-          type="file"
-          accept=".csv,.tsv,.xlsx,.xlsm,.xltx"
-          onChange={(e) => upload(e.target.files?.[0])}
-          className="text-[13px]"
-          style={{ maxWidth: 320 }}
-        />
-        <label className="flex items-center gap-2 text-[12px]"
+      {/* The native file input is hidden and driven by a button, the same way
+          the roster importer does it. Left visible, it renders the browser's
+          own "Choose file" control INSIDE a field the global stylesheet has
+          already given a height, a border and a background — the button does
+          not inherit any of that, so the two disagree and the box looks
+          broken. Nothing can style that inner button; hiding the input is the
+          only fix. */}
+      <input
+        ref={input}
+        data-testid="contact-file"
+        type="file"
+        accept=".csv,.tsv,.xlsx,.xlsm,.xltx"
+        onChange={(e) => upload(e.target.files?.[0])}
+        className="hidden"
+      />
+
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          upload(e.dataTransfer.files?.[0]);
+        }}
+        className="card-soft p-6 text-center"
+        style={{
+          border: `1px dashed ${dragging ? "var(--primary)" : "var(--hairline-strong)"}`,
+          background: dragging ? "var(--canvas-raised)" : undefined,
+        }}
+      >
+        {busy ? (
+          <div className="flex items-center justify-center gap-2 text-[13px]"
                style={{ color: "var(--ink-mute)" }}>
-          <input
-            data-testid="contact-replace"
-            type="checkbox"
-            checked={replace}
-            onChange={(e) => toggleReplace(e.target.checked)}
-          />
-          Replace addresses that are already set
-        </label>
-        {busy && <RefreshCw size={14} className="animate-spin" />}
+            <RefreshCw size={14} className="animate-spin" /> Reading {fileName}…
+          </div>
+        ) : (
+          <>
+            <Upload size={20} className="mx-auto mb-2"
+                    style={{ color: "var(--ink-mute-2)" }} />
+            <button
+              data-testid="contact-choose"
+              onClick={() => input.current?.click()}
+              className="btn btn-secondary"
+            >
+              Choose a file
+            </button>
+            <div className="text-[11px] mt-2" style={{ color: "var(--ink-mute-2)" }}>
+              {fileName || "or drop it here — Excel or CSV"}
+            </div>
+          </>
+        )}
       </div>
+
+      <label className="flex items-center gap-2 text-[12px] mt-3"
+             style={{ color: "var(--ink-mute)" }}>
+        <input
+          data-testid="contact-replace"
+          type="checkbox"
+          checked={replace}
+          onChange={(e) => toggleReplace(e.target.checked)}
+        />
+        Replace addresses that are already set
+      </label>
 
       {preview && (
         <div className="mt-5">
