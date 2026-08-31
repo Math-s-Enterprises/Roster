@@ -1351,6 +1351,7 @@ export default function RosterView() {
         <DispatchModal
           roster={roster}
           emps={emps}
+          observers={shop?.roster_recipients || []}
           onClose={() => { setDispatchOpen(false); setDispatchResult(null); }}
           onSend={dispatch}
           sending={dispatching}
@@ -1841,14 +1842,25 @@ function ShiftModal({ shift, employee, onClose, onSave, onDelete, onUnpin, isNew
   );
 }
 
-function DispatchModal({ roster, emps, onClose, onSend, sending, result }) {
+function DispatchModal({ roster, emps, observers = [], onClose, onSend, sending, result }) {
+  // Everyone who will actually receive something. The modal used to count
+  // only the STAFF, so a shop with a recipient configured was told "Send 2
+  // emails" and then sent three — and with nobody configured there was no
+  // way to tell from this screen whether the feature existed at all. That is
+  // what made an absent attachment look like a broken feature.
+  const total = emps.length + observers.length;
   return (
     <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4" onClick={onClose}>
       <div className="max-w-2xl w-full card elevated p-8 relative max-h-[85vh] overflow-y-auto scroll-thin" onClick={(e) => e.stopPropagation()}>
         <button onClick={onClose} className="btn btn-ghost absolute top-3 right-3 p-2"><X size={16} /></button>
         <h2 className="mb-1">Dispatch <span className="font-mono">{roster.version}</span></h2>
         <p className="text-[13px] mb-6" style={{ color: "var(--ink-mute)" }}>
-          Sending personal schedule cards to every employee by email.
+          Each person gets their own shifts.
+          {observers.length > 0 && (
+            <> {observers.length} other recipient
+              {observers.length !== 1 ? "s" : ""} get the whole week, with a
+              PDF attached.</>
+          )}
         </p>
 
         {!result ? (
@@ -1869,9 +1881,27 @@ function DispatchModal({ roster, emps, onClose, onSend, sending, result }) {
                 );
               })}
             </div>
+            {observers.length > 0 && (
+              <div className="mb-6">
+                <div className="eyebrow mb-2">Also sent the whole roster</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {observers.map((o) => (
+                    <div key={o.email} className="card-soft p-3">
+                      <div className="text-[13px] truncate">{o.name || o.email}</div>
+                      <div className="text-[11px] truncate" style={{ color: "var(--ink-mute-2)" }}>
+                        {o.email}
+                      </div>
+                      <div className="text-[11px] mt-0.5" style={{ color: "var(--ink-mute)" }}>
+                        every shift · PDF attached
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <button data-testid="btn-send-emails" onClick={onSend} disabled={sending} className="btn btn-primary w-full py-3">
               {sending ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
-              {sending ? "Sending…" : `Send ${emps.length} emails`}
+              {sending ? "Sending…" : `Send ${total} email${total !== 1 ? "s" : ""}`}
             </button>
           </>
         ) : (
@@ -1883,6 +1913,29 @@ function DispatchModal({ roster, emps, onClose, onSend, sending, result }) {
               </span>{" "}
               failed
             </div>
+            {result.observers && (
+              (result.observers.sent || []).length > 0
+              || (result.observers.failed || []).length > 0
+            ) && (
+              <div className="card-soft p-3 mb-4 text-[12px]">
+                <div className="eyebrow mb-1">Whole roster</div>
+                {(result.observers.sent || []).map((o) => (
+                  <div key={o.email} className="flex items-center gap-2"
+                       style={{ color: "var(--ink-mute)" }}>
+                    <Check size={12} style={{ color: "var(--primary-deep)" }} />
+                    {o.name || o.email} · PDF attached
+                  </div>
+                ))}
+                {(result.observers.failed || []).map((o) => (
+                  <div key={o.email} style={{ color: "var(--danger)" }}>
+                    <div className="flex items-center gap-2">
+                      <X size={12} /> {o.name || o.email}
+                    </div>
+                    <div style={{ color: "var(--ink-mute-2)" }}>{o.error}</div>
+                  </div>
+                ))}
+              </div>
+            )}
             <ul className="space-y-2 max-h-80 overflow-y-auto scroll-thin">
               {result.sent.map((s) => (
                 <li key={s.employee_id} className="text-[13px] flex items-center gap-2" style={{ color: "var(--ink-mute)" }}>
