@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api, errorMessage, fmtMoney, roleClass, CURRENCY, DAY_SHORT, DAYS } from "@/lib/api";
 import { toast } from "sonner";
+import ContactImportPanel from "@/components/ContactImportPanel";
 import {
   Plus, Pencil, Trash2, AlertTriangle, X, ChevronDown, ChevronRight,
   GraduationCap, Sun, Clock, UserX, Scale, Briefcase,
@@ -255,6 +256,18 @@ export default function Employees() {
           <Plus size={14} /> Add employee
         </button>
       </div>
+
+      {/* Only shown once there is somebody to match against — on an empty
+          shop it would be an upload with nothing to attach to. */}
+      {emps.length > 0 && (
+        <ContactImportPanel
+          missingCount={emps.filter(
+            (e) => e.is_active !== false && !(e.email || "").trim()
+          ).length}
+          total={emps.filter((e) => e.is_active !== false).length}
+          onDone={load}
+        />
+      )}
 
       {emps.length === 0 ? (
         <div className="glass rounded-3xl p-12 text-center text-white/50">

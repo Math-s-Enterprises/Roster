@@ -447,3 +447,18 @@ class CheckoutRequest(BaseModel):
     lookup_key: str
     quantity: int = Field(1, ge=1, le=100)
     origin_url: str
+
+
+class ContactEntry(BaseModel):
+    employee_id: str
+    email: str
+
+
+class ContactApply(BaseModel):
+    """The rows the manager confirmed in the preview.
+
+    Resolved pairs rather than the file: re-parsing on apply would let what
+    gets written differ from what was approved on screen, and the whole point
+    of the two-step flow is that a human saw every match.
+    """
+    entries: List[ContactEntry] = Field(default_factory=list)

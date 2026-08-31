@@ -3088,3 +3088,115 @@ class TestChangingYourPassword:
         assert client.post("/api/auth/change-password", json={
             "current_password": self.OLD, "new_password": "short",
         }, headers=auth(token)).status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Email addresses from a spreadsheet the staff filled in
+# ---------------------------------------------------------------------------
+def _add(client, token, name, email=""):
+    return client.post(
+        "/api/employees",
+        json={**EMPLOYEE, "name": name, "email": email or None},
+        headers=auth(token),
+    ).json()["employee_id"]
+
+
+def _preview(client, token, text, name="staff.csv", replace=False):
+    return client.post(
+        "/api/employees/contacts/preview",
+        files={"file": (name, text.encode("utf-8"), "text/csv")},
+        data={"replace": str(replace).lower()},
+        headers=auth(token),
+    )
+
+
+def test_a_spreadsheet_of_addresses_is_previewed_then_applied(client):
+    """The whole point of the two-step flow: nothing is written until a human
+    has seen which person each address is going to be attached to."""
+    token = register(client, "contacts@example.com")
+    emma = _add(client, token, "Emma Doyle")
+    _add(client, token, "Megan Byrne")
+
+    preview = _preview(client, token, (
+        "Top Oil — please add your email\n"
+        "\n"
+        "Name,Email address,Notes\n"
+        "Emma,emma@shop.ie,\n"
+        "Megan,megan@shop.ie,back from leave\n"
+    ))
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["counts"].get("ready") == 2, body
+
+    # Nothing written yet.
+    before = client.get("/api/employees", headers=auth(token)).json()
+    assert all(not (e.get("email") or "") for e in before)
+
+    applied = client.post(
+        "/api/employees/contacts/apply",
+        json={"entries": [
+            {"employee_id": r["employee_id"], "email": r["email"]}
+            for r in body["rows"] if r["status"] == "ready"
+        ]},
+        headers=auth(token),
+    )
+    assert applied.status_code == 200
+    assert applied.json()["updated"] == 2
+
+    after = {e["employee_id"]: e for e in
+             client.get("/api/employees", headers=auth(token)).json()}
+    assert after[emma]["email"] == "emma@shop.ie"
+
+
+def test_two_people_of_one_name_are_never_guessed_at(client):
+    """A wrong match emails one person's working pattern to another. The row
+    must come back unresolved rather than attached to whichever was found
+    first."""
+    token = register(client, "ambiguous@example.com")
+    _add(client, token, "Emma Doyle")
+    _add(client, token, "Emma Byrne")
+
+    body = _preview(client, token, "Name,Email\nEmma,emma@shop.ie\n").json()
+    row = body["rows"][0]
+    assert row["status"] == "ambiguous"
+    assert row["employee_id"] is None
+    assert body["counts"].get("ready") is None
+
+
+def test_an_existing_address_needs_replace(client):
+    token = register(client, "replace@example.com")
+    _add(client, token, "Emma Doyle", "old@shop.ie")
+
+    plain = _preview(client, token, "Name,Email\nEmma,new@shop.ie\n").json()
+    assert plain["rows"][0]["status"] == "conflict"
+
+    forced = _preview(client, token, "Name,Email\nEmma,new@shop.ie\n",
+                      replace=True).json()
+    assert forced["rows"][0]["status"] == "ready"
+
+
+def test_apply_refuses_an_employee_from_another_shop(client):
+    """The endpoint takes employee ids from the browser, so it must check them
+    against the caller's own staff rather than trusting them."""
+    token_a = register(client, "shop-a@example.com")
+    token_b = register(client, "shop-b@example.com")
+    theirs = _add(client, token_b, "Somebody Else")
+
+    response = client.post(
+        "/api/employees/contacts/apply",
+        json={"entries": [{"employee_id": theirs, "email": "leak@shop.ie"}]},
+        headers=auth(token_a),
+    )
+    assert response.status_code == 200
+    assert response.json() == {"updated": 0, "skipped": 1}
+
+    still = client.get("/api/employees", headers=auth(token_b)).json()
+    assert not (still[0].get("email") or ""), "wrote into another shop's data"
+
+
+def test_a_file_with_no_addresses_says_so(client):
+    token = register(client, "empty@example.com")
+    _add(client, token, "Emma Doyle")
+    response = _preview(client, token, "Name,Email\nEmma,\nMegan,\n")
+    assert response.status_code == 400
+    assert "No email addresses found" in response.text

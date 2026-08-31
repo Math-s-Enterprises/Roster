@@ -3,11 +3,17 @@ import uuid
 from datetime import datetime, timedelta
 from typing import List
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import (
+    APIRouter, File, Form, HTTPException, Query, UploadFile, status,
+)
 
 from app import db
-from app.models import EmployeeIn, FixedShiftIn, HolidayIn, LeaveRequest, ShopUpdate
+from app.models import (
+    ContactApply, EmployeeIn, FixedShiftIn, HolidayIn, LeaveRequest, ShopUpdate,
+)
 from app.services.scheduler import DAYS
+from app.services import availability as avail
+from app.services import contact_import
 from app.services import holiday_balance
 from app.services import hierarchy as hierarchy_service
 from app.services import payroll_report
@@ -159,6 +165,83 @@ async def delete_employee(employee_id: str, scope: ShopScope = CurrentScope):
     # solver try to roster somebody who no longer exists.
     await scope.fixed_shifts.delete_many({"employee_id": employee_id})
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Contact details from a shared spreadsheet
+#
+# The workflow: the manager shares a sheet, the staff type their own name and
+# email into it, the manager uploads the result. Nobody types twenty-five
+# addresses into a form, and a typo there fails SILENTLY — the address looks
+# fine and the rota simply never arrives.
+#
+# Two steps on purpose. The preview is what makes this safe: matching a name
+# to the wrong person emails one member of staff another's working pattern,
+# so a human sees every match before anything is written.
+# ---------------------------------------------------------------------------
+@router.post("/employees/contacts/preview")
+async def preview_contacts(
+    file: UploadFile = File(...),
+    replace: bool = Form(False),
+    scope: ShopScope = CurrentScope,
+):
+    data = await file.read()
+    if not data:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That file is empty.")
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "That file is larger than 5MB — this expects a list of names, not "
+            "a document.",
+        )
+    try:
+        rows = contact_import.parse(data, file.filename or "")
+    except contact_import.UnreadableFile as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+
+    if not rows:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "No email addresses found in that file. Every row needs a name and "
+            "an address — a column heading on its own is not enough.",
+        )
+
+    # Active only: an address belonging to somebody who has left is not a
+    # match, it is a mistake.
+    employees = [e for e in await scope.employees.find(limit=1000)
+                 if avail.is_active(e)]
+    return contact_import.match(rows, employees, allow_replace=replace).to_dict()
+
+
+@router.post("/employees/contacts/apply")
+async def apply_contacts(
+    payload: ContactApply, scope: ShopScope = CurrentScope,
+):
+    """Write the addresses the manager confirmed in the preview.
+
+    Takes the resolved (employee, email) pairs rather than the file, so what
+    is written is exactly what was on screen — re-parsing here would let the
+    result differ from the preview that was approved.
+    """
+    known = {
+        e["employee_id"] for e in await scope.employees.find(limit=1000)
+        if avail.is_active(e)
+    }
+    written, skipped = [], []
+    for entry in payload.entries:
+        if entry.employee_id not in known:
+            skipped.append(entry.employee_id)
+            continue
+        if not contact_import.EMAIL.match(entry.email.strip()):
+            skipped.append(entry.employee_id)
+            continue
+        await scope.employees.update_one(
+            {"employee_id": entry.employee_id},
+            {"email": entry.email.strip()},
+        )
+        written.append(entry.employee_id)
+
+    return {"updated": len(written), "skipped": len(skipped)}
 
 
 # ---------------------------------------------------------------------------
