@@ -36,6 +36,25 @@ Reported per week and totalled, alongside how many shifts even start or end
 off the hour — if that is near zero the whole question is theoretical for
 this shop.
 
+MEASURE THE RIGHT ROSTERS
+-------------------------
+The first version of this script defaulted to APPROVED weeks and reported a
+confident zero. That answer was worthless, and the shop owner spotted why:
+approved weeks at the reference shop are the manager's own hand-built rota,
+which is continuous by construction. There were no holes to invent, so zero
+was guaranteed before the script ran.
+
+The rounding is only exploited by the SOLVER — `_close_short_hours` is what
+stretches a finish by thirty minutes and then believes the hour is covered.
+So `--source` decides what is measured, and the default is the solver:
+
+    generated   drafts the solver produced (default)
+    approved    the manager's own rota — the control, expected to be clean
+    solve       re-solve each week from scratch and measure that
+
+`solve` is the strongest: it measures today's code rather than whatever
+version produced a stored draft.
+
 NOTHING IS WRITTEN.
 """
 from __future__ import annotations
@@ -108,7 +127,52 @@ def _open_minutes(shop: Dict[str, Any]) -> List[bool]:
     return open_flags
 
 
-async def run(email: str, weeks: int) -> None:
+async def _solve_recent(shop, approved, weeks):
+    """Re-solve the most recent weeks with today's code and return the output.
+
+    The strongest source: a stored draft was produced by whatever version of
+    the solver was running that day, and the question is about the solver as
+    it stands now.
+    """
+    from app.services.demand import build_profile
+    from app.services.hierarchy import sort_employees
+    from app.services.learning import compute_weights
+    from app.services.scheduler import solve_roster
+
+    employees = await db.employees.find(
+        {"shop_id": shop["shop_id"]}, {"_id": 0}).to_list(1000)
+    ids = {e["employee_id"] for e in employees}
+    holidays = await db.holidays.find(
+        {"shop_id": shop["shop_id"]}, {"_id": 0}).to_list(1000)
+    fixed = [f for f in await db.fixed_shifts.find(
+        {"shop_id": shop["shop_id"]}, {"_id": 0}).to_list(1000)
+        if f["employee_id"] in ids]
+    rules = await db.ai_rules.find(
+        {"shop_id": shop["shop_id"], "enabled": True}, {"_id": 0}).to_list(200)
+    ordered = sort_employees(employees, shop)
+    weights = compute_weights(approved)
+
+    out = []
+    targets = sorted({r["week_start"] for r in approved}, reverse=True)[:weeks]
+    for week in targets:
+        # History EXCLUDING the week being rebuilt, so the solver is not
+        # handed the answer it is being asked to produce.
+        history = [r for r in approved if r.get("week_start") != week]
+        profile = build_profile(
+            shop, history,
+            {e["employee_id"]: e.get("role", "") for e in employees},
+            for_week=week,
+        )
+        result = solve_roster(
+            shop, ordered, holidays, fixed, rules, week,
+            weights, profile, history_rosters=history, seed=1234,
+        )
+        out.append({"week_start": week, "shifts": result["shifts"]})
+        print(f"  solved {week} — {len(result['shifts'])} shifts", flush=True)
+    return out
+
+
+async def run(email: str, weeks: int, source: str) -> None:
     user = await db.users.find_one({"email": email.lower()}, {"_id": 0})
     if not user:
         sys.exit(f"No account for {email}")
@@ -116,17 +180,37 @@ async def run(email: str, weeks: int) -> None:
     if not shop:
         sys.exit("That account has no shop yet.")
 
-    rosters = await db.rosters.find(
+    approved = await db.rosters.find(
         {"shop_id": shop["shop_id"], "approved": True}, {"_id": 0}
     ).to_list(500)
-    rosters = sorted(latest_per_week(rosters),
-                     key=lambda r: r.get("week_start", ""), reverse=True)[:weeks]
+
+    if source == "approved":
+        rosters = sorted(latest_per_week(approved),
+                         key=lambda r: r.get("week_start", ""), reverse=True)[:weeks]
+        label = ("the manager's own rota — the CONTROL. A hand-built rota on a "
+                 "24h shop\nis continuous by construction, so a clean result "
+                 "here proves nothing about\nthe solver.")
+    elif source == "solve":
+        print("Re-solving with today's code — this takes a moment.")
+        rosters = await _solve_recent(shop, approved, weeks)
+        label = "freshly solved by TODAY's code — the real question"
+    else:
+        drafts = await db.rosters.find(
+            {"shop_id": shop["shop_id"], "approved": {"$ne": True},
+             "historical": {"$ne": True}}, {"_id": 0}
+        ).to_list(500)
+        rosters = sorted(drafts, key=lambda r: (r.get("week_start", ""),
+                                                r.get("created_at", "")),
+                         reverse=True)[:weeks]
+        label = "drafts the SOLVER produced — what we actually want to know"
+
     if not rosters:
-        sys.exit("No approved rosters to measure.")
+        sys.exit(f"No rosters to measure for --source {source}.")
 
     open_flags = _open_minutes(shop)
-    print(f"\n{shop['name']} — {len(rosters)} approved week(s), "
-          f"{'open 24h' if shop.get('open_24h') else 'using shop hours'}\n")
+    print(f"\n{shop['name']} — {len(rosters)} week(s), "
+          f"{'open 24h' if shop.get('open_24h') else 'using shop hours'}")
+    print(f"source: {label}\n")
 
     # ---- is this even a live question for this shop? --------------------
     edges: Counter = Counter()
@@ -209,10 +293,15 @@ async def run(email: str, weeks: int) -> None:
             print(f"    {week}  {day} {hour:02d}:00   {empty} min empty")
 
     print()
-    if grand_invented == 0:
-        print("VERDICT: the rounding is not inventing coverage in practice.")
-        print("Option A would be correct in principle and change nothing real.")
-        print("Fix the stretch (option C) and leave the model alone.")
+    if grand_invented == 0 and source == "approved":
+        print("VERDICT: none — but this was the CONTROL. A hand-built rota on")
+        print("a 24h shop never has a hole, so zero here was guaranteed before")
+        print("the script ran. Re-run with --source solve for the real answer.")
+    elif grand_invented == 0:
+        print("VERDICT: the rounding is not inventing coverage in practice,")
+        print("in rosters the SOLVER produced. Option A would be correct in")
+        print("principle and change nothing real — fix the stretch (option C)")
+        print("and leave the coverage model alone.")
     else:
         print("VERDICT: real holes are being reported as covered. Option A is")
         print("a correction, not a refinement — but expect it to surface these")
@@ -223,8 +312,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--email", required=True)
     parser.add_argument("--weeks", type=int, default=24)
+    parser.add_argument(
+        "--source", default="generated",
+        choices=("generated", "approved", "solve"),
+        help="generated = solver drafts (default); approved = the manager's "
+             "own rota, a control that proves nothing on its own; "
+             "solve = re-solve with today's code, the strongest answer",
+    )
     args = parser.parse_args()
-    asyncio.run(run(args.email, args.weeks))
+    asyncio.run(run(args.email, args.weeks, args.source))
 
 
 if __name__ == "__main__":
