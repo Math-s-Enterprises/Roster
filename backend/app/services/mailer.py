@@ -10,6 +10,7 @@ dispatch degrades to a visible no-op rather than a 500.
 import asyncio
 import html
 import logging
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -32,14 +33,49 @@ _DAY_LABELS = {
 }
 
 
+def _date_for(week_start: str, day: str) -> Optional[date]:
+    """The calendar date a day of the roster week falls on."""
+    try:
+        monday = datetime.strptime(week_start, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+    try:
+        return monday + timedelta(days=list(_DAY_LABELS).index(day))
+    except ValueError:
+        return None
+
+
+def _short(value: Optional[date]) -> str:
+    """'31 Aug' — day without a leading zero, on any platform.
+
+    %-d is not portable (it fails on Windows, where this is developed) and
+    %#d is Windows-only, so neither can be used.
+    """
+    return f"{value.day} {value:%b}" if value else ""
+
+
 def render_roster_email(
     employee_name: str,
     shop_name: str,
     week_start: str,
     shifts: List[Dict[str, Any]],
-    version: str,
 ) -> str:
     """Build the HTML for one employee's weekly schedule.
+
+    EVERY SHIFT CARRIES ITS DATE. "Monday, 06:00–14:00" is ambiguous the
+    moment it is read on a Wednesday, or forwarded, or found again a
+    fortnight later — and a rota is exactly the kind of email people keep and
+    re-read. The date removes the guesswork.
+
+    An overnight shift says where it ends, because "23:30 – 07:00" on Monday
+    genuinely reads as finishing on Monday morning. That is the §8 confusion
+    the whole codebase is careful about, and it is worse in an email than
+    anywhere else: nobody can click into it to check.
+
+    NO VERSION NUMBER. "Roster v1.23" means something to the manager pressing
+    the button and nothing to the person reading it, except a suggestion that
+    there were twenty-two earlier attempts and this one may not be final
+    either.
 
     Every interpolated value is HTML-escaped: employee and shop names are
     user-supplied, so injecting them raw would allow HTML/script injection
@@ -48,17 +84,42 @@ def render_roster_email(
     safe_name = html.escape(employee_name)
     safe_shop = html.escape(shop_name)
 
+    monday = _date_for(week_start, "mon")
+    sunday = _date_for(week_start, "sun")
+    if monday and sunday:
+        # "Mon 31 Aug – Sun 6 Sep 2026". The year appears once, at the end,
+        # where it settles which September this is without repeating itself.
+        span = (f"{monday:%a} {_short(monday)} – {sunday:%a} {_short(sunday)} "
+                f"{sunday:%Y}")
+    else:
+        span = f"week of {week_start}"
+
     ordered = sorted(shifts, key=lambda s: (list(_DAY_LABELS).index(s["day"]), s["start"]))
     if ordered:
-        rows = "".join(
-            f'<tr>'
-            f'<td style="padding:10px 14px;color:#a1a1aa;font-family:monospace;">'
-            f'{html.escape(_DAY_LABELS.get(s["day"], s["day"]))}</td>'
-            f'<td style="padding:10px 14px;color:#ffffff;font-family:monospace;">'
-            f'{html.escape(s["start"])} – {html.escape(s["end"])}</td>'
-            f'</tr>'
-            for s in ordered
-        )
+        cells = []
+        for shift in ordered:
+            on = _date_for(week_start, shift["day"])
+            label = _DAY_LABELS.get(shift["day"], shift["day"])
+            when = f"{label} {_short(on)}" if on else label
+
+            # Ends on the following day, so say so rather than leaving them to
+            # work it out from two times that look like they run backwards.
+            overnight = shift["end"] <= shift["start"]
+            finishes = ""
+            if overnight and on:
+                finishes = (f'<span style="color:#a1a1aa;"> (finishes '
+                            f'{(on + timedelta(days=1)):%a})</span>')
+
+            cells.append(
+                f'<tr>'
+                f'<td style="padding:10px 14px;color:#a1a1aa;font-family:monospace;'
+                f'white-space:nowrap;">{html.escape(when)}</td>'
+                f'<td style="padding:10px 14px;color:#ffffff;font-family:monospace;">'
+                f'{html.escape(shift["start"])} – {html.escape(shift["end"])}'
+                f'{finishes}</td>'
+                f'</tr>'
+            )
+        rows = "".join(cells)
     else:
         rows = (
             '<tr><td colspan="2" style="padding:14px;color:#a1a1aa;">'
@@ -69,7 +130,7 @@ def render_roster_email(
   <table width="100%" style="max-width:560px;margin:auto;background:#0A0B10;border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden;">
     <tr><td style="padding:24px 24px 8px 24px;">
       <div style="color:#00E5FF;font-size:22px;font-weight:700;">{safe_shop}</div>
-      <div style="color:#a1a1aa;font-size:13px;margin-top:4px;">Roster {html.escape(version)} · week of {html.escape(week_start)}</div>
+      <div style="color:#a1a1aa;font-size:13px;margin-top:4px;">{html.escape(span)}</div>
     </td></tr>
     <tr><td style="padding:16px 24px;color:#ffffff;">
       <p style="margin:0 0 8px 0;">Hi {safe_name},</p>
@@ -171,7 +232,6 @@ async def send_password_reset_email(to: str, name: str, reset_url: str, expiry_m
 async def send_roster_emails(
     shop_name: str,
     week_start: str,
-    version: str,
     recipients: List[Dict[str, Any]],
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Email each recipient their own shifts.
@@ -195,7 +255,10 @@ async def send_roster_emails(
         }
 
     semaphore = asyncio.Semaphore(_MAX_CONCURRENT_SENDS)
-    subject = f"Your schedule · {shop_name} · week of {week_start}"
+    monday, sunday = _date_for(week_start, "mon"), _date_for(week_start, "sun")
+    when = (f"{_short(monday)} – {_short(sunday)}" if monday and sunday
+            else f"week of {week_start}")
+    subject = f"Your shifts · {shop_name} · {when}"
 
     async with httpx.AsyncClient(timeout=30) as http:
         outcomes = await asyncio.gather(*[
@@ -203,7 +266,7 @@ async def send_roster_emails(
                 http, semaphore, recipient["email"], subject,
                 render_roster_email(
                     recipient["name"], shop_name, week_start,
-                    recipient.get("shifts", []), version,
+                    recipient.get("shifts", []),
                 ),
             )
             for recipient in recipients

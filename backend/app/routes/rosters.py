@@ -1257,7 +1257,7 @@ async def dispatch_roster(roster_id: str, scope: ShopScope = CurrentScope):
 
     outcome = await mailer.send_roster_emails(
         scope.shop.get("name", "Your shop"), roster["week_start"],
-        roster.get("version", "v1.0"), recipients,
+        recipients,
     )
     outcome["no_email"] = no_address
 
