@@ -94,7 +94,18 @@ export default function LearningReport() {
           </p>
         ) : (
           <>
-            <div className="flex items-end gap-4 h-28">
+            {/*
+              A CHART OF ONE BAR IS NOT A TREND.
+
+              With a single measured week, `flex-1` stretched that week across
+              the full width and it read as a grey slab rather than a column —
+              a shape that says "here is your trend" when there is exactly one
+              observation. The cap keeps a bar bar-shaped until there are
+              enough weeks for the row to fill naturally.
+            */}
+            <div className="flex items-end gap-4 h-28"
+                 style={{ maxWidth: measured.length < 4
+                   ? `${measured.length * 84}px` : undefined }}>
               {measured.map((week) => (
                 <div key={week.week_start} className="flex-1 flex flex-col items-center gap-1">
                   <div className="text-[13px] font-mono">{week.edit_count}</div>
@@ -145,16 +156,61 @@ export default function LearningReport() {
                   needed no changes at all.{" "}
                 </>
               )}
+              {/*
+                "Averaging 63 edits a week" from ONE week is not an average,
+                it is that week — and stated as an average it invites the
+                manager to read a habit into a single roster. The whole screen
+                exists to show a number falling over time, so it must not
+                claim a trend it has not measured. Below three weeks it says
+                what it actually knows.
+              */}
               {report.average_per_week !== null && (
-                <>Averaging {report.average_per_week} edits a week.</>
+                measured.length < 3 ? (
+                  <>
+                    That is {measured.length === 1 ? "the only week" : "both weeks"}
+                    {" "}measured so far — too few to average. Approve a few more
+                    and this becomes a trend.
+                  </>
+                ) : (
+                  <>Averaging {report.average_per_week} edits a week
+                    {" "}across {measured.length} weeks.</>
+                )
               )}
             </div>
           </>
         )}
       </div>
 
-      {/* ---- suggestions ---- */}
-      {report.suggestions.length > 0 && (
+      {/*
+        ---- suggestions ----
+
+        The empty state is not decoration. This section used to disappear
+        entirely until something had repeated MIN_REPEATS times, which meant
+        the whole feature was invisible on a shop with one roster of
+        history — and a manager who never sees it cannot know that repeating
+        an edit is what makes it stop being asked of them.
+
+        So when there is nothing to offer, it says what it is waiting for.
+      */}
+      {report.suggestions.length === 0 ? (
+        <div className="card p-6 mb-6">
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles size={15} style={{ color: "var(--ink-mute-2)" }} />
+            <h2 className="text-sm font-medium">Things you keep changing by hand</h2>
+          </div>
+          <p className="text-[13px]" style={{ color: "var(--ink-mute)" }}>
+            Nothing yet. When you make the same change{" "}
+            {report.min_repeats} weeks running — moving somebody off a day,
+            adding a shift the generator missed, always lengthening the same
+            shift — it will offer to set that up permanently, and you can
+            accept or refuse it here.
+            {report.dismissed_count > 0 && (
+              <> You have refused {report.dismissed_count} so far; those are
+                 not offered again.</>
+            )}
+          </p>
+        </div>
+      ) : (
         <div className="card p-6 mb-6">
           <div className="flex items-center gap-2 mb-1">
             <Sparkles size={15} style={{ color: "var(--primary)" }} />

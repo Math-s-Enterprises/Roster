@@ -251,6 +251,81 @@ class TestClosingChangeoverGaps:
         for shift in result["shifts"]:
             assert shift.get("span_hours", 0) <= 10.01, shift
 
+    def _two_hour_gap(self):
+        """A day short at 15:00 AND 16:00, so one shift is stretched twice."""
+        from app.services.demand import DemandProfile, ShiftPattern
+
+        curve = [0] * 24
+        for hour in range(9, 22):
+            curve[hour] = 2
+
+        profile = DemandProfile(
+            headcount={d: list(curve) for d in DAYS},
+            role_mix={d: {"Floor Assistant": [float(c) for c in curve]} for d in DAYS},
+            patterns=[
+                ShiftPattern("09:00", "15:00", 50, 6),
+                ShiftPattern("17:00", "22:00", 50, 6),
+            ],
+            weeks_observed=24,
+            staff_per_day={d: 4 for d in DAYS},
+            day_slots={
+                d: [["09:00", "15:00"], ["09:00", "15:00"],
+                    ["17:00", "22:00"], ["17:00", "22:00"]]
+                for d in DAYS
+            },
+        )
+        shop = make_shop(hours=[
+            {"day": d, "open": "06:00", "close": "22:00", "closed": False}
+            for d in DAYS
+        ])
+        history = [{
+            "week_start": "2026-08-10", "approved": True,
+            "shifts": [
+                {"employee_id": f"e{i}", "day": d, "start": s, "end": e}
+                for d in DAYS
+                for i, (s, e) in enumerate([
+                    ("09:00", "15:00"), ("09:00", "15:00"),
+                    ("17:00", "22:00"), ("17:00", "22:00"),
+                ])
+            ],
+        }]
+        return solve_roster(
+            shop, make_team(size=6), [], [], [], WEEK, None, profile,
+            history_rosters=history,
+        )
+
+    def test_a_shift_stretched_twice_is_reported_once(self):
+        """Two consecutive short hours take two passes to close, and reporting
+        each pass separately read as two unrelated events:
+
+            Emma's mon shift was changed from 06:00-12:00 to 06:00-12:30 ...
+            Emma's mon shift was changed from 06:00-12:30 to 06:00-13:30 ...
+
+        The manager does not care how many passes it took. One line per shift,
+        original shape to final shape.
+        """
+        result = self._two_hour_gap()
+        changes = [i for i in result["issues"] if "was changed from" in i]
+
+        # Each (person, day) may appear at most once.
+        seen = [i.split("'s ")[0] + i.split(" shift")[0][-4:] for i in changes]
+        assert len(seen) == len(set(seen)), (
+            "the same shift is reported more than once:\n  "
+            + "\n  ".join(changes)
+        )
+
+    def test_a_collapsed_advisory_names_the_shape_the_generator_drew(self):
+        """The 'from' must be the ORIGINAL shape, not the intermediate one
+        produced by the first pass — that shape never existed on screen."""
+        result = self._two_hour_gap()
+        changes = [i for i in result["issues"] if "was changed from" in i]
+        assert changes, "expected at least one stretch to be reported"
+        for line in changes:
+            was = line.split("from ")[1].split(" to ")[0]
+            assert was in ("09:00-15:00", "17:00-22:00"), (
+                f"reported a shape the generator never produced: {was}\n  {line}"
+            )
+
 
 class TestContractTopUp:
     def test_a_salaried_employee_reaches_their_contracted_hours(self):

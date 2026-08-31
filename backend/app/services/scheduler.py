@@ -2908,9 +2908,31 @@ class _RosterBuilder:
         Finishes are tried before starts. A finish time is just when somebody
         goes home; a start time is what the shift IS to them, and moving it
         risks handing them a shift they do not work.
+
+        ONE ADVISORY PER SHIFT, NOT PER HOUR
+        ------------------------------------
+        A shift that is short by two consecutive hours gets stretched twice —
+        once reaching 12:00, again reaching 13:00 — and reporting each pass
+        separately read as two unrelated events:
+
+            Emma's mon shift was changed from 06:00-12:00 to 06:00-12:30 ...
+            Emma's mon shift was changed from 06:00-12:30 to 06:00-13:30 ...
+
+        The manager does not care that it took two passes. They care that
+        Emma's Monday finishes 90 minutes later than the generator first drew
+        it. So stretches are accumulated per (person, day) and reported once
+        at the end, from the ORIGINAL shape to the FINAL one.
+
+        Same reasoning as compare_to_usual collapsing consecutive hours
+        (CLAUDE.md §7c): a run of hours is one fact about the day.
         """
         if not self.demand:
             return
+
+        # (employee_id, day) -> {"who", "was", "hours": [...]}. The final shape
+        # is read off the shift itself at the end rather than tracked here,
+        # because it is still being mutated while this runs.
+        stretched: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
         for day in DAYS:
             # A frozen day is not re-solved, so it is not re-stretched either:
@@ -2979,14 +3001,45 @@ class _RosterBuilder:
                             ).get("name", shift["employee_id"])
                             was = f"{shift['start']}-{shift['end']}"
                             self._reshape_shift(shift, candidate[1], candidate[0])
-                            self.result.issues.append(
-                                f"{who}'s {shift['day']} shift was changed from "
-                                f"{was} to {candidate[0]}-{candidate[1]} to cover "
-                                f"{day} {hour:02d}:00."
-                            )
+
+                            key = (shift["employee_id"], shift["day"])
+                            record = stretched.get(key)
+                            if record is None:
+                                # First stretch of this shift: remember the
+                                # shape the generator originally drew, which is
+                                # the only one the manager ever saw.
+                                stretched[key] = {
+                                    "who": who, "was": was,
+                                    "shift": shift, "hours": [(day, hour)],
+                                }
+                            else:
+                                record["hours"].append((day, hour))
                             break
                         if self.on_duty[day][hour] >= required:
                             break
+
+        for record in stretched.values():
+            shift = record["shift"]
+            now = f"{shift['start']}-{shift['end']}"
+            if now == record["was"]:
+                continue  # stretched and then trimmed back; nothing to say
+            hours = record["hours"]
+            # "to cover mon 12:00" for one, "to cover mon 12:00-14:00" for a
+            # run. The end is the LAST hour + 1: covering 12:00 and 13:00 means
+            # being there until 14:00, and saying "12:00-13:00" would describe
+            # an hour less than was actually needed.
+            if len(hours) == 1:
+                covering = f"{hours[0][0]} {hours[0][1]:02d}:00"
+            else:
+                first, last = hours[0], hours[-1]
+                covering = (f"{first[0]} {first[1]:02d}:00-{last[1] + 1:02d}:00"
+                            if first[0] == last[0]
+                            else f"{first[0]} {first[1]:02d}:00 and "
+                                 f"{last[0]} {last[1]:02d}:00")
+            self.result.issues.append(
+                f"{record['who']}'s {shift['day']} shift was changed from "
+                f"{record['was']} to {now} to cover {covering}."
+            )
 
     def _can_shorten_to(self, shift: Dict[str, Any], new_end: str) -> bool:
         """Whether trimming a finish would leave an hour under-staffed."""

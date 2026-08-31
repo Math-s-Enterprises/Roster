@@ -945,11 +945,26 @@ export default function RosterView() {
                         ) : (
                           <div className="text-[13px] truncate leading-tight">{e.name}</div>
                         )}
+                        {/* The badge must not wrap.
+                            "Customer Service Manager" broke onto two lines and
+                            made that one row visibly taller than every other,
+                            so the grid stopped lining up — the whole point of
+                            a grid. Shop role names are free text (CLAUDE.md
+                            §9 keeps a title the shop does not have verbatim),
+                            so any length is possible and truncating is the
+                            only stable answer. `min-w-0` is what lets it
+                            actually shrink inside a flex row; without it the
+                            badge refuses to go below its content width and
+                            truncate never fires. The full name is in the
+                            tooltip. */}
                         <div className="flex items-center gap-1.5 mt-1">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${roleClass(e.role)}`}>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap truncate min-w-0 ${roleClass(e.role)}`}
+                            title={e.role}
+                          >
                             {e.role}
                           </span>
-                          <span className="text-[11px] font-mono" style={{ color: "var(--ink-mute)" }}>
+                          <span className="text-[11px] font-mono shrink-0" style={{ color: "var(--ink-mute)" }}>
                             {empHours.toFixed(1)}h
                           </span>
                         </div>
