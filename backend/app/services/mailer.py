@@ -8,6 +8,7 @@ every recipient as failed with a clear reason instead of raising, so roster
 dispatch degrades to a visible no-op rather than a 500.
 """
 import asyncio
+import base64
 import html
 import logging
 from datetime import date, datetime, timedelta
@@ -295,25 +296,46 @@ def render_shop_roster_email(
 </div>"""
 
 
+# Resend's own ceiling is 40MB for the whole request, and base64 inflates by
+# about a third. A rota PDF is a couple of kilobytes, so this is only ever hit
+# by something having gone wrong — and a send that fails on size is worse than
+# one that arrives without the attachment.
+_MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
+
+
 async def _send_one(
     http: httpx.AsyncClient,
     semaphore: asyncio.Semaphore,
     to: str,
     subject: str,
     body_html: str,
+    attachments: Optional[List[Dict[str, Any]]] = None,
 ) -> Optional[str]:
-    """Send a single email. Returns None on success, or an error string."""
+    """Send a single email. Returns None on success, or an error string.
+
+    `attachments` items are {"filename": str, "content": bytes}.
+    """
+    payload: Dict[str, Any] = {
+        "from": config.EMAIL_FROM,
+        "to": [to],
+        "subject": subject,
+        "html": body_html,
+    }
+    files = [
+        {"filename": a["filename"],
+         "content": base64.b64encode(a["content"]).decode("ascii")}
+        for a in (attachments or [])
+        if a.get("content") and len(a["content"]) <= _MAX_ATTACHMENT_BYTES
+    ]
+    if files:
+        payload["attachments"] = files
+
     async with semaphore:
         try:
             response = await http.post(
                 RESEND_ENDPOINT,
                 headers={"Authorization": f"Bearer {config.RESEND_API_KEY}"},
-                json={
-                    "from": config.EMAIL_FROM,
-                    "to": [to],
-                    "subject": subject,
-                    "html": body_html,
-                },
+                json=payload,
             )
             response.raise_for_status()
             await asyncio.sleep(0.5)  # stay within the provider's rate limit
@@ -409,10 +431,28 @@ async def send_shop_roster(
     subject = f"Roster · {shop_name} · {when}"
     body = render_shop_roster_email(shop_name, week_start, people, breaks_are_paid)
 
+    # A PDF of the same week, so it can be saved or printed rather than only
+    # read. Built once and reused for every recipient — identical content, and
+    # re-rendering it per person would be wasted work.
+    #
+    # If it fails the email still goes: a missing attachment is a nuisance, a
+    # rota nobody receives is the thing this feature exists to prevent.
+    attachments = []
+    try:
+        from app.services.roster_pdf import build_roster_pdf
+
+        attachments.append({
+            "filename": f"roster-{week_start}.pdf",
+            "content": build_roster_pdf(shop_name, week_start, people,
+                                        breaks_are_paid),
+        })
+    except Exception as exc:
+        log.warning("Roster PDF could not be built for %s: %s", week_start, exc)
+
     semaphore = asyncio.Semaphore(_MAX_CONCURRENT_SENDS)
     async with httpx.AsyncClient(timeout=30) as http:
         outcomes = await asyncio.gather(*[
-            _send_one(http, semaphore, r["email"], subject, body)
+            _send_one(http, semaphore, r["email"], subject, body, attachments)
             for r in recipients
         ], return_exceptions=True)
 

@@ -9,7 +9,8 @@
       "Bash(curl -s http://127.0.0.1:8001/api/auth/providers)",
       "Bash(curl -s -H \"Cache-Control: no-cache\" http://127.0.0.1:8001/api/auth/providers)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:8001/api/health)",
-      "Bash(taskkill //PID 39604 //F)"
+      "Bash(taskkill //PID 39604 //F)",
+      "Bash(git fetch *)"
     ]
   }
 }

@@ -1267,7 +1267,7 @@ async def dispatch_roster(roster_id: str, scope: ShopScope = CurrentScope):
     outcome["observers"] = await mailer.send_shop_roster(
         scope.shop.get("name", "Your shop"), roster["week_start"],
         [
-            {"name": e["name"],
+            {"name": e["name"], "role": e.get("role", ""),
              "shifts": [s for s in roster.get("shifts", [])
                         if s["employee_id"] == e["employee_id"]]}
             for e in employees
