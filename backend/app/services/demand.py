@@ -93,6 +93,17 @@ class DemandProfile:
     # anything about Christmas. Reported so the UI can say that rather than
     # implying a yearly pattern that has never been observed.
     seasonal_weeks: int = 0
+    # The granularity this shop writes its shift FINISHES on, in minutes.
+    #
+    # Top Oil ends a shift on a half hour once in 555 shifts, so rounding a
+    # contract trim down to a whole hour matches what its manager writes. A
+    # shop that genuinely finishes at 10:30 and 12:30 would be badly served by
+    # the same rule — every trim would drift its rota toward a convention it
+    # does not use, which is precisely the §10b trap of taking one shop's
+    # numbers for everyone's.
+    #
+    # So it is learned rather than assumed. See `finish_granularity`.
+    edge_minutes: int = 60
 
     @property
     def is_usable(self) -> bool:
@@ -127,6 +138,7 @@ class DemandProfile:
             "weeks_observed": self.weeks_observed,
             "staff_per_day": self.staff_per_day,
             "seasonal_weeks": self.seasonal_weeks,
+            "edge_minutes": self.edge_minutes,
             "day_slots": self.day_slots,
             "source": self.source,
         }
@@ -146,6 +158,7 @@ class DemandProfile:
             weeks_observed=data.get("weeks_observed", 0),
             staff_per_day=dict(data.get("staff_per_day") or {}),
             seasonal_weeks=int(data.get("seasonal_weeks") or 0),
+            edge_minutes=int(data.get("edge_minutes") or 60),
             day_slots={
                 d: [list(s) for s in slots]
                 for d, slots in (data.get("day_slots") or {}).items()
@@ -253,6 +266,48 @@ def _recent_rosters(
 ) -> List[Dict[str, Any]]:
     """Kept for callers that want the weeks without the weights."""
     return [r for r, _ in _weighted_rosters(rosters, lookback_weeks)]
+
+
+# A shop has to write enough shifts before its habits mean anything. Below
+# this, the default stands.
+_MIN_SHIFTS_FOR_GRANULARITY = 50
+# What fraction of finishes must land on a step before it counts as the shop's
+# convention. High, because the cost of guessing too fine is only that trims
+# stay where they are, while guessing too coarse rewrites the shop's rota.
+_GRANULARITY_SHARE = 0.9
+
+
+def finish_granularity(rosters: List[Dict[str, Any]]) -> int:
+    """The step this shop writes its shift FINISHES on, in minutes.
+
+    Returns the COARSEST of 60, 30, 15 that at least 90% of finishes are a
+    multiple of, defaulting to 60 when there is not enough history to tell.
+
+    Coarsest-that-fits, rather than the most common single value, because the
+    question being asked is "what may a trim round to without inventing a shape
+    this shop does not write". A shop whose finishes are 99.8% on the hour
+    answers 60. A shop that mixes 12:00 and 12:30 answers 30 — half its
+    finishes are not multiples of 60, so 60 would be wrong for it even though
+    60 is its single most common step.
+
+    Only finishes. Starts are not rounded by anything (familiarity is keyed on
+    them, §2), so their granularity is not a question anybody asks.
+    """
+    minutes = [
+        to_minutes(shift["end"]) % 60
+        for roster in rosters or []
+        for shift in roster.get("shifts", [])
+        if shift.get("start") and shift.get("end")
+        and not (shift.get("paid_holiday") or shift.get("unpaid_holiday")
+                 or shift.get("sick"))
+    ]
+    if len(minutes) < _MIN_SHIFTS_FOR_GRANULARITY:
+        return 60
+    for step in (60, 30, 15):
+        on_step = sum(1 for m in minutes if m % step == 0)
+        if on_step >= _GRANULARITY_SHARE * len(minutes):
+            return step
+    return 15
 
 
 def _hours_covered(start: str, end: str) -> List[int]:
@@ -471,6 +526,9 @@ def learn_demand(
         staff_per_day=staff_per_day,
         day_slots=_build_day_slots(slot_counts, weeks, staff_per_day),
         seasonal_weeks=seasonal_weeks,
+        # From the SAME weeks the shapes came from, so the convention and the
+        # shapes cannot disagree about the shop.
+        edge_minutes=finish_granularity([r for r, _ in weighted]),
         source="learned",
     )
 

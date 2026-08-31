@@ -968,3 +968,88 @@ class TestComparingAWeekToUsual:
             [{"employee_id": "e0", "day": "mon", "start": "09:00", "end": "17:00"}],
             DemandProfile(source="none"),
         ) == []
+
+
+# ---------------------------------------------------------------------------
+# The shop's own convention for where a shift finishes
+# ---------------------------------------------------------------------------
+class TestFinishGranularity:
+    """Rounding a contract trim to a whole hour is right for a shop that ends
+    shifts on the hour and wrong for one that does not.
+
+    Top Oil ends a shift on a half hour once in 555 shifts, so whole hours
+    match what its manager writes. Hardcoding that would have quietly dragged
+    every other shop's rota toward a convention it does not use — the §10b
+    trap of treating one shop's numbers as everyone's.
+    """
+
+    @staticmethod
+    def _shifts(ends, count=60):
+        """`count` shifts cycling through `ends`, in one roster."""
+        return [{
+            "week_start": "2026-06-29", "approved": True,
+            "shifts": [
+                {"employee_id": f"e{i}", "day": "mon",
+                 "start": "06:00", "end": ends[i % len(ends)]}
+                for i in range(count)
+            ],
+        }]
+
+    def test_a_shop_that_finishes_on_the_hour_gets_whole_hours(self):
+        from app.services.demand import finish_granularity
+
+        assert finish_granularity(self._shifts(["14:00", "16:00", "22:00"])) == 60
+
+    def test_a_shop_that_finishes_on_half_hours_keeps_them(self):
+        """The case that made this necessary — 10:30 and 12:30 finishes."""
+        from app.services.demand import finish_granularity
+
+        assert finish_granularity(self._shifts(["10:30", "12:30", "14:00"])) == 30
+
+    def test_one_odd_half_hour_does_not_move_the_convention(self):
+        """A shop is not on half hours because of a single exception. Top Oil
+        has exactly one in 555 and must still answer 60."""
+        from app.services.demand import finish_granularity
+
+        rosters = self._shifts(["14:00"], count=99)
+        rosters[0]["shifts"].append(
+            {"employee_id": "x", "day": "mon", "start": "06:00", "end": "14:30"}
+        )
+        assert finish_granularity(rosters) == 60
+
+    def test_quarter_hours_are_recognised_too(self):
+        from app.services.demand import finish_granularity
+
+        assert finish_granularity(self._shifts(["14:15", "16:45", "22:00"])) == 15
+
+    def test_too_little_history_falls_back_to_whole_hours(self):
+        """Not enough shifts to have a habit. The default must not be inferred
+        from a handful of them."""
+        from app.services.demand import finish_granularity
+
+        assert finish_granularity(self._shifts(["10:30"], count=6)) == 60
+        assert finish_granularity([]) == 60
+
+    def test_the_profile_carries_it(self):
+        from app.services.demand import build_profile
+
+        from app.services.scheduler import DAYS
+
+        history = weekly_history(8, [
+            (f"e{i}", day, start, end)
+            for day in DAYS
+            for i, (start, end) in enumerate(
+                [("06:00", "14:30"), ("14:30", "22:30")])
+        ])
+        profile = build_profile(make_shop(), history, {})
+        assert profile.edge_minutes == 30, (
+            "a shop whose every shift ends on a half hour should not be told "
+            "its convention is whole hours"
+        )
+
+    def test_it_survives_a_round_trip(self):
+        from app.services.demand import DemandProfile
+
+        assert DemandProfile.from_dict(
+            DemandProfile(edge_minutes=30).to_dict()
+        ).edge_minutes == 30

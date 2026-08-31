@@ -321,7 +321,20 @@ then the app is choosing a shape on the strength of the rounding:
   hour a shift; `_top_up_contracts` makes it up, and `under_contract` reports
   anyone it cannot reach.
 
-**The shop's own convention is the opposite of the obvious fix.** Top Oil writes
+**The step is learned, not assumed.** Rounding a contract trim to a whole hour
+is right for a shop that ends shifts on the hour and wrong for one that runs
+10:30 and 12:30 finishes — there, every trim would drag the rota toward a
+convention it does not use. `demand.finish_granularity` reads it off the shop's
+own rosters: the coarsest of 60, 30, 15 that ≥90% of finishes are a multiple
+of, defaulting to 60 below 50 shifts. Coarsest-that-fits rather than most
+common, because the question is what a trim may round to without inventing a
+shape the shop does not write. **Only finishes** — starts are never rounded,
+because familiarity is keyed on them.
+
+Gap-closing stays hour-aligned whatever the shop's convention, because that one
+is not convention: covering an hour means being there for all of it.
+
+**Top Oil's own convention is the opposite of the obvious fix.** Top Oil writes
 `07:30–16:00` and `23:30–07:00` — half-hour on the **start**, whole-hour finish
 — and ends a shift on a half hour once in 555 shifts. Matching that by moving
 starts was considered and **rejected**: familiarity is keyed on start time (§2),

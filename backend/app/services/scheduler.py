@@ -1906,7 +1906,16 @@ class _RosterBuilder:
         # up elsewhere in the week. §2b already says the contract needs
         # ENOUGH slots, not any particular one. `under_contract` reports
         # anybody it cannot reach, so this cannot fail silently.
-        minutes = int(wanted) * 60
+        #
+        # THE STEP IS THE SHOP'S, NOT TOP OIL'S. Rounding to a whole hour is
+        # right for a shop that ends shifts on the hour 99.8% of the time, and
+        # wrong for one that genuinely runs 10:30 and 12:30 finishes — there,
+        # every trim would drag the rota toward a convention it does not use.
+        # `demand.finish_granularity` reads it off the shop's own rosters.
+        # Sixty when there is no profile yet, which is also what a shop with
+        # too little history to have a convention should get.
+        step = int(getattr(self.demand, "edge_minutes", 60) or 60)
+        minutes = int(wanted * 60 // step) * step
         new_end_m = (to_minutes(start) + minutes) % (24 * 60)
         new_end = f"{new_end_m // 60:02d}:{new_end_m % 60:02d}"
         if violates_minor_curfew(employee, start, new_end):
