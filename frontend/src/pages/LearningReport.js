@@ -83,7 +83,7 @@ export default function LearningReport() {
       {/* ---- the number that matters ---- */}
       <div className="card p-6 mb-6">
         <div className="flex items-center gap-2 mb-4">
-          <TrendingDown size={15} style={{ color: "var(--accent)" }} />
+          <TrendingDown size={15} style={{ color: "var(--primary)" }} />
           <h2 className="text-sm font-medium">Edits needed per roster</h2>
         </div>
 
@@ -104,9 +104,30 @@ export default function LearningReport() {
                       // A clean week is the goal, so it still gets a visible
                       // sliver rather than nothing at all.
                       height: `${Math.max(4, (week.edit_count / peak) * 80)}px`,
+                      // These were `var(--good)` and `var(--accent)`, and
+                      // NEITHER of them drew anything:
+                      //
+                      //   --good   has never been defined, in this file or
+                      //            index.css or anywhere else.
+                      //   --accent IS defined, but only inside the shadcn
+                      //            @layer block, where it holds a bare HSL
+                      //            TRIPLET ("0 0% 15%") meant to be used as
+                      //            hsl(var(--accent)). On its own it is not
+                      //            a colour, so the declaration is dropped.
+                      //
+                      // An invalid background is silent — no console error,
+                      // no fallback — so every bar in this chart rendered
+                      // with no fill at all. The whole point of the screen
+                      // is showing the edit count falling, and it has been
+                      // showing nothing.
+                      //
+                      // --ink-mute-2 rather than a hairline colour: measured
+                      // against --canvas-soft, --hairline-strong is 1.8:1,
+                      // which is barely better than the bug it replaces.
+                      // This is 5.4:1.
                       background: week.edit_count === 0
-                        ? "var(--good)" : "var(--accent)",
-                      opacity: week.edit_count === 0 ? 1 : 0.75,
+                        ? "var(--primary)" : "var(--ink-mute-2)",
+                      opacity: week.edit_count === 0 ? 1 : 0.85,
                     }}
                   />
                   <div className="text-[10px] font-mono" style={{ color: "var(--ink-mute-2)" }}>
@@ -136,7 +157,7 @@ export default function LearningReport() {
       {report.suggestions.length > 0 && (
         <div className="card p-6 mb-6">
           <div className="flex items-center gap-2 mb-1">
-            <Sparkles size={15} style={{ color: "var(--accent)" }} />
+            <Sparkles size={15} style={{ color: "var(--primary)" }} />
             <h2 className="text-sm font-medium">
               Things you keep changing by hand
             </h2>
@@ -212,7 +233,7 @@ export default function LearningReport() {
                    style={{ borderBottom: "1px solid var(--hairline)" }}>
                 <span className="font-mono text-[11px] w-8 shrink-0"
                       style={{ color: p.count >= report.min_repeats
-                        ? "var(--accent)" : "var(--ink-mute-2)" }}>
+                        ? "var(--primary)" : "var(--ink-mute-2)" }}>
                   ×{p.count}
                 </span>
                 <span className="w-20 shrink-0" style={{ color: "var(--ink-mute-2)" }}>

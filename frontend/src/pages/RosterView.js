@@ -605,7 +605,7 @@ export default function RosterView() {
           is what tells it. */}
       {roster && !roster.approved && attempts >= 3 && pinnedCount === 0 && (
         <div className="card p-4 mb-6 no-print flex items-start gap-3">
-          <Sparkles size={15} className="mt-0.5 shrink-0" style={{ color: "var(--accent)" }} />
+          <Sparkles size={15} className="mt-0.5 shrink-0" style={{ color: "var(--primary)" }} />
           <div className="text-[13px]" style={{ color: "var(--ink-secondary)" }}>
             <span style={{ color: "var(--ink)" }}>
               This is draft {attempts} of the same week.
@@ -1074,7 +1074,7 @@ export default function RosterView() {
                                     the less interesting of the two facts. */}
                                 {s.extra ? (
                                   <UserPlus size={10} className="shrink-0 mt-0.5"
-                                            style={{ color: "var(--accent)" }} />
+                                            style={{ color: "var(--primary)" }} />
                                 ) : s.pinned ? (
                                   <Pin size={10} className="shrink-0 mt-0.5"
                                        style={{ color: "var(--ink-mute)" }} />
@@ -1092,7 +1092,7 @@ export default function RosterView() {
                               )}
                               {s.extra && (
                                 <div className="text-[10px] mt-1 truncate"
-                                     style={{ color: "var(--accent)" }}
+                                     style={{ color: "var(--primary)" }}
                                      title={s.extra_reason || "Extra cover"}>
                                   Extra{s.extra_reason ? ` · ${s.extra_reason}` : ""}
                                 </div>
@@ -1954,7 +1954,7 @@ function ExtraStaffModal({ rosterId, employees, week, onClose, onDone }) {
 
         <div className="mb-6">
           <div className="font-medium flex items-center gap-2">
-            <UserPlus size={15} style={{ color: "var(--accent)" }} /> Add extra staff
+            <UserPlus size={15} style={{ color: "var(--primary)" }} /> Add extra staff
           </div>
           <div className="text-[13px] mt-1" style={{ color: "var(--ink-mute)" }}>
             On top of the normal cover, not instead of it. The usual shifts are
