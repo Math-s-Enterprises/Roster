@@ -130,6 +130,37 @@ async def run(email: str, send_test: str) -> None:
 
     print()
     print("=" * 68)
+    print("4. WHO GETS THE WHOLE ROSTER (and the PDF)")
+    print("=" * 68)
+    # Added because "no PDF arrived" turned out to be an EMPTY LIST rather
+    # than anything wrong with the PDF. With nobody here, send_shop_roster
+    # returns immediately: no email, no attachment, and nothing in the logs
+    # to say why.
+    observers = shop.get("roster_recipients") or []
+    if not observers:
+        print("  Nobody. Shop Settings -> \"Also send the roster to\".")
+        print()
+        print("  This is the ONLY email that carries the PDF attachment.")
+        print("  Staff get their own shifts, without one, by design.")
+        print("  While this list is empty nothing is sent and nothing fails —")
+        print("  which is why an absent PDF looks like a broken feature.")
+    else:
+        print(f"  {len(observers)} recipient(s), each sent the whole week")
+        print("  plus a PDF of it:")
+        for entry in observers:
+            name = (entry.get("name") or "").strip()
+            print(f"    {name + ' ' if name else ''}<{entry.get('email')}>")
+        try:
+            from app.services.roster_pdf import build_roster_pdf
+            size = len(build_roster_pdf(shop.get("name", "Shop"), "2026-01-05", []))
+            print(f"\n  PDF builds here: yes ({size} bytes for an empty week)")
+        except Exception as exc:
+            print(f"\n  PDF BUILD FAILS ON THIS MACHINE: {exc}")
+            print("  The email still sends, without the attachment.")
+            print("  `pip install -r requirements.txt` — reportlab is needed.")
+
+    print()
+    print("=" * 68)
     print("VERDICT")
     print("=" * 68)
     if not reachable:
