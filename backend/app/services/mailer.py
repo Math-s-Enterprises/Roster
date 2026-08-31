@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from app import config
+from app.services.scheduler import paid_hours
 
 log = logging.getLogger("roster.mailer")
 
@@ -31,6 +32,17 @@ _DAY_LABELS = {
     "mon": "Monday", "tue": "Tuesday", "wed": "Wednesday",
     "thu": "Thursday", "fri": "Friday", "sat": "Saturday", "sun": "Sunday",
 }
+
+
+def _leave_label(shift: Dict[str, Any]) -> str:
+    """"Holiday" / "Unpaid leave" / "Sick", or "" for a working shift."""
+    if shift.get("paid_holiday"):
+        return "Holiday"
+    if shift.get("unpaid_holiday"):
+        return "Unpaid leave"
+    if shift.get("sick"):
+        return "Sick"
+    return ""
 
 
 def _date_for(week_start: str, day: str) -> Optional[date]:
@@ -59,6 +71,7 @@ def render_roster_email(
     shop_name: str,
     week_start: str,
     shifts: List[Dict[str, Any]],
+    breaks_are_paid: bool = False,
 ) -> str:
     """Build the HTML for one employee's weekly schedule.
 
@@ -94,31 +107,73 @@ def render_roster_email(
     else:
         span = f"week of {week_start}"
 
-    ordered = sorted(shifts, key=lambda s: (list(_DAY_LABELS).index(s["day"]), s["start"]))
-    if ordered:
-        cells = []
-        for shift in ordered:
-            on = _date_for(week_start, shift["day"])
-            label = _DAY_LABELS.get(shift["day"], shift["day"])
-            when = f"{label} {_short(on)}" if on else label
+    # A booked holiday is stored with start and end of None.
+    #
+    # The crash that came from that was `shift["end"] <= shift["start"]` — the
+    # overnight test — comparing None with None. NOT the sort: two shifts only
+    # reach the start-time tiebreak when they fall on the same day, so a
+    # holiday and a working shift on different days never compared. The
+    # `or ""` below is a guard for the same-day case, not the fix for the
+    # reported one; the fix is the `start and end` check in the loop.
+    #
+    # Either way it was not caught per-recipient, because the render happens
+    # while BUILDING the gather list rather than inside it. One person on
+    # leave cost the whole team their rota.
+    ordered = sorted(
+        shifts,
+        key=lambda s: (list(_DAY_LABELS).index(s.get("day", "mon")),
+                       s.get("start") or ""),
+    )
 
+    cells, total = [], 0.0
+    for shift in ordered:
+        on = _date_for(week_start, shift.get("day", ""))
+        label = _DAY_LABELS.get(shift.get("day"), shift.get("day", ""))
+        when = f"{label} {_short(on)}" if on else label
+
+        start, end = shift.get("start"), shift.get("end")
+        leave = _leave_label(shift)
+
+        if leave or not (start and end):
+            # Shown rather than dropped: somebody scanning their week needs to
+            # see the Tuesday they booked off, not a gap they have to
+            # interpret.
+            detail = (f'<span style="color:#a1a1aa;">{html.escape(leave or "—")}</span>')
+        else:
+            total += paid_hours(start, end, breaks_paid=breaks_are_paid)
             # Ends on the following day, so say so rather than leaving them to
             # work it out from two times that look like they run backwards.
-            overnight = shift["end"] <= shift["start"]
             finishes = ""
-            if overnight and on:
+            if end <= start and on:
                 finishes = (f'<span style="color:#a1a1aa;"> (finishes '
                             f'{(on + timedelta(days=1)):%a})</span>')
+            detail = (f'{html.escape(start)} – {html.escape(end)}{finishes}')
 
-            cells.append(
-                f'<tr>'
-                f'<td style="padding:10px 14px;color:#a1a1aa;font-family:monospace;'
-                f'white-space:nowrap;">{html.escape(when)}</td>'
-                f'<td style="padding:10px 14px;color:#ffffff;font-family:monospace;">'
-                f'{html.escape(shift["start"])} – {html.escape(shift["end"])}'
-                f'{finishes}</td>'
-                f'</tr>'
-            )
+        cells.append(
+            f'<tr>'
+            f'<td style="padding:10px 14px;color:#a1a1aa;font-family:monospace;'
+            f'white-space:nowrap;">{html.escape(when)}</td>'
+            f'<td style="padding:10px 14px;color:#ffffff;font-family:monospace;">'
+            f'{detail}</td>'
+            f'</tr>'
+        )
+
+    if cells:
+        # PAID hours, not time on the floor. This is the number they will hold
+        # against their payslip, so it has to be the one they are paid for —
+        # and whether breaks count is a per-shop setting (§8), not a constant.
+        # Recomputed from the times rather than read off the stored
+        # `paid_hours`, which an edit can leave behind: ml/check_hours.py
+        # exists because those two drift.
+        hours = f"{total:g}"
+        cells.append(
+            f'<tr>'
+            f'<td style="padding:12px 14px;color:#a1a1aa;border-top:1px solid '
+            f'rgba(255,255,255,0.08);">Total</td>'
+            f'<td style="padding:12px 14px;color:#ffffff;font-family:monospace;'
+            f'border-top:1px solid rgba(255,255,255,0.08);">{hours} hours</td>'
+            f'</tr>'
+        )
         rows = "".join(cells)
     else:
         rows = (
@@ -233,6 +288,7 @@ async def send_roster_emails(
     shop_name: str,
     week_start: str,
     recipients: List[Dict[str, Any]],
+    breaks_are_paid: bool = False,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Email each recipient their own shifts.
 
@@ -266,7 +322,7 @@ async def send_roster_emails(
                 http, semaphore, recipient["email"], subject,
                 render_roster_email(
                     recipient["name"], shop_name, week_start,
-                    recipient.get("shifts", []),
+                    recipient.get("shifts", []), breaks_are_paid,
                 ),
             )
             for recipient in recipients

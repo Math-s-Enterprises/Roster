@@ -86,3 +86,81 @@ class TestEdges:
         """One bad roster must not cost the whole team their schedule."""
         body = render(week="not-a-date")
         assert "Monday" in body
+
+
+class TestTotalHours:
+    """The number they will hold against their payslip."""
+
+    def test_the_week_is_totalled(self):
+        # 8 + 8 + 7.5 = 23.5 span; with unpaid breaks it is less, and the
+        # figure must be the PAID one.
+        from app.services.scheduler import paid_hours
+        expected = sum(paid_hours(s["start"], s["end"], breaks_paid=False)
+                       for s in SHIFTS)
+        assert f"{expected:g} hours" in render()
+
+    def test_breaks_being_paid_changes_the_figure(self):
+        """§8: `breaks_are_paid` is per shop and moves every wage figure. A
+        shop that pays breaks must not be told the smaller number."""
+        unpaid = render_roster_email("Emma", "Top Oil", WEEK, SHIFTS, False)
+        paid = render_roster_email("Emma", "Top Oil", WEEK, SHIFTS, True)
+        assert unpaid != paid, "the setting made no difference to the total"
+
+    def test_leave_adds_no_hours(self):
+        one = [{"day": "mon", "start": "09:00", "end": "17:00"}]
+        with_leave = one + [
+            {"day": "tue", "start": None, "end": None, "paid_holiday": True}]
+        from app.services.scheduler import paid_hours
+        expected = paid_hours("09:00", "17:00", breaks_paid=False)
+        assert f"{expected:g} hours" in render(with_leave)
+
+    def test_a_whole_number_has_no_trailing_zero(self):
+        body = render([{"day": "mon", "start": "09:00", "end": "13:00"}])
+        assert "4 hours" in body and "4.0 hours" not in body
+
+
+class TestLeaveIsShownNotDropped:
+    """Somebody scanning their week needs to see the Tuesday they booked
+    off, not a gap they have to interpret."""
+
+    def test_a_holiday_appears_with_no_times(self):
+        body = render([{"day": "tue", "start": None, "end": None,
+                        "paid_holiday": True}])
+        assert "Tuesday 1 Sep" in body and "Holiday" in body
+
+    def test_sick_and_unpaid_are_named_too(self):
+        assert "Sick" in render([{"day": "wed", "start": None, "end": None,
+                                  "sick": True}])
+        assert "Unpaid leave" in render([{"day": "wed", "start": None,
+                                          "end": None, "unpaid_holiday": True}])
+
+    def test_leave_beside_real_shifts_does_not_crash_the_send(self):
+        """THE BUG THIS FOUND.
+
+        `shift["end"] <= shift["start"]` — the overnight test — compared None
+        with None and raised TypeError. The render happens while BUILDING the
+        gather list rather than inside it, so it was not caught per recipient:
+        one person on leave cost the ENTIRE TEAM their rota.
+
+        (My first explanation blamed the sort. It was wrong — two shifts only
+        reach the start-time tiebreak on the same day, so a holiday and a
+        working shift on different days never compared. Checked before the
+        comment went in.)
+        """
+        body = render([
+            {"day": "mon", "start": "06:00", "end": "14:00"},
+            {"day": "tue", "start": None, "end": None, "paid_holiday": True},
+            {"day": "wed", "start": "13:00", "end": "21:00"},
+        ])
+        assert "Holiday" in body
+        assert "06:00" in body and "13:00" in body
+
+
+    def test_leave_on_the_same_day_as_a_shift_is_safe_too(self):
+        """The case the sort guard is actually for: same day, so the start
+        times DO get compared."""
+        body = render([
+            {"day": "mon", "start": "06:00", "end": "14:00"},
+            {"day": "mon", "start": None, "end": None, "sick": True},
+        ])
+        assert "Sick" in body and "06:00" in body
