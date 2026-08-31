@@ -233,9 +233,9 @@ async def run(email: str, weeks: int, source: str) -> None:
     print()
 
     # ---- model vs reality ------------------------------------------------
-    print(f"{'week':12}{'open hrs':>9}{'model says':>12}{'really OK':>11}"
-          f"{'INVENTED':>10}{'unattended':>12}")
-    grand_invented = grand_minutes = grand_open = 0
+    print(f"{'week':12}{'open hrs':>9}{'EMPTY-HOLE':>12}{'OVER-COUNT':>12}"
+          f"{'short mins':>12}")
+    grand_invented = grand_over = grand_short = grand_open = 0
     worst: List[tuple] = []
 
     for roster in rosters:
@@ -250,62 +250,89 @@ async def run(email: str, weeks: int, source: str) -> None:
                 shift["day"], shift["start"], shift["end"], wrap_week=True,
             ))
 
-        open_hours = invented = fully_ok = unattended_minutes = 0
+        # How many people the MODEL believes are on, per hour. This is the
+        # figure the solver checks against `required`, so it is the one that
+        # decides whether a gap looks closed.
+        model_heads: Dict[tuple, int] = {}
+        for shift in shifts:
+            if _is_leave(shift) or not (shift.get("start") and shift.get("end")):
+                continue
+            for pair in _RosterBuilder.hours_covered(
+                shift["day"], shift["start"], shift["end"], wrap_week=True,
+            ):
+                model_heads[pair] = model_heads.get(pair, 0) + 1
+
+        open_hours = invented = over = short_minutes = 0
         for index, day in enumerate(DAYS):
             for hour in range(24):
                 base = index * 1440 + hour * 60
-                block = range(base, base + 60)
-                if not any(open_flags[m % WEEK_MINUTES] for m in block):
+                block = [m % WEEK_MINUTES for m in range(base, base + 60)]
+                if not any(open_flags[m] for m in block):
                     continue
                 open_hours += 1
-                empty = sum(
-                    1 for m in block
-                    if open_flags[m % WEEK_MINUTES]
-                    and minutes[m % WEEK_MINUTES] == 0
-                )
-                unattended_minutes += empty
-                if empty == 0:
-                    fully_ok += 1
-                elif (day, hour) in covered_by_model:
-                    # The model calls it staffed; part of it is not.
+                heads = [minutes[m] for m in block if open_flags[m]]
+                empty = sum(1 for h in heads if h == 0)
+
+                # (1) the shop is EMPTY for part of an hour the model calls
+                #     staffed. The severe case, and rare on a 24h shop.
+                if empty and (day, hour) in covered_by_model:
                     invented += 1
-                    worst.append((empty, roster.get("week_start"), day, hour))
+                    worst.append((empty, roster.get("week_start"), day, hour,
+                                  "empty"))
+
+                # (2) the model counts MORE people than are ever there at
+                #     once. This is the case the advisory shows: a 17:30
+                #     start credited with the whole 17:00 hour, so the model
+                #     reads three on when two are standing there. Nobody is
+                #     missing, so (1) sees nothing — but the required
+                #     headcount is short and the solver cannot tell.
+                said = model_heads.get((day, hour), 0)
+                floor = min(heads) if heads else 0
+                if said > floor:
+                    over += 1
+                    dip = sum(1 for h in heads if h < said)
+                    short_minutes += dip
+                    worst.append((dip, roster.get("week_start"), day, hour,
+                                  f"{said} claimed, {floor} actually"))
 
         print(f"{roster.get('week_start', '?'):12}{open_hours:>9}"
-              f"{len(covered_by_model):>12}{fully_ok:>11}{invented:>10}"
-              f"{unattended_minutes:>10}m")
+              f"{invented:>12}{over:>12}{short_minutes:>10}m")
         grand_invented += invented
-        grand_minutes += unattended_minutes
+        grand_over += over
+        grand_short += short_minutes
         grand_open += open_hours
 
     print()
     print("=" * 68)
-    print(f"{grand_invented} hour(s) across {len(rosters)} week(s) are called "
-          f"covered while the shop\nis actually empty for part of them — "
-          f"{100 * grand_invented / grand_open:.2f}% of all open hours.")
-    print(f"Average {grand_minutes / len(rosters):.0f} unattended minutes per "
-          f"week in total\n(including hours the model already reports as a gap).")
+    print(f"EMPTY-HOLE  {grand_invented} hour(s) called covered while the shop "
+          f"is actually empty\n            for part of them — "
+          f"{100 * grand_invented / grand_open:.2f}% of {grand_open} open hours.")
+    print(f"OVER-COUNT  {grand_over} hour(s) where the model counts more people "
+          f"than are ever\n            there at once — "
+          f"{100 * grand_over / grand_open:.2f}%. "
+          f"{grand_short} shortfall-minutes in total,\n"
+          f"            {grand_short / len(rosters):.0f} per week.")
 
     if worst:
-        print("\nWorst offenders — minutes with nobody in, in an hour the")
-        print("model believes is staffed:")
-        for empty, week, day, hour in sorted(worst, reverse=True)[:10]:
-            print(f"    {week}  {day} {hour:02d}:00   {empty} min empty")
+        print("\nWorst offenders:")
+        for dip, week, day, hour, why in sorted(worst, reverse=True)[:10]:
+            print(f"    {week}  {day} {hour:02d}:00   {dip} min   ({why})")
 
     print()
-    if grand_invented == 0 and source == "approved":
+    decisive = grand_invented + grand_over
+    if decisive == 0 and source == "approved":
         print("VERDICT: none — but this was the CONTROL. A hand-built rota on")
         print("a 24h shop never has a hole, so zero here was guaranteed before")
         print("the script ran. Re-run with --source solve for the real answer.")
-    elif grand_invented == 0:
+    elif decisive == 0:
         print("VERDICT: the rounding is not inventing coverage in practice,")
         print("in rosters the SOLVER produced. Option A would be correct in")
         print("principle and change nothing real — fix the stretch (option C)")
         print("and leave the coverage model alone.")
     else:
-        print("VERDICT: real holes are being reported as covered. Option A is")
-        print("a correction, not a refinement — but expect it to surface these")
-        print(f"{grand_invented} hours as gaps in weeks that currently look clean.")
+        print("VERDICT: the model is claiming cover it does not have. Option A")
+        print("is a correction, not a refinement — but expect it to surface")
+        print(f"these {decisive} hours as gaps in weeks that look clean today.")
 
 
 def main() -> None:
