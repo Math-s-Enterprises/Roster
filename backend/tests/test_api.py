@@ -3200,3 +3200,59 @@ def test_a_file_with_no_addresses_says_so(client):
     response = _preview(client, token, "Name,Email\nEmma,\nMegan,\n")
     assert response.status_code == 400
     assert "No email addresses found" in response.text
+
+
+# ---------------------------------------------------------------------------
+# People who are sent the roster but do not work in the shop
+# ---------------------------------------------------------------------------
+def test_a_roster_recipient_round_trips(client):
+    token = register(client, "observer@example.com")
+    saved = client.put(
+        "/api/shop",
+        json={"roster_recipients": [{"name": "Area Manager",
+                                     "email": "boss@head.office"}]},
+        headers=auth(token),
+    )
+    assert saved.status_code == 200, saved.text
+    shop = client.get("/api/shop", headers=auth(token)).json()
+    assert shop["roster_recipients"] == [
+        {"name": "Area Manager", "email": "boss@head.office"}
+    ]
+
+
+def test_a_roster_recipient_is_not_an_employee(client):
+    """The whole reason this is a shop setting and not a staff record.
+
+    An employee record would put them in the seniority ladder, in the
+    solver's candidate list and on the printed rota — and sooner or later
+    somebody who does not work here would be rostered a shift.
+    """
+    token = register(client, "not-staff@example.com")
+    client.put("/api/shop",
+               json={"roster_recipients": [{"name": "Boss",
+                                            "email": "boss@head.office"}]},
+               headers=auth(token))
+
+    staff = client.get("/api/employees", headers=auth(token)).json()
+    assert not [e for e in staff if "boss@head.office" in (e.get("email") or "")]
+    assert not [e for e in staff if e.get("name") == "Boss"]
+
+
+def test_a_bad_recipient_address_is_refused(client):
+    token = register(client, "bad-observer@example.com")
+    response = client.put(
+        "/api/shop",
+        json={"roster_recipients": [{"name": "X", "email": "not-an-email"}]},
+        headers=auth(token),
+    )
+    assert response.status_code == 422
+
+
+def test_recipients_can_be_cleared(client):
+    token = register(client, "clear-observer@example.com")
+    client.put("/api/shop",
+               json={"roster_recipients": [{"name": "B", "email": "b@x.ie"}]},
+               headers=auth(token))
+    client.put("/api/shop", json={"roster_recipients": []}, headers=auth(token))
+    assert client.get("/api/shop", headers=auth(token)).json()[
+        "roster_recipients"] == []

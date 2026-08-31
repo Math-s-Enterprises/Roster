@@ -88,6 +88,13 @@ class ShiftTemplate(BaseModel):
     _v_end = field_validator("end")(_validate_hhmm)
 
 
+class RosterRecipient(BaseModel):
+    """Somebody who is sent the roster but does not appear on it."""
+
+    name: str = Field(default="", max_length=80)
+    email: EmailStr
+
+
 class ShopUpdate(BaseModel):
     """Partial update — every field optional, only what's sent is written."""
     name: Optional[str] = None
@@ -109,6 +116,15 @@ class ShopUpdate(BaseModel):
     # abbreviation only this shop uses has to be stated rather than guessed —
     # guessing is what silently rewrote everybody's job title before.
     role_aliases: Optional[Dict[str, str]] = None
+    # People who get the WHOLE roster when it is dispatched, without working
+    # in the shop — an area manager, a franchise owner, head office. They are
+    # deliberately NOT employees: giving them an employee record to hang an
+    # address off would put them in the seniority ladder, in the solver's
+    # candidate list and on the printed rota, and somebody would eventually be
+    # rostered a shift they do not work.
+    #
+    # Name and email only. Nothing here needs an age, a wage or a contract.
+    roster_recipients: Optional[List["RosterRecipient"]] = None
     # Paid sick leave per year, in DAYS — which is how the law writes it
     # (Ireland's statutory entitlement is 5) and how a manager thinks. It is
     # spent in hours, converted per person from their own usual shift, so a

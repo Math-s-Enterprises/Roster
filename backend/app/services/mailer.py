@@ -199,6 +199,102 @@ def render_roster_email(
 </div>"""
 
 
+def render_shop_roster_email(
+    shop_name: str,
+    week_start: str,
+    people: List[Dict[str, Any]],
+    breaks_are_paid: bool = False,
+) -> str:
+    """The WHOLE week, for somebody who does not work in the shop.
+
+    An area manager or owner wants the same thing the printed rota gives:
+    everyone, every day, at a glance. That is a different document from an
+    employee's own shifts, so it is a different renderer rather than the same
+    one called in a loop — a boss sent twenty-five separate emails would have
+    to reassemble the week themselves.
+
+    `people` items need: name, shifts.
+    """
+    safe_shop = html.escape(shop_name)
+    monday = _date_for(week_start, "mon")
+    sunday = _date_for(week_start, "sun")
+    span = (f"{monday:%a} {_short(monday)} – {sunday:%a} {_short(sunday)} {sunday:%Y}"
+            if monday and sunday else f"week of {week_start}")
+
+    header = "".join(
+        f'<th style="padding:8px 6px;color:#a1a1aa;font-size:11px;'
+        f'font-weight:normal;text-align:left;white-space:nowrap;">'
+        f'{label[:3]}<br><span style="color:#71717A;">'
+        f'{_short(_date_for(week_start, day))}</span></th>'
+        for day, label in _DAY_LABELS.items()
+    )
+
+    rows, grand = [], 0.0
+    for person in people:
+        by_day: Dict[str, List[Dict[str, Any]]] = {}
+        for shift in person.get("shifts", []):
+            by_day.setdefault(shift.get("day"), []).append(shift)
+
+        hours = 0.0
+        cells = []
+        for day in _DAY_LABELS:
+            entries = sorted(by_day.get(day, []), key=lambda s: s.get("start") or "")
+            if not entries:
+                cells.append('<td style="padding:6px;color:#3f3f46;">·</td>')
+                continue
+            parts = []
+            for shift in entries:
+                leave = _leave_label(shift)
+                start, end = shift.get("start"), shift.get("end")
+                if leave or not (start and end):
+                    parts.append(f'<span style="color:#a1a1aa;">'
+                                 f'{html.escape(leave or "—")}</span>')
+                else:
+                    hours += paid_hours(start, end, breaks_paid=breaks_are_paid)
+                    parts.append(f'{html.escape(start)}<br>{html.escape(end)}')
+            cells.append(
+                f'<td style="padding:6px;color:#ffffff;font-family:monospace;'
+                f'font-size:11px;white-space:nowrap;">{"<br>".join(parts)}</td>'
+            )
+
+        grand += hours
+        rows.append(
+            f'<tr style="border-top:1px solid rgba(255,255,255,0.06);">'
+            f'<td style="padding:6px 8px;color:#ffffff;white-space:nowrap;">'
+            f'{html.escape(person.get("name", ""))}</td>'
+            f'{"".join(cells)}'
+            f'<td style="padding:6px 8px;color:#a1a1aa;font-family:monospace;'
+            f'font-size:11px;text-align:right;">{hours:g}h</td>'
+            f'</tr>'
+        )
+
+    body = "".join(rows) or (
+        '<tr><td colspan="9" style="padding:14px;color:#a1a1aa;">'
+        "Nobody is rostered this week.</td></tr>"
+    )
+
+    return f"""<div style="background:#05050A;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#ffffff;">
+  <table width="100%" style="max-width:760px;margin:auto;background:#0A0B10;border:1px solid rgba(255,255,255,0.08);border-radius:16px;">
+    <tr><td style="padding:24px 24px 8px 24px;">
+      <div style="color:#00E5FF;font-size:22px;font-weight:700;">{safe_shop}</div>
+      <div style="color:#a1a1aa;font-size:13px;margin-top:4px;">{html.escape(span)}</div>
+    </td></tr>
+    <tr><td style="padding:8px 24px 24px 24px;">
+      <table width="100%" style="border-collapse:collapse;">
+        <tr><th style="text-align:left;padding:8px;color:#a1a1aa;font-size:11px;font-weight:normal;"></th>{header}
+          <th style="padding:8px 6px;color:#a1a1aa;font-size:11px;font-weight:normal;text-align:right;">Total</th></tr>
+        {body}
+        <tr style="border-top:1px solid rgba(255,255,255,0.14);">
+          <td colspan="8" style="padding:10px 8px;color:#a1a1aa;">{len(people)} on the rota</td>
+          <td style="padding:10px 8px;color:#ffffff;font-family:monospace;text-align:right;">{grand:g}h</td>
+        </tr>
+      </table>
+    </td></tr>
+    <tr><td style="padding:0 24px 24px 24px;color:#71717A;font-size:12px;">Sent via Roster</td></tr>
+  </table>
+</div>"""
+
+
 async def _send_one(
     http: httpx.AsyncClient,
     semaphore: asyncio.Semaphore,
@@ -282,6 +378,54 @@ async def send_password_reset_email(to: str, name: str, reset_url: str, expiry_m
             "Reset your Roster password",
             render_password_reset_email(name, reset_url, expiry_minutes),
         )
+
+
+async def send_shop_roster(
+    shop_name: str,
+    week_start: str,
+    people: List[Dict[str, Any]],
+    recipients: List[Dict[str, Any]],
+    breaks_are_paid: bool = False,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Send the whole week to people who do not work in the shop.
+
+    Reported separately from the staff sends. An owner not receiving their
+    copy is a different problem from a member of staff not receiving theirs,
+    and rolling them together would hide one inside the other's count.
+    """
+    if not recipients:
+        return {"sent": [], "failed": []}
+    if not enabled:
+        reason = "Email is not configured (RESEND_API_KEY is unset)."
+        return {
+            "sent": [],
+            "failed": [{"name": r.get("name", ""), "email": r["email"],
+                        "error": reason} for r in recipients],
+        }
+
+    monday, sunday = _date_for(week_start, "mon"), _date_for(week_start, "sun")
+    when = (f"{_short(monday)} – {_short(sunday)}" if monday and sunday
+            else f"week of {week_start}")
+    subject = f"Roster · {shop_name} · {when}"
+    body = render_shop_roster_email(shop_name, week_start, people, breaks_are_paid)
+
+    semaphore = asyncio.Semaphore(_MAX_CONCURRENT_SENDS)
+    async with httpx.AsyncClient(timeout=30) as http:
+        outcomes = await asyncio.gather(*[
+            _send_one(http, semaphore, r["email"], subject, body)
+            for r in recipients
+        ], return_exceptions=True)
+
+    sent, failed = [], []
+    for recipient, outcome in zip(recipients, outcomes):
+        entry = {"name": recipient.get("name", ""), "email": recipient["email"]}
+        if isinstance(outcome, Exception):
+            failed.append({**entry, "error": str(outcome)[:200]})
+        elif outcome:
+            failed.append({**entry, "error": outcome})
+        else:
+            sent.append(entry)
+    return {"sent": sent, "failed": failed}
 
 
 async def send_roster_emails(

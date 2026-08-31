@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api, errorMessage, DAY_LABELS, DAYS } from "@/lib/api";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, ChevronLeft, Check, ArrowUp, ArrowDown, Loader2, X } from "lucide-react";
+import { ChevronRight, ChevronLeft, Check, ArrowUp, ArrowDown, Loader2, Plus, X } from "lucide-react";
 
 export default function Onboarding() {
   const [step, setStep] = useState(0);
@@ -24,6 +24,14 @@ export default function Onboarding() {
   const [open24h, setOpen24h] = useState(false);
   const [paidSickDays, setPaidSickDays] = useState(5);
   const [minRest, setMinRest] = useState(11);
+  // People who are SENT the roster without appearing on it — an area
+  // manager, a franchise owner. Not employees on purpose: an employee record
+  // would put them in the seniority ladder, in the solver's candidate list
+  // and on the printed rota, and sooner or later somebody would be rostered
+  // a shift they do not work.
+  const [observers, setObservers] = useState([]);
+  const [observerName, setObserverName] = useState("");
+  const [observerEmail, setObserverEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const nav = useNavigate();
 
@@ -53,6 +61,7 @@ export default function Onboarding() {
       setOpen24h(!!r.data.open_24h);
       setPaidSickDays(r.data.paid_sick_days ?? 5);
       setMinRest(r.data.min_rest_hours ?? 11);
+      setObservers(r.data.roster_recipients || []);
       // Seeded from the server so an unconfigured shop starts from the
       // sensible default ladder rather than whatever order roles were added.
       setRoles(h.data.hierarchy);
@@ -60,6 +69,21 @@ export default function Onboarding() {
       setCounts(h.data.employee_counts || {});
     });
   }, []);
+
+  const addObserver = () => {
+    const email = observerEmail.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      toast.error("That does not look like an email address");
+      return;
+    }
+    if (observers.some((o) => o.email.toLowerCase() === email.toLowerCase())) {
+      toast.error("That address is already on the list");
+      return;
+    }
+    setObservers([...observers, { name: observerName.trim(), email }]);
+    setObserverName("");
+    setObserverEmail("");
+  };
 
   const move = (index, delta) => {
     const next = [...roles];
@@ -83,6 +107,7 @@ export default function Onboarding() {
       open_24h: open24h,
       paid_sick_days: Number(paidSickDays) || 0,
       min_rest_hours: Number(minRest) || 0,
+      roster_recipients: observers,
       ...extra,
     });
   };
@@ -359,6 +384,76 @@ export default function Onboarding() {
                 ten-hour Mondays. Illness beyond the allowance is still
                 recorded — it is simply unpaid.
               </p>
+            </div>
+
+            {/* Roster recipients. A shop setting rather than an employee,
+                because these people do not work here — see the note on the
+                state above. */}
+            <div>
+              <label className="text-xs text-white/60">
+                Also send the roster to
+              </label>
+              <p className="text-xs text-white/50 mt-1 mb-3 max-w-lg">
+                Anyone who should get the whole week's rota without being on
+                it — an area manager, the owner. They receive every person and
+                every shift, not their own. Name and email is all that is
+                needed; they are not staff and are never rostered.
+              </p>
+
+              {observers.length > 0 && (
+                <div className="space-y-2 mb-3 max-w-lg">
+                  {observers.map((o, i) => (
+                    <div key={`${o.email}-${i}`}
+                         className="card-soft px-3 py-2 flex items-center gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] truncate">
+                          {o.name || o.email}
+                        </div>
+                        {o.name && (
+                          <div className="text-[11px] font-mono truncate"
+                               style={{ color: "var(--ink-mute)" }}>{o.email}</div>
+                        )}
+                      </div>
+                      <button
+                        data-testid={`remove-observer-${i}`}
+                        onClick={() => setObservers(
+                          observers.filter((_, x) => x !== i))}
+                        className="btn btn-ghost p-1.5 shrink-0"
+                        title="Remove"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-2 flex-wrap max-w-lg">
+                <input
+                  data-testid="observer-name"
+                  placeholder="Name (optional)"
+                  value={observerName}
+                  onChange={(e) => setObserverName(e.target.value)}
+                  className="px-3 py-2 rounded-xl text-[13px]"
+                  style={{ width: 150 }}
+                />
+                <input
+                  data-testid="observer-email"
+                  placeholder="their@email.com"
+                  value={observerEmail}
+                  onChange={(e) => setObserverEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addObserver()}
+                  className="px-3 py-2 rounded-xl text-[13px] flex-1"
+                  style={{ minWidth: 180 }}
+                />
+                <button
+                  data-testid="add-observer"
+                  onClick={addObserver}
+                  className="btn btn-secondary"
+                >
+                  <Plus size={13} /> Add
+                </button>
+              </div>
             </div>
 
             <div className="glass-solid rounded-xl p-4">

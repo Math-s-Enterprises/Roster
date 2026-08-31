@@ -1261,6 +1261,21 @@ async def dispatch_roster(roster_id: str, scope: ShopScope = CurrentScope):
     )
     outcome["no_email"] = no_address
 
+    # Anyone who gets the whole roster without working in the shop — an area
+    # manager, a franchise owner. Reported under its own key so a boss who
+    # did not receive their copy is not hidden inside the staff counts.
+    outcome["observers"] = await mailer.send_shop_roster(
+        scope.shop.get("name", "Your shop"), roster["week_start"],
+        [
+            {"name": e["name"],
+             "shifts": [s for s in roster.get("shifts", [])
+                        if s["employee_id"] == e["employee_id"]]}
+            for e in employees
+        ],
+        [dict(r) for r in (scope.shop.get("roster_recipients") or [])],
+        bool(scope.shop.get("breaks_are_paid")),
+    )
+
     await scope.rosters.update_one({"roster_id": roster_id}, {"dispatched_at": _now()})
     await log_activity(
         scope.shop_id, "roster_dispatched",

@@ -164,3 +164,60 @@ class TestLeaveIsShownNotDropped:
             {"day": "mon", "start": None, "end": None, "sick": True},
         ])
         assert "Sick" in body and "06:00" in body
+
+
+class TestTheWholeShopEmail:
+    """What somebody who does not work in the shop is sent.
+
+    An area manager or owner wants what the printed rota gives: everyone,
+    every day, at a glance. Twenty-five separate emails would leave them
+    reassembling the week themselves.
+    """
+
+    PEOPLE = [
+        {"name": "Emma", "shifts": [
+            {"day": "mon", "start": "06:00", "end": "14:00"},
+            {"day": "tue", "start": None, "end": None, "paid_holiday": True},
+        ]},
+        {"name": "Martin", "shifts": [
+            {"day": "mon", "start": "13:00", "end": "21:00"},
+        ]},
+    ]
+
+    def whole(self, people=None, week=WEEK, shop="Top Oil"):
+        from app.services.mailer import render_shop_roster_email
+        return render_shop_roster_email(
+            shop, week, self.PEOPLE if people is None else people)
+
+    def test_everybody_appears(self):
+        body = self.whole()
+        assert "Emma" in body and "Martin" in body
+
+    def test_every_day_is_a_column_with_its_date(self):
+        body = self.whole()
+        for label in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"):
+            assert label in body
+        assert "31 Aug" in body and "6 Sep" in body
+
+    def test_each_person_is_totalled_and_so_is_the_shop(self):
+        from app.services.scheduler import paid_hours
+        emma = paid_hours("06:00", "14:00", breaks_paid=False)
+        martin = paid_hours("13:00", "21:00", breaks_paid=False)
+        body = self.whole()
+        assert f"{emma:g}h" in body and f"{emma + martin:g}h" in body
+
+    def test_leave_shows_without_adding_hours(self):
+        from app.services.scheduler import paid_hours
+        body = self.whole([self.PEOPLE[0]])
+        assert "Holiday" in body
+        assert f"{paid_hours('06:00', '14:00', breaks_paid=False):g}h" in body
+
+    def test_a_name_cannot_inject_html(self):
+        body = self.whole([{"name": "<script>x</script>", "shifts": []}])
+        assert "<script>" not in body
+
+    def test_an_empty_week_says_so(self):
+        assert "Nobody is rostered" in self.whole([])
+
+    def test_it_counts_the_people_on_the_rota(self):
+        assert "2 on the rota" in self.whole()
