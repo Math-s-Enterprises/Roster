@@ -69,6 +69,7 @@ from typing import Any, Dict, List
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import db                                          # noqa: E402
+from app.services import availability as avail              # noqa: E402
 from app.services.learning import latest_per_week           # noqa: E402
 from app.services.scheduler import (                        # noqa: E402
     DAYS,
@@ -167,12 +168,75 @@ async def _solve_recent(shop, approved, weeks):
             shop, ordered, holidays, fixed, rules, week,
             weights, profile, history_rosters=history, seed=1234,
         )
-        out.append({"week_start": week, "shifts": result["shifts"]})
+        out.append({
+            "week_start": week, "shifts": result["shifts"],
+            # Kept so --edges can ask whether a shape came from the shop's own
+            # history or was manufactured by a reshaping pass.
+            "_slots": {d: [tuple(x) for x in profile.slots_for(d)] for d in DAYS},
+            "_banded": {
+                e["employee_id"] for e in employees
+                if avail.contract_span_band(e)
+            },
+        })
         print(f"  solved {week} — {len(result['shifts'])} shifts", flush=True)
     return out
 
 
-async def run(email: str, weeks: int, source: str) -> None:
+def report_edges(rosters) -> None:
+    """Where the half-hour edges come from.
+
+    A shape that is IN the day's learned slot list came from the shop's own
+    history and is not the solver's doing. A shape that is not was
+    manufactured by a reshaping pass — gap-closing or contract-fitting — and
+    splitting by whether the person is on a salaried contract band separates
+    those two.
+    """
+    print()
+    print("=" * 68)
+    print("WHERE THE OFF-THE-HOUR EDGES COME FROM")
+    print("=" * 68)
+    buckets: Counter = Counter()
+    examples: Dict[str, list] = {}
+    for roster in rosters:
+        slots, banded = roster.get("_slots"), roster.get("_banded")
+        if slots is None:
+            print("(only available with --source solve)")
+            return
+        for shift in roster["shifts"]:
+            if _is_leave(shift) or not (shift.get("start") and shift.get("end")):
+                continue
+            end_off = to_minutes(shift["end"]) % 60 != 0
+            start_off = to_minutes(shift["start"]) % 60 != 0
+            if not (end_off or start_off):
+                continue
+            learned = (shift["start"], shift["end"]) in slots.get(shift["day"], [])
+            who = "salaried" if shift["employee_id"] in banded else "hourly"
+            edge = ("end" if end_off and not start_off else
+                    "start" if start_off and not end_off else "both")
+            key = f"{edge:5} {'from history' if learned else 'RESHAPED':13} {who}"
+            buckets[key] += 1
+            examples.setdefault(key, []).append(
+                f"{shift['day']} {shift['start']}-{shift['end']}")
+
+    for key, count in sorted(buckets.items(), key=lambda kv: -kv[1]):
+        print(f"  {count:5}  {key}   e.g. {examples[key][0]}")
+    print()
+    reshaped_ends = sum(v for k, v in buckets.items()
+                        if k.startswith("end") and "RESHAPED" in k)
+    salaried_ends = sum(v for k, v in buckets.items()
+                        if k.startswith("end") and "RESHAPED" in k
+                        and k.endswith("salaried"))
+    if reshaped_ends:
+        print(f"{reshaped_ends} half-hour FINISHES were manufactured, "
+              f"{salaried_ends} of them on\nsalaried staff. If that is most "
+              f"of them, _contract_shift_length is the\nsource: it trims a "
+              f"slot's finish to fit a contract band, in 30-minute steps.")
+    else:
+        print("No half-hour finish was manufactured — every one came from the")
+        print("shop's own history, and there is nothing here to change.")
+
+
+async def run(email: str, weeks: int, source: str, edges: bool) -> None:
     user = await db.users.find_one({"email": email.lower()}, {"_id": 0})
     if not user:
         sys.exit(f"No account for {email}")
@@ -302,6 +366,9 @@ async def run(email: str, weeks: int, source: str) -> None:
         grand_short += short_minutes
         grand_open += open_hours
 
+    if edges:
+        report_edges(rosters)
+
     print()
     print("=" * 68)
     print(f"EMPTY-HOLE  {grand_invented} hour(s) called covered while the shop "
@@ -346,8 +413,11 @@ def main() -> None:
              "own rota, a control that proves nothing on its own; "
              "solve = re-solve with today's code, the strongest answer",
     )
+    parser.add_argument("--edges", action="store_true",
+                        help="where the half-hour edges come from "
+                             "(needs --source solve)")
     args = parser.parse_args()
-    asyncio.run(run(args.email, args.weeks, args.source))
+    asyncio.run(run(args.email, args.weeks, args.source, args.edges))
 
 
 if __name__ == "__main__":
