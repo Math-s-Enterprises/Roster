@@ -211,3 +211,97 @@ class TestSheetParsing:
         week = parse_sheet("Sheet1", [["", "", ""]], 2026)
         assert not week.is_usable
         assert week.warnings
+
+
+# ---------------------------------------------------------------------------
+# A month in one tab: several week-blocks stacked down a single sheet
+# ---------------------------------------------------------------------------
+class TestSeveralWeeksOnOneSheet:
+    """A sheet is not always one week.
+
+    Managers keep a month in a single tab, one block under another. This used
+    to read only the first header row, so every block below it became more
+    rows of the FIRST week — a six-week sheet arrived as one week holding 42
+    shifts across 7 days, the same person on Monday three times. That left the
+    shop on one week of history when it had six, below the four the demand
+    profile needs, so ownership never formed and the roster fell back to role
+    priority. Every symptom traced to this one line.
+    """
+
+    def month_sheet(self):
+        """His own file's shape: a month title, then blocks with a blank row
+        between, names down the leftmost column and NO role column."""
+        return [
+            ["", "", "MONTH AUGUST"],
+            [],
+            ["", "Mon 27th", "Tue 28th", "Wed 29th", "Thurs 30th",
+             "Fri 31st", "Sat 1st", "Sun 2nd"],
+            ["Aneesh", "17.30 - 23.00", "OFF", "OFF", "OFF", "OFF", "OFF", "OFF"],
+            ["Teja", "OFF", "17.30 - 23.00", "OFF", "OFF", "OFF", "OFF", "OFF"],
+            [],
+            ["", "Mon 3rd", "Tue 4th", "Wed 5th", "Thurs 6th",
+             "Fri 7th", "Sat 8th", "Sun 9th"],
+            ["Aneesh", "12.00 - 23.00", "OFF", "OFF", "OFF", "OFF", "OFF", "OFF"],
+            ["Teja", "OFF", "OFF", "17.30 - 23.00", "OFF", "OFF", "OFF", "OFF"],
+            [],
+            ["", "Mon 10th", "Tue 11th", "Wed 12th", "Thurs 13th",
+             "Fri 14th", "Sat 15th", "Sun 16th"],
+            ["Aneesh", "OFF", "OFF", "17.30 - 23.00", "OFF", "OFF", "OFF", "OFF"],
+            ["Teja", "17.30 - 23.00", "OFF", "OFF", "OFF", "OFF", "OFF", "OFF"],
+        ]
+
+    def weeks(self):
+        from app.services.roster_import import parse_sheet_weeks
+        return parse_sheet_weeks("Sheet1", self.month_sheet(), 2026)
+
+    def test_each_block_becomes_its_own_week(self):
+        assert len(self.weeks()) == 3
+
+    def test_the_weeks_are_dated_from_their_own_headers(self):
+        """The sheet is called "Sheet1" — the dates exist only in the header
+        rows and the month title above them."""
+        assert [w.week_start for w in self.weeks()] == [
+            "2026-07-27", "2026-08-03", "2026-08-10",
+        ]
+
+    def test_a_block_starting_in_the_previous_month_is_still_right(self):
+        """"Mon 27th" under a title reading AUGUST is the 27th of JULY —
+        the week that ends on 2 August."""
+        assert self.weeks()[0].week_start == "2026-07-27"
+
+    def test_shifts_land_in_the_week_they_belong_to(self):
+        first, second, third = self.weeks()
+        assert [(s.employee_name, s.day, s.start) for s in first.shifts] == [
+            ("Aneesh", "mon", "17:30"), ("Teja", "tue", "17:30"),
+        ]
+        assert [(s.employee_name, s.day, s.start) for s in second.shifts] == [
+            ("Aneesh", "mon", "12:00"), ("Teja", "wed", "17:30"),
+        ]
+        assert [(s.employee_name, s.day) for s in third.shifts] == [
+            ("Aneesh", "wed"), ("Teja", "mon"),
+        ]
+
+    def test_nobody_appears_twice_on_one_day(self):
+        """The failure that made this visible: 42 shifts on 7 days, Aneesh on
+        Monday three times. A duplicate (person, day) corrupts the corrections
+        diff, which identifies a shift by exactly that pair."""
+        for week in self.weeks():
+            seen = [(s.employee_name, s.day) for s in week.shifts]
+            assert len(seen) == len(set(seen)), week.shifts
+
+    def test_a_sheet_with_no_role_column_invents_no_roles(self):
+        """Names down column 0 were being read as role headings, so everyone
+        got their own name as a job title. §9: report it, do not guess."""
+        for week in self.weeks():
+            assert set(week.employees.values()) == {None}
+
+    def test_one_week_per_sheet_still_works(self):
+        """The layout that already worked must not change."""
+        from app.services.roster_import import parse_sheet_weeks
+
+        weeks = parse_sheet_weeks("we 25th january26", sheet(
+            ["Duty Mgr.", "Megan", "06:00-16:00", "", "", "", "", "", ""],
+        ), 2026)
+        assert len(weeks) == 1
+        assert weeks[0].week_start == "2026-01-19"
+        assert weeks[0].employees == {"Megan": "Duty Manager"}

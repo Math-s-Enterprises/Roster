@@ -372,27 +372,53 @@ def parse_week_ending(label: str, default_year: int = 2026) -> Optional[date]:
 # ---------------------------------------------------------------------------
 # Sheet-level parsing
 # ---------------------------------------------------------------------------
-def _find_header_row(rows: List[List[Any]]) -> Tuple[int, List[int]]:
-    """Locate the row holding day names, and which columns they occupy.
+_DAY_WORDS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
-    Found by content rather than a fixed index, because these sheets vary:
-    some have a title row above the header, some do not.
+
+def _day_columns(row: List[Any]) -> List[int]:
+    """Which columns of this row hold day names."""
+    columns: List[int] = []
+    for col, cell in enumerate(row):
+        text = clean_text(cell).lower()
+        if text and any(text.startswith(word) for word in _DAY_WORDS):
+            columns.append(col)
+    return columns
+
+
+def find_header_rows(rows: List[List[Any]]) -> List[Tuple[int, List[int]]]:
+    """EVERY row that starts a week, not just the first.
+
+    A sheet is not always one week. Managers routinely keep a month in a
+    single tab, one week-block under another:
+
+        Mon 27th  Tue 28th  ...      <- header
+        Aneesh    17.30-23.00 ...
+        Teja      OFF ...
+                                     <- blank
+        Mon 3rd   Tue 4th   ...      <- header again
+        ...
+
+    This used to scan `rows[:10]` and return one header, so every block below
+    the first was read as more rows of the FIRST week. A real six-week sheet
+    came in as one week holding 42 shifts across 7 days, with the same person
+    on Monday three times — which then failed the duplicate check, produced
+    one week of history instead of six, and left the shop below the four
+    weeks the demand profile needs.
     """
-    day_words = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
-    best: Tuple[int, List[int]] = (-1, [])
+    found: List[Tuple[int, List[int]]] = []
+    for index, row in enumerate(rows):
+        columns = _day_columns(row)
+        # Seven is a full week. Fewer than four is a stray cell that happens
+        # to begin "Mon" — a name like "Monica", or a "Sat" in a note.
+        if len(columns) >= 4:
+            found.append((index, columns))
+    return found
 
-    for index, row in enumerate(rows[:10]):
-        columns: List[int] = []
-        for col, cell in enumerate(row):
-            text = clean_text(cell).lower()
-            if text and any(text.startswith(word) for word in day_words):
-                columns.append(col)
-        if len(columns) > len(best[1]):
-            best = (index, columns)
-        if len(columns) >= 7:
-            break
 
-    return best
+def _find_header_row(rows: List[List[Any]]) -> Tuple[int, List[int]]:
+    """The first week-block's header. Kept for callers that want one week."""
+    headers = find_header_rows(rows)
+    return headers[0] if headers else (-1, [])
 
 
 def _looks_like_person(name: str) -> bool:
@@ -410,6 +436,125 @@ def _looks_like_person(name: str) -> bool:
     if parse_absence(name):
         return False
     return bool(re.search(r"[A-Za-z]", name))
+
+
+def _month_hint(rows: List[List[Any]], before: int) -> Optional[int]:
+    """A month named anywhere above this block — "MONTH AUGUST", "August 26".
+
+    Searched upwards from the block so a month title that sits above week
+    three is not applied to week one.
+    """
+    for row in reversed(rows[:before]):
+        for cell in row or []:
+            text = clean_text(cell).lower()
+            for name, number in _MONTHS.items():
+                if name in text:
+                    return number
+    return None
+
+
+def _day_of_month(text: str) -> Optional[int]:
+    """27 from "Mon 27th", "MON 27", "Monday 27/08"."""
+    match = re.search(r"(\d{1,2})", clean_text(text))
+    if not match:
+        return None
+    value = int(match.group(1))
+    return value if 1 <= value <= 31 else None
+
+
+def _week_start_from_header(
+    row: List[Any],
+    columns: List[int],
+    month: Optional[int],
+    year: int,
+    previous: Optional[date],
+) -> Optional[date]:
+    """The Monday this block covers, from its own header row.
+
+    The header carries the day of the month but not the month itself
+    ("Mon 27th"), so it is resolved against a month named elsewhere on the
+    sheet, and against the previous block — consecutive blocks are seven days
+    apart, which settles a month boundary without any title at all.
+    """
+    if not columns:
+        return None
+    day_number = _day_of_month(row[columns[0]] if columns[0] < len(row) else "")
+    if day_number is None:
+        return None
+
+    # A week after the previous one, if the number agrees. This carries the
+    # sequence across a month end — "Mon 31st" then "Mon 7th" — with no
+    # month named at all.
+    if previous:
+        candidate = previous + timedelta(days=7)
+        if candidate.day == day_number:
+            return candidate
+
+    # Otherwise find a Monday with that date, near the month named on the
+    # sheet. The window spans a month either side because a block headed
+    # "Mon 31st" under a title reading AUGUST may well start in July.
+    base = month or (previous.month if previous else None)
+    if base is None:
+        return None
+    for offset in (0, -1, 1, 2):
+        m = base + offset
+        y = year + (1 if m > 12 else -1 if m < 1 else 0)
+        m = (m - 1) % 12 + 1
+        try:
+            candidate = date(y, m, day_number)
+        except ValueError:
+            continue
+        if candidate.weekday() == 0:
+            return candidate
+    return None
+
+
+def parse_sheet_weeks(
+    sheet_name: str, rows: List[List[Any]], default_year: int = 2026,
+) -> List[ParsedWeek]:
+    """Every week-block on one sheet.
+
+    Usually one. A manager keeping a whole month in a single tab gets one per
+    block, each dated from its own header row.
+    """
+    headers = find_header_rows(rows)
+    if len(headers) <= 1:
+        return [parse_sheet(sheet_name, rows, default_year)]
+
+    # The sheet name dates the FIRST block when it says anything; the rest
+    # follow from it. A name like "Sheet1" says nothing, and then the header
+    # rows are all there is.
+    from_name = parse_week_ending(sheet_name, default_year)
+    weeks: List[ParsedWeek] = []
+    previous = from_name
+
+    for position, (index, columns) in enumerate(headers):
+        stop = headers[position + 1][0] if position + 1 < len(headers) else len(rows)
+        block = rows[index:stop]
+
+        start = (from_name if position == 0 and from_name else
+                 _week_start_from_header(
+                     rows[index], columns,
+                     _month_hint(rows, index), default_year, previous,
+                 ))
+        week = parse_sheet(sheet_name, block, default_year)
+        week.week_start = start.isoformat() if start else None
+        # parse_sheet warns about the sheet NAME, which is not where these
+        # blocks get their dates from.
+        week.warnings = [
+            w for w in week.warnings if "from the sheet name" not in w
+        ]
+        if not start:
+            week.warnings.append(
+                f"Could not work out which week the block at row {index + 1} "
+                f"covers. Name the sheet after the week, or put the month "
+                f"above the rota."
+            )
+        week.week_ending_label = f"{sheet_name} (row {index + 1})"
+        weeks.append(week)
+        previous = start or previous
+
+    return weeks
 
 
 def parse_sheet(sheet_name: str, rows: List[List[Any]], default_year: int = 2026) -> ParsedWeek:
@@ -442,9 +587,19 @@ def parse_sheet(sheet_name: str, rows: List[List[Any]], default_year: int = 2026
 
         # A non-empty leftmost cell starts a new role section, and that role
         # applies to every row beneath it until the next one.
-        section = clean_text(row[0]) if len(row) > 0 else ""
-        if section and _looks_like_person(section):
-            current_role = _canonical_role(section)
+        #
+        # UNLESS the leftmost cell IS the name column. A sheet with no role
+        # column at all — just names down the side — was giving every person
+        # their own name as their job title: {'Aneesh': 'Aneesh'}. That put
+        # two unknown roles into the hierarchy, where §9 keeps an unrecognised
+        # title verbatim at the bottom, so role priority became arbitrary and
+        # the shop appeared to be ignoring seniority entirely.
+        #
+        # No role column means no role. §9 again: report it, do not invent it.
+        if name_column != 0:
+            section = clean_text(row[0]) if len(row) > 0 else ""
+            if section and _looks_like_person(section):
+                current_role = _canonical_role(section)
 
         name = normalise_name(row[name_column]) if len(row) > name_column else ""
         if not _looks_like_person(name):
@@ -559,7 +714,11 @@ def parse_workbook_rows(
     default_year: int = 2026,
 ) -> List[ParsedWeek]:
     """Parse pre-read sheets. Keeps this module free of any Excel dependency."""
-    return [parse_sheet(name, rows, default_year) for name, rows in sheets]
+    return [
+        week
+        for name, rows in sheets
+        for week in parse_sheet_weeks(name, rows, default_year)
+    ]
 
 
 def read_xlsx(path: str) -> List[Tuple[str, List[List[Any]]]]:
