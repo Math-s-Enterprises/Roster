@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import io
 from datetime import datetime, timedelta
+from xml.sax.saxutils import escape
 from typing import Any, Dict, List, Optional
 
 from reportlab.lib import colors
@@ -96,6 +97,8 @@ def build_roster_pdf(
                            textColor=_INK, spaceAfter=1)
     sub = ParagraphStyle("s", fontName="Helvetica", fontSize=9.5,
                          textColor=_MUTE)
+    person_style = ParagraphStyle("p", fontName="Helvetica", fontSize=9,
+                                  leading=11, textColor=_INK)
 
     # Two header rows: the day, and the date under it. A rota that says only
     # "Wed" is the same ambiguity the email had.
@@ -114,7 +117,7 @@ def build_roster_pdf(
             entries = sorted(by_day.get(day, []),
                              key=lambda s: s.get("start") or "")
             if not entries:
-                cells.append("·")
+                cells.append("")
                 continue
             parts = []
             for shift in entries:
@@ -124,36 +127,57 @@ def build_roster_pdf(
                     parts.append(leave or "—")
                 else:
                     hours += paid_hours(start, end, breaks_paid=breaks_are_paid)
-                    # Stacked, because 07:30–16:00 does not fit a seventh of a
-                    # landscape page at a legible size.
-                    parts.append(f"{start}\n{end}")
+                    # ONE LINE. These were stacked on the assumption that a
+                    # range would not fit a seventh of a landscape page, which
+                    # was never measured: "17:30 – 23:00" is 55pt at 9pt in a
+                    # 77pt cell. Stacked, the two times read as two separate
+                    # facts rather than one shift.
+                    parts.append(f"{start} – {end}")
             cells.append("\n".join(parts))
 
         grand += hours
         name = person.get("name", "")
         role = person.get("role") or ""
-        rows.append([f"{name}\n{role}" if role else name] + cells + [f"{hours:g}h"])
+        who = Paragraph(
+            f"<b>{escape(name)}</b>"
+            + (f"<br/><font size=7.5 color='#6b7280'>{escape(role)}</font>"
+               if role else ""),
+            person_style,
+        )
+        rows.append([who] + cells + [f"{hours:g}h"])
 
     rows.append([f"{len(people)} on the rota"] + [""] * 7 + [f"{grand:g}h"])
 
-    widths = [42 * mm] + [30 * mm] * 7 + [18 * mm]
+    widths = [38 * mm] + [31 * mm] * 7 + [16 * mm]
     table = Table(rows, colWidths=widths, repeatRows=1)
     table.setStyle(TableStyle([
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (0, -1), (0, -1), "Helvetica-Bold"),
         ("FONTNAME", (1, 1), (-1, -1), "Helvetica"),
-        ("FONTSIZE", (0, 0), (-1, -1), 7.5),
-        ("LEADING", (0, 0), (-1, -1), 9),
+        # 9pt rather than 7.5: this gets printed and read from a distance,
+        # and the page has room now the times are on one line.
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("FONTSIZE", (0, 0), (-1, 0), 8),
+        ("LEADING", (0, 0), (-1, -1), 11),
         ("TEXTCOLOR", (0, 0), (-1, -1), _INK),
         ("TEXTCOLOR", (1, 0), (-1, 0), _MUTE),
         ("ALIGN", (1, 0), (-1, -1), "CENTER"),
         ("ALIGN", (-1, 1), (-1, -1), "RIGHT"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("GRID", (0, 0), (-1, -1), 0.4, _RULE),
+        # Vertical rules only between DAY columns, plus a rule under each
+        # person. A full grid boxes every cell and turns the page into a
+        # mesh; the eye is following one person across the week.
+        ("LINEBELOW", (0, 0), (-1, -2), 0.4, _RULE),
+        ("LINEAFTER", (0, 0), (-2, -1), 0.4, _RULE),
+        ("BOX", (0, 0), (-1, -1), 0.6, _RULE),
+        ("LINEABOVE", (0, -1), (-1, -1), 0.8, _MUTE),
         ("BACKGROUND", (0, 0), (-1, 0), _BAND),
         ("BACKGROUND", (0, -1), (-1, -1), _BAND),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        # Roomier rows. A rota is scanned, not read.
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
     ]))
 
     doc.build([
