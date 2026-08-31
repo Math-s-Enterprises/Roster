@@ -13,7 +13,12 @@ shop runs is placed exactly once.
 from datetime import date, timedelta
 
 from app.services.demand import build_profile
-from app.services.scheduler import DAYS, _RosterBuilder, solve_roster
+from app.services.scheduler import (
+    DAYS,
+    _RosterBuilder,
+    shift_duration_minutes,
+    solve_roster,
+)
 
 WEEK = "2026-08-17"
 
@@ -250,6 +255,61 @@ class TestClosingChangeoverGaps:
         result, _ = self._gapped()
         for shift in result["shifts"]:
             assert shift.get("span_hours", 0) <= 10.01, shift
+
+    def test_a_stretch_lands_on_the_hour(self):
+        """Covering an hour means being there for all of it.
+
+        The stretch used to move an edge 30 minutes and then ask
+        `hours_covered` whether the hour was covered. It always said yes,
+        because that function floors a shift's start to the hour it falls in —
+        so a finish moved to 17:30 "covered" 17:00 while the shop was still a
+        body short until 17:30.
+
+        Measured on the reference shop: the solver ended shifts on a half hour
+        11.2% of the time where the manager does it 0.2% of the time, and
+        over-counted twice as many hours per week as the manager's own rota.
+        Those were shapes the shop does not write.
+        """
+        for was, now in self._stretches(self._gapped()[0]):
+            moved = [i for i in range(2) if was[i] != now[i]]
+            assert moved, f"an advisory reported no change at all: {was} {now}"
+            for i in moved:
+                assert now[i].endswith(":00"), (
+                    f"a stretched edge kept a half hour: "
+                    f"{was[0]}-{was[1]} became {now[0]}-{now[1]}"
+                )
+
+    def test_a_stretch_stays_a_changeover_adjustment(self):
+        """At most an hour. Beyond that it is a missing shift, not a
+        changeover, and lengthening somebody's day by two hours to hide one
+        is an edit the manager has to undo."""
+        for was, now in self._stretches(self._gapped()[0]):
+            grew = (shift_duration_minutes(*now)
+                    - shift_duration_minutes(*was))
+            assert 0 < grew <= 60, (
+                f"{was[0]}-{was[1]} became {now[0]}-{now[1]}, "
+                f"{grew} minutes longer"
+            )
+
+    @staticmethod
+    def _stretches(result):
+        """(before, after) for every shift THIS pass reshaped.
+
+        Read from the advisories rather than from the final shifts, because
+        other passes lengthen shifts too — _fit_contract_hours had turned a
+        09:00-15:00 into 09:00-19:00 and an earlier version of this test
+        blamed the stretch for it.
+        """
+        out = []
+        for issue in result["issues"]:
+            if "was changed from" not in issue:
+                continue
+            body = issue.split("was changed from ")[1]
+            was, _, rest = body.partition(" to ")
+            now = rest.split(" to cover ")[0]
+            out.append((tuple(was.split("-")), tuple(now.strip().split("-"))))
+        assert out, "no stretch was reported — this fixture must produce one"
+        return out
 
     def _two_hour_gap(self):
         """A day short at 15:00 AND 16:00, so one shift is stretched twice."""

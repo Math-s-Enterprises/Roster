@@ -2962,61 +2962,124 @@ class _RosterBuilder:
                     self.employees_by_id.get(s["employee_id"], {}), 1.0
                 ))
 
-                for step in (self._FIT_STEP_MINUTES, self._FIT_STEP_MINUTES * 2):
-                    if self.on_duty[day][hour] >= required:
-                        break
-                    for shift in nearby:
-                        covered = set(self.hours_covered(
-                            shift["day"], shift["start"], shift["end"],
-                            wrap_week=self.wrap_week,
-                        ))
-                        if (day, hour) in covered:
+                # One pass, not two. The old code tried a 30-minute stretch
+                # and then a 60-minute one; snapping lands on the boundary
+                # exactly, so a second attempt would retry the identical
+                # candidate. If the snap is refused -- the 12-hour cap, the
+                # rest gap, a curfew -- the hour stays short and is reported,
+                # which is the honest outcome and what §1 asks for.
+                for shift in nearby:
+                    covered = set(self.hours_covered(
+                        shift["day"], shift["start"], shift["end"],
+                        wrap_week=self.wrap_week,
+                    ))
+                    if (day, hour) in covered:
+                        continue
+
+                    for later_finish in (True, False):
+                        # SNAP TO THE HOUR, do not step towards it.
+                        #
+                        # This used to move the edge by 30 minutes and
+                        # then ask hours_covered whether the hour was
+                        # covered. It always said yes, because it floors a
+                        # shift's start to the hour it falls in — so a
+                        # finish moved to 17:30 "covered" 17:00 while the
+                        # required headcount was still one short until
+                        # 17:30. Measured on this shop: the solver was
+                        # over-counting ~25 hours a week against the
+                        # manager's own 12, and ending shifts on a half
+                        # hour 11% of the time where the manager does it
+                        # 0.2% of the time. Those were shapes the shop
+                        # does not write and the manager would rewrite.
+                        #
+                        # Covering an hour means being there for ALL of
+                        # it, so the edge lands on the boundary: finish at
+                        # (hour+1):00, or start at hour:00. Costs up to
+                        # half an hour more than the old stretch, and buys
+                        # cover that is real rather than rounded into
+                        # existence.
+                        if later_finish:
+                            candidate = (
+                                shift["start"], f"{(hour + 1) % 24:02d}:00",
+                            )
+                        else:
+                            candidate = (f"{hour:02d}:00", shift["end"])
+
+                        # Two things stepping got for free and snapping has
+                        # to state outright.
+                        #
+                        # WRONG WAY. A shift running 18:00-20:00 asked to
+                        # reach hour 17 by its FINISH gives (18:00, 18:00),
+                        # an empty shift. Stepping could not do this because
+                        # it always moved outwards.
+                        #
+                        # TOO FAR. This pass exists for a CHANGEOVER hour —
+                        # "somebody finishing at 16:00 instead of 15:00".
+                        # Stepping was bounded to 30 or 60 minutes by
+                        # construction. An unbounded snap is not: a shift
+                        # ending 14:00 asked to cover hour 15 snaps to 16:00,
+                        # a TWO HOUR extension. That is not a changeover
+                        # adjustment, it is a missing shift — and covering it
+                        # by quietly making somebody's day two hours longer
+                        # is precisely the edit the manager then has to undo.
+                        #
+                        # Caught by test_an_occasional_coverer_does_not_
+                        # outrank_contract_need, which noticed an owned
+                        # 06:00-14:00 had silently become 06:00-16:00.
+                        # Measured against the shape the shift STARTED with,
+                        # not its current one. A shift short at 15:00, then
+                        # 16:00, then 17:00 was being stretched an hour at a
+                        # time — each step a legitimate changeover
+                        # adjustment, the total a four-hour extension that
+                        # nobody agreed to. (Pre-existing: the old 30-minute
+                        # stepping accumulated the same way. It only became
+                        # visible once the advisories were collapsed to report
+                        # original-shape-to-final, which is the argument for
+                        # having collapsed them.)
+                        #
+                        # Four consecutive short hours is a missing shift.
+                        # Leaving it short says so; hiding it inside somebody
+                        # else's day does not.
+                        started_as = stretched.get(
+                            (shift["employee_id"], shift["day"]), {}
+                        ).get("was")
+                        base = (tuple(started_as.split("-")) if started_as
+                                else (shift["start"], shift["end"]))
+                        grew = (shift_duration_minutes(*candidate)
+                                - shift_duration_minutes(*base))
+                        if not 0 < grew <= self._FIT_STEP_MINUTES * 2:
                             continue
 
-                        for later_finish in (True, False):
-                            if later_finish:
-                                edge = (to_minutes(shift["end"]) + step) % (24 * 60)
-                                candidate = (
-                                    shift["start"],
-                                    f"{edge // 60:02d}:{edge % 60:02d}",
-                                )
-                            else:
-                                edge = (to_minutes(shift["start"]) - step) % (24 * 60)
-                                candidate = (
-                                    f"{edge // 60:02d}:{edge % 60:02d}",
-                                    shift["end"],
-                                )
+                        reaches = (day, hour) in set(self.hours_covered(
+                            shift["day"], candidate[0], candidate[1],
+                            wrap_week=self.wrap_week,
+                        ))
+                        if not reaches or not self._may_lengthen(
+                            shift, candidate[0], candidate[1]
+                        ):
+                            continue
 
-                            reaches = (day, hour) in set(self.hours_covered(
-                                shift["day"], candidate[0], candidate[1],
-                                wrap_week=self.wrap_week,
-                            ))
-                            if not reaches or not self._may_lengthen(
-                                shift, candidate[0], candidate[1]
-                            ):
-                                continue
+                        who = self.employees_by_id.get(
+                            shift["employee_id"], {}
+                        ).get("name", shift["employee_id"])
+                        was = f"{shift['start']}-{shift['end']}"
+                        self._reshape_shift(shift, candidate[1], candidate[0])
 
-                            who = self.employees_by_id.get(
-                                shift["employee_id"], {}
-                            ).get("name", shift["employee_id"])
-                            was = f"{shift['start']}-{shift['end']}"
-                            self._reshape_shift(shift, candidate[1], candidate[0])
-
-                            key = (shift["employee_id"], shift["day"])
-                            record = stretched.get(key)
-                            if record is None:
-                                # First stretch of this shift: remember the
-                                # shape the generator originally drew, which is
-                                # the only one the manager ever saw.
-                                stretched[key] = {
-                                    "who": who, "was": was,
-                                    "shift": shift, "hours": [(day, hour)],
-                                }
-                            else:
-                                record["hours"].append((day, hour))
-                            break
-                        if self.on_duty[day][hour] >= required:
-                            break
+                        key = (shift["employee_id"], shift["day"])
+                        record = stretched.get(key)
+                        if record is None:
+                            # First stretch of this shift: remember the
+                            # shape the generator originally drew, which is
+                            # the only one the manager ever saw.
+                            stretched[key] = {
+                                "who": who, "was": was,
+                                "shift": shift, "hours": [(day, hour)],
+                            }
+                        else:
+                            record["hours"].append((day, hour))
+                        break
+                    if self.on_duty[day][hour] >= required:
+                        break
 
         for record in stretched.values():
             shift = record["shift"]
