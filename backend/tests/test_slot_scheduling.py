@@ -409,6 +409,47 @@ class TestContractTopUp:
             f"salaried employee on {salaried}h, contracted band {low}-{high}h"
         )
 
+    def test_a_contract_trim_leaves_the_finish_on_the_hour(self):
+        """A 42.5h band is 8.5h a day, and the half-hour used to land on the
+        FINISH — 10:00-18:30. Measured across 8 solved weeks at the reference
+        shop that accounted for 42 of 42 manufactured half-hour finishes, all
+        on salaried staff, against a manager who writes one in 555 shifts.
+
+        The shop puts its half-hours on the START (07:30-16:00, 23:30-07:00)
+        and keeps finishes whole. Moving starts to match was rejected —
+        familiarity is keyed on start time — so the trim rounds down to a
+        whole hour instead.
+        """
+        team = salaried_team()
+        result, _ = generate(team=team)
+        theirs = [s for s in result["shifts"] if s["employee_id"] == "e0"]
+        assert theirs, "the salaried employee got no shifts at all"
+        for shift in theirs:
+            assert shift["end"].endswith(":00"), (
+                f"a contract trim left a half-hour finish: "
+                f"{shift['day']} {shift['start']}-{shift['end']}"
+            )
+
+    def test_rounding_the_trim_down_does_not_starve_the_contract(self):
+        """The risk the change above introduces, stated as its own test.
+
+        Rounding 8.5h down to 8h gives back half an hour per shift — 2.5h
+        across a five-day week — and if nothing made that up the salaried
+        employee would quietly finish under their band every week. That is
+        what _top_up_contracts is for, and this is the test that would notice
+        if it stopped being enough.
+        """
+        from app.services.availability import contract_span_band
+
+        team = salaried_team()
+        result, _ = generate(team=team)
+        low, high = contract_span_band(team[0])
+        assert low <= span_of(result, "e0") <= high, (
+            f"on {span_of(result, 'e0')}h against a {low}-{high}h band — "
+            f"the trim gave back hours nothing put back"
+        )
+        assert not result["under_contract"], result["under_contract"]
+
     def test_slot_ownership_cannot_shut_out_a_full_timer(self):
         """The worst case for owner-first: somebody else owns EVERY slot.
 

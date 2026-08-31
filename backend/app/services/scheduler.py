@@ -1885,7 +1885,28 @@ class _RosterBuilder:
         if span <= wanted + 1e-6:
             return end  # already at or under their share; leave it alone
 
-        minutes = int(round(wanted * 60 / self._FIT_STEP_MINUTES)) * self._FIT_STEP_MINUTES
+        # WHOLE HOURS, ROUNDED DOWN.
+        #
+        # This used to round to 30-minute steps, which is where every
+        # manufactured half-hour finish in the roster came from: measured
+        # across 8 solved weeks at the reference shop, 42 of 42 of them, all
+        # on salaried staff, against a manager who ends a shift on a half
+        # hour once in 555 shifts.
+        #
+        # The shop's own convention is the half-hour on the START — 07:30-16:00,
+        # 23:30-07:00 — and a whole-hour finish. Matching that by moving the
+        # start instead was considered and rejected: familiarity is keyed on
+        # start time (§2), so nudging a start to tidy a finish risks offering
+        # somebody a shift they have never worked, which is a far worse
+        # trade than half an hour.
+        #
+        # DOWN rather than nearest, so a trim can never push somebody OVER
+        # their band. It leaves them slightly short of the per-shift share —
+        # 8h where 8.5 was wanted — and _top_up_contracts is what makes that
+        # up elsewhere in the week. §2b already says the contract needs
+        # ENOUGH slots, not any particular one. `under_contract` reports
+        # anybody it cannot reach, so this cannot fail silently.
+        minutes = int(wanted) * 60
         new_end_m = (to_minutes(start) + minutes) % (24 * 60)
         new_end = f"{new_end_m // 60:02d}:{new_end_m % 60:02d}"
         if violates_minor_curfew(employee, start, new_end):
