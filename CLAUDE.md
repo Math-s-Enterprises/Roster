@@ -293,6 +293,52 @@ hours collapse into one note, and a gap under 2 hours is not mentioned at all
 — a changeover hour is already handled by stretching a neighbour, and saying
 so as well buries the hour that matters.
 
+## 7d. Coverage is counted in whole hours, and edges land on them
+
+`hours_covered` walks a shift in 60-minute steps **from its start minute** and
+floors each to an hour. A shift beginning 17:30 is therefore credited with the
+whole 17:00–18:00 block on the strength of being there for half of it.
+
+That is a **units convention, not a bug**, and it is self-consistent: `demand.py`
+uses the identical rounding when it learns, so `required(tue, 07)` was itself
+computed by counting the shop's 07:30 starts as present at 07:00. Both sides of
+the comparison speak the same slightly-wrong language.
+
+It stops being harmless the moment a *pass writes new times against it*, because
+then the app is choosing a shape on the strength of the rounding:
+
+- **Gap-closing snaps to the hour.** Moving a finish 30 minutes and asking
+  "covered now?" always got yes. The edge lands on the boundary instead —
+  finish at `(hour+1):00`, start at `hour:00`. Costs up to half an hour more
+  and buys cover that is real.
+- **A stretch is capped at an hour, cumulatively.** Measured against the shape
+  the shift started the pass with, not its current one: a shift short at 15:00,
+  then 16:00, then 17:00 was being stretched an hour at a time into a four-hour
+  extension nobody agreed to. Four consecutive short hours is a *missing shift* —
+  leave it short and say so.
+- **A contract trim rounds down to a whole hour.** A 42.5h band is 8.5h a day
+  and the half-hour used to land on the finish. Rounding down gives back half an
+  hour a shift; `_top_up_contracts` makes it up, and `under_contract` reports
+  anyone it cannot reach.
+
+**The shop's own convention is the opposite of the obvious fix.** Top Oil writes
+`07:30–16:00` and `23:30–07:00` — half-hour on the **start**, whole-hour finish
+— and ends a shift on a half hour once in 555 shifts. Matching that by moving
+starts was considered and **rejected**: familiarity is keyed on start time (§2),
+so nudging a start to tidy a finish risks offering somebody a shift they have
+never worked. Half an hour is not worth that.
+
+Measured on 8 solved weeks, before → after: shifts ending off the hour 11.2% →
+1.1% (manager 0.2%); hours where the model counts more people than are ever
+present at once, 25/week → 12.75/week (manager 12/week). **The solver is now at
+the manager's own baseline**, and everything left is the shop's shapes rather
+than anything the solver invented.
+
+`ml/check_partial_hours.py --source solve --edges` is the measurement. Making
+`hours_covered` strict is still open, and is now the *only* remaining source —
+but it would re-base learning and solving together, so the effect is not
+predictable without trying it. Do not start it without that measurement in hand.
+
 ## 8. Time is measured in real time, not clock time
 
 The single most common source of wrong answers in this codebase.

@@ -259,6 +259,36 @@ the reference shop: nobody short either way, and 18 placements across 12 people
 would change hands if it were switched off. **Option B is not needed. Do not
 build it without re-running this.**
 
+**Ask what would make this number non-zero BEFORE running it.** Four times in
+two days I measured a population that could not have produced a non-zero
+answer, and reported the zero as if it settled something:
+
+1. `under_contract` before establishing that anybody *could* be reported short
+2. hour-rounding against the manager's **approved** rota — hand-built, 24h,
+   continuous by construction, so no hole was possible. He spotted that one:
+   *"this is the output from the last 24 weeks, which are made by my manager,
+   not from the solver"*
+3. the same check counting only hours where the shop is **completely empty**,
+   when the actual question was headcount shortfall — a 17:30 start credited
+   with 17:00 leaves nobody missing, just one fewer than needed
+4. reporting "PASS — only Wednesday moved" when *nothing* had moved
+
+Every one had the same shape and the same fix. The habit is not "check the
+result", it is **state what a non-zero answer would look like, then confirm the
+measurement can produce it.** A detector that has never fired is not evidence.
+
+**Test the measurement on a case with a known answer.** After the third time,
+`check_partial_hours` got 13 hand-computed cases — overnight wrap, Sunday night
+into Monday, two people overlapping, leave not counting — and later a synthetic
+roster with a deliberate hole, to prove the detector fires at all. That is what
+made the eventual zero trustworthy.
+
+**Attribute before fixing.** Half-hour finishes had an obvious suspect and a
+plausible story. Rather than edit it, `--edges` split every off-hour edge four
+ways: start or finish, inherited or manufactured, salaried or hourly. It came
+back 42 of 42 manufactured finishes on salaried staff — unambiguous, and worth
+the extra round trip because the fix meant overturning a documented rule.
+
 **Say how big the denominator is, or a clean result means nothing.** First
 version of that script printed "nobody is below their minimum" — which is
 equally true of "the solver reached everybody" and "there was nobody to reach",
@@ -379,6 +409,12 @@ placements across 12 people would move if it were switched off. Do not build
 the look-ahead. If a second shop complains, re-run that script first — the
 answer is a fact about Top Oil's rota, not about the algorithm, and §10b's
 constants were calibrated on the same rota.
+
+**Hour-rounding: closed at the solver, open at the model.** The solver no
+longer manufactures half-hour edges — off-hour finishes 11.2% → 1.1%,
+over-counted hours 25/week → 12.75 against the manager’s own 12. Making
+`hours_covered` strict (option A) is the only remaining source and would
+re-base learning and solving together. See CLAUDE.md §7d.
 
 Still outstanding: **Phase 5** (re-run `measure_edit_burden.py` and prove the
 numbers moved). That is the only honest verdict on the whole session, and it
