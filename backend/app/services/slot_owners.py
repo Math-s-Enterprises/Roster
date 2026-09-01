@@ -160,6 +160,39 @@ def owner_of(
     return employee_id if count / history.weeks >= OWNERSHIP_SHARE else None
 
 
+def regulars_of(
+    owners: Dict[DaySlot, SlotHistory],
+    day: str,
+    start: str,
+    end: str,
+) -> Set[str]:
+    """EVERYBODY with a settled claim on this shape, not just the top one.
+
+    `owner_of` answers "who takes this instance", which is right when filling
+    one slot and wrong when asking "whose shift is this". A shape that runs
+    TWICE has two regulars — see SlotHistory: "Tuesday runs 06:00-16:00
+    twice; over 23 weeks Megan has 21 and John 17, so both clear the bar and
+    own one instance each."
+
+    Anything that asks "may I move this shift" must use this rather than
+    `owner_of`, or the SECOND regular's shift reads as unowned and can be
+    given away. That happened: the rebalance pass used `owner_of` and took a
+    Monday 06:00 off somebody who had worked it every week, because a
+    colleague on the other instance of the same shape ranked first.
+
+    The same mistake was made in a diagnostic first, found, and then repeated
+    in the solver an hour later — which is why the check lives here now
+    instead of being written out at each call site.
+    """
+    history = owners.get((day, start, end))
+    if not history or history.weeks < MIN_OCCURRENCES:
+        return set()
+    return {
+        employee_id for employee_id, count in history.people
+        if count / history.weeks >= OWNERSHIP_SHARE
+    }
+
+
 def ownership_strength(
     owners: Dict[DaySlot, SlotHistory],
     day: str,

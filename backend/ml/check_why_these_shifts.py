@@ -90,31 +90,15 @@ async def run(email: str, week: str) -> None:
         approved, {e["employee_id"] for e in employees if avail.is_active(e)})
 
     def regulars_of(day: str, start: str, end: str) -> set:
-        """EVERYBODY with a settled claim on this shape, not just the top one.
+        """Everybody with a settled claim, via the solver's own helper.
 
-        `owner_of` returns a single person, which is right for "who takes
-        this instance" and wrong for "whose shift is this". A shape that runs
-        TWICE has two regulars, and SlotHistory says so in its own docstring:
-        "Tuesday runs 06:00-16:00 twice; over 23 weeks Megan has 21 and John
-        17, so both clear the bar and own one instance each."
-
-        Using `owner_of` here reported the second regular as having stolen
-        the first one's shift — eight times on the reference shop, including
-        Megan and John apparently taking each other's identical 06:00-16:00.
-        The solver was never confused: once Megan is assigned that day she
-        leaves the eligible set, so the second instance falls to
-        `preference_order` and John's record wins it at rank 1.
-
-        This was a fault in the measurement, and the kind §9b warns about —
-        a script that had only ever met slots running once a day.
+        This started as a local copy, written after `owner_of` reported eight
+        shifts as stolen that were simply the second regular on a doubled
+        slot. The solver then made the identical mistake an hour later, so
+        the check moved into `slot_owners` and both callers use it. A rule
+        with two implementations has one that is wrong.
         """
-        history = owners.get((day, start, end))
-        if not history or history.weeks < slot_owners.MIN_OCCURRENCES:
-            return set()
-        return {
-            employee_id for employee_id, count in history.people
-            if count / history.weeks >= slot_owners.OWNERSHIP_SHARE
-        }
+        return slot_owners.regulars_of(owners, day, start, end)
 
     owned_hours: Dict[str, float] = defaultdict(float)
     tiebreak_hours: Dict[str, float] = defaultdict(float)

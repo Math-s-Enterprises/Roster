@@ -306,6 +306,54 @@ class TestTheRulesItMustNeverBreak:
             "regression scheduler.py:1738 warns about"
         )
 
+    def test_the_second_regular_on_a_doubled_slot_keeps_their_shift(self):
+        """Reported from the reference shop: "Emma usually works every Monday
+        at 6:00 am, but in the new roster she was not rostered at 6:00 at
+        all."
+
+        A shape that runs TWICE has two regulars (SlotHistory says so), but
+        `owner_of` returns only the top one. The rebalance pass used it, so
+        the second regular's shift read as unowned and could be handed to
+        somebody short of hours. `regulars_of` returns the whole set.
+
+        Here `first` and `second` both work Monday 06:00-14:00 every week —
+        the slot runs twice — and `second` is over their usual hours, which
+        makes them the obvious donor. Their Monday must still not move.
+        """
+        from app.services import slot_owners
+        hist = []
+        for w in range(12):
+            hist.append({
+                "week_start": (date(2026, 6, 22)
+                               + timedelta(weeks=w)).isoformat(),
+                "approved": True, "created_at": f"{w:03d}",
+                "shifts": [
+                    {"employee_id": "first", "day": "mon",
+                     "start": SHAPE[0], "end": SHAPE[1]},
+                    {"employee_id": "second", "day": "mon",
+                     "start": SHAPE[0], "end": SHAPE[1]},
+                    {"employee_id": "spare", "day": "fri",
+                     "start": SHAPE[0], "end": SHAPE[1]},
+                ],
+            })
+
+        builder = lopsided_builder(
+            {"second": ["mon", "tue", "wed", "thu"], "spare": ["fri"]}, hist)
+        owners = builder.slot_owners
+        assert slot_owners.owner_of(owners, "mon", *SHAPE) != "second", (
+            "fixture is wrong: `second` must NOT be the top claimant, or "
+            "this passes without exercising the bug"
+        )
+        assert "second" in slot_owners.regulars_of(owners, "mon", *SHAPE), (
+            "fixture is wrong: `second` must be a regular on the shape"
+        )
+
+        builder._rebalance_hours()
+        assert "mon" in held_by(builder, "second"), (
+            "the second regular on a doubled slot lost the Monday they work "
+            "every week"
+        )
+
     def test_a_pinned_shift_is_never_moved(self):
         builder = lopsided_builder(
             {"hog": ["mon", "tue", "wed", "thu"], "spare": ["fri"]},

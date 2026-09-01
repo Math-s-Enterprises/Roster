@@ -1413,8 +1413,14 @@ class _RosterBuilder:
             # A settled shift is not spare capacity. This is the rule the
             # whole ownership design exists to protect (§2b), and the reason
             # the earlier ranking attempt had to sit below it.
-            and slot_owners.owner_of(
-                self.slot_owners, s["day"], s["start"], s["end"]) != employee_id
+            #
+            # `regulars_of`, NOT `owner_of`. `owner_of` returns the single
+            # top claimant, so on a shape that runs twice the SECOND regular
+            # reads as unowned and their shift could be given away — which is
+            # what happened to a Monday 06:00 somebody had worked every week,
+            # because a colleague on the other instance ranked first.
+            and employee_id not in slot_owners.regulars_of(
+                self.slot_owners, s["day"], s["start"], s["end"])
         ]
         return sorted(
             movable,
