@@ -201,6 +201,54 @@ def shift_span_hours(shift: Dict[str, Any]) -> float:
 # ---------------------------------------------------------------------------
 # Inputs / outputs
 # ---------------------------------------------------------------------------
+def collapse_hour_runs(
+    gaps: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Merge consecutive uncovered hours on a day into one span.
+
+    Six lines saying 17:00-18:00, 18:00-19:00 ... 22:00-23:00 describe one
+    hole in the evening, and reading them as six problems is exactly the
+    wrong impression: the manager needs one person for one stretch, not six
+    decisions. `compare_to_usual` already collapses runs for the same reason
+    (§7c) and the advisories now do too; this was the last per-hour list.
+
+    Grouped by the REASON as well as the day, so "nobody could work this
+    because Emma is on leave" and "nobody could work this because everyone
+    is at their cap" stay separate sentences even when the hours touch —
+    they are different problems with different fixes.
+
+    Returns {day, from_hour, to_hour, window, hours, because}.
+    """
+    runs: List[Dict[str, Any]] = []
+    for day in DAYS:
+        current: Optional[Dict[str, Any]] = None
+        for gap in sorted(
+            (g for g in gaps if g.get("day") == day),
+            key=lambda g: g.get("hour", 0),
+        ):
+            hour, because = gap.get("hour", 0), gap.get("because", "")
+            if (current
+                    and current["to_hour"] == hour
+                    and current["because"] == because):
+                current["to_hour"] = hour + 1
+                current["hours"] += 1
+                continue
+            if current:
+                runs.append(current)
+            current = {
+                "day": day, "from_hour": hour, "to_hour": hour + 1,
+                "hours": 1, "because": because,
+            }
+        if current:
+            runs.append(current)
+
+    for run in runs:
+        run["window"] = (
+            f"{run['from_hour']:02d}:00-{run['to_hour'] % 24:02d}:00"
+        )
+    return runs
+
+
 @dataclass
 class Segment:
     """A block of time that must be staffed."""
@@ -2202,14 +2250,15 @@ class _RosterBuilder:
 
         # Structured alongside the sentence, so the grid can mark the hour
         # rather than the manager reading it out of a paragraph.
-        self.result.gaps.append({
+        gap = {
             "day": day,
             "hour": hour,
             "window": window,
             "required": required,
             "actual": actual,
             "severity": "uncovered" if actual == 0 else "short",
-        })
+        }
+        self.result.gaps.append(gap)
 
         # A named person beats general arithmetic: knowing whose day off to
         # renegotiate is something the manager can act on this afternoon.
@@ -2238,12 +2287,13 @@ class _RosterBuilder:
                 " Everyone else is on leave, at their hour cap, or curfew-restricted."
             )
 
-        if actual == 0:
-            self.result.critical_issues.append(
-                f"CRITICAL: {day} {window} has NO coverage — the shop would be left "
-                f"unattended.{because}"
-            )
-        else:
+        # The REASON is stored on the gap rather than written into a sentence
+        # here. Consecutive uncovered hours are one hole in the day, and
+        # _describe_gaps turns each run into a single line at the end —
+        # six lines from 17:00 to 23:00 read as six problems needing six
+        # decisions, when the manager needs one person for one stretch.
+        gap["because"] = because
+        if actual != 0:
             self.result.issues.append(
                 f"{day} {window}: {actual}/{required} staffed.{because}"
             )
@@ -2704,6 +2754,18 @@ class _RosterBuilder:
     # Under this, a shortfall is rounding rather than a real gap in someone's
     # week, and reporting it would be noise.
     _CONTRACT_TOLERANCE_HOURS = 0.5
+
+    def _describe_gaps(self) -> None:
+        """One sentence per RUN of uncovered hours, not per hour."""
+        for run in collapse_hour_runs(
+            [g for g in self.result.gaps if g.get("severity") == "uncovered"]
+        ):
+            hours = run["hours"]
+            self.result.critical_issues.append(
+                f"CRITICAL: {run['day']} {run['window']} has NO coverage"
+                + (f" ({hours} hours)" if hours > 1 else "")
+                + f" — the shop would be left unattended.{run['because']}"
+            )
 
     def _report_under_contract(self) -> None:
         """Name any salaried full-timer whose week came in short.
@@ -3356,6 +3418,7 @@ class _RosterBuilder:
 
     def _finalise(self) -> None:
         self._report_unrostered()
+        self._describe_gaps()
         self._report_under_contract()
         self._report_understaffed()
         self._report_thin_days()

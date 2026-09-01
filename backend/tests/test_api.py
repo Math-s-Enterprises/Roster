@@ -1635,8 +1635,14 @@ def test_uncovered_hours_can_be_accepted_deliberately(client):
     # recorded one more unattended hour than the roster actually had.
     hours = [g for g in roster["gaps"] if g["severity"] == "uncovered"]
     assert accepted.json()["approved_with_gaps"] == len(hours)
-    assert len(hours) < len(roster["critical_issues"]), (
-        "the headline should not be counted as an uncovered hour"
+
+    # The recorded figure counts HOURS. critical_issues is a list of
+    # sentences: a headline about the week, plus one line per RUN of
+    # consecutive hours, so there are far fewer of them than there are
+    # unattended hours. Using its length recorded the wrong number twice
+    # over — once for the headline, and once for every hour a run covers.
+    assert len(roster["critical_issues"]) < len(hours), (
+        "consecutive uncovered hours should collapse into one line each"
     )
 
 

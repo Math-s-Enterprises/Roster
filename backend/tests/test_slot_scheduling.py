@@ -1414,3 +1414,63 @@ class TestNobodyIsPlacedTwiceOnADay:
             f"e0 has {len(mine)} shifts across {visible} days — the extra ones "
             f"are invisible in the grid but counted in the total"
         )
+
+
+class TestGapsAreReportedAsSpans:
+    """Six lines saying 17:00-18:00, 18:00-19:00 ... 22:00-23:00 describe ONE
+    hole in the evening. Read as six problems they imply six decisions, when
+    the manager needs one person for one stretch."""
+
+    def test_consecutive_uncovered_hours_become_one_line(self):
+        from app.services.scheduler import collapse_hour_runs
+
+        gaps = [{"day": "fri", "hour": h, "because": " Aneesh is off."}
+                for h in range(17, 23)]
+        runs = collapse_hour_runs(gaps)
+        assert len(runs) == 1
+        assert runs[0]["window"] == "17:00-23:00"
+        assert runs[0]["hours"] == 6
+
+    def test_a_break_in_the_run_starts_a_new_line(self):
+        """09:00 and 14:00 uncovered is two holes, not one long one."""
+        from app.services.scheduler import collapse_hour_runs
+
+        runs = collapse_hour_runs([
+            {"day": "mon", "hour": 9, "because": ""},
+            {"day": "mon", "hour": 14, "because": ""},
+        ])
+        assert [r["window"] for r in runs] == ["09:00-10:00", "14:00-15:00"]
+
+    def test_different_reasons_stay_separate(self):
+        """Touching hours with different causes are different problems with
+        different fixes, so they keep their own sentences."""
+        from app.services.scheduler import collapse_hour_runs
+
+        runs = collapse_hour_runs([
+            {"day": "sat", "hour": 9, "because": " Emma is on leave."},
+            {"day": "sat", "hour": 10, "because": " Everyone is at their cap."},
+        ])
+        assert len(runs) == 2
+
+    def test_days_never_merge_into_each_other(self):
+        from app.services.scheduler import collapse_hour_runs
+
+        runs = collapse_hour_runs([
+            {"day": "mon", "hour": 23, "because": ""},
+            {"day": "tue", "hour": 0, "because": ""},
+        ])
+        assert len(runs) == 2
+
+    def test_the_solver_reports_a_span_not_an_hour_list(self):
+        """End to end: a day nobody can cover comes back as one sentence."""
+        result, _ = generate(team=make_team(size=1))
+        criticals = [i for i in result["critical_issues"] if "NO coverage" in i]
+        assert criticals, "this fixture needs a genuinely uncovered week"
+        # Far fewer sentences than uncovered hours.
+        hours = [g for g in result["gaps"] if g["severity"] == "uncovered"]
+        assert len(criticals) < len(hours), (
+            f"{len(criticals)} sentences for {len(hours)} hours — not collapsed"
+        )
+        assert any("hours)" in i for i in criticals), (
+            "a multi-hour span should say how long it is"
+        )

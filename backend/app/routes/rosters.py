@@ -26,6 +26,7 @@ from app.services.learning import compute_weights
 from app.services.scheduler import (
     ABSOLUTE_MAX_SHIFT_HOURS,
     DAYS,
+    collapse_hour_runs,
     MAX_WORKING_DAYS,
     break_minutes,
     paid_hours,
@@ -517,10 +518,13 @@ async def update_roster(
             {**gap, "required": 1, "actual": 0, "severity": "uncovered"}
             for gap in uncovered
         ],
+        # Collapsed the same way the solver does it, or a hand-edited week
+        # goes back to one line per hour while a generated one shows spans.
         "critical_issues": [
-            f"CRITICAL: {gap['day']} {gap['window']} has NO coverage — "
-            f"the shop would be left unattended."
-            for gap in uncovered
+            f"CRITICAL: {run['day']} {run['window']} has NO coverage"
+            + (f" ({run['hours']} hours)" if run["hours"] > 1 else "")
+            + " — the shop would be left unattended."
+            for run in collapse_hour_runs(uncovered)
         ],
         "updated_at": _now(),
     })
