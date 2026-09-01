@@ -3345,7 +3345,36 @@ class _RosterBuilder:
             previous = DAYS[(DAYS.index(day) - 1) % 7]
             for hour in self._open_hours(day):
                 required = self.demand.required(day, hour)
-                if required <= 0 or self.on_duty[day][hour] >= required:
+                # ONLY AN HOUR WITH NOBODY ON IT, NOT EVERY HOUR BELOW THE
+                # AVERAGE.
+                #
+                # This used to fire whenever `on_duty < required`, and
+                # `required` is a 24-week AVERAGE of bodies per hour while
+                # the shifts placed are a DISCRETE list of the shop's real
+                # shapes. Ten real shapes cannot reproduce an average hour by
+                # hour, so the two disagree permanently: measured on the
+                # reference shop, the shapes fall 24 hours short of the curve
+                # and run 25 hours OVER it. Same total, different shape.
+                #
+                # Correcting only the short side then inflated every week and
+                # produced one advisory per patched hour — eighteen in a
+                # single week, each one a shift the manager had to read and
+                # would not have written. He does not sit there eighteen
+                # times thinking "not covered, let him finish an hour late".
+                #
+                # Measured over 8 weeks, narrowing this to genuinely empty
+                # hours: advisories 15.1 -> 6.9, uncovered hours unchanged at
+                # 0.8, and shifts matching the manager's own rota 38.6 -> 42.4
+                # of 63.6. The week comes out 1.5% lighter and closer to the
+                # shapes he actually writes.
+                #
+                # An hour that is short but not EMPTY is reported instead, by
+                # "Against the usual" (§7c) — information the manager can act
+                # on rather than a shift quietly made longer. An hour with
+                # nobody on it is a different thing entirely: that is §1 rule
+                # 1, and stretching a neighbour is much cheaper than adding a
+                # whole shift for it.
+                if required <= 0 or self.on_duty[day][hour] > 0:
                     continue
 
                 nearby = [
