@@ -3238,6 +3238,33 @@ class _RosterBuilder:
         if violates_minor_curfew(employee, new_start, new_end):
             return False
 
+        # ELEVEN HOURS OF REST, WHICH THE REST OF THIS PASS ONLY CLAIMED TO
+        # CHECK.
+        #
+        # `_close_short_hours` says in its own comments that a snap is
+        # refused for "the 12-hour cap, the rest gap, a curfew". Two of those
+        # three were true. Nothing here looked at rest, so a finish pushed an
+        # hour later — or a start pulled an hour earlier — could eat into the
+        # gap either side of it.
+        #
+        # Reported from the reference shop: "Kyle's fri shift was changed
+        # from 10:00-19:00 to 10:00-20:00 to cover fri 19:00", leaving him
+        # ten hours before his next shift. The roster then flagged him, so
+        # the solver produced a breach and warned about its own work.
+        #
+        # This is the daily rest entitlement in the Organisation of Working
+        # Time Act (§1 rule 6), not a preference, and §1 says what to do when
+        # keeping it costs an hour of cover: leave the hour empty and say so.
+        #
+        # `_rest_breach` skips shifts on the same day, so a shift is never
+        # compared against itself, and it checks BOTH directions — a start
+        # moved earlier eats the gap from the previous day rather than the
+        # next.
+        if self._rest_breach(
+            shift["employee_id"], shift["day"], new_start, new_end
+        ) is not None:
+            return False
+
         added_span = span - shift_duration_minutes(shift["start"], shift["end"]) / 60
         band = self.span_bands.get(shift["employee_id"])
         if band:
@@ -3582,6 +3609,23 @@ class _RosterBuilder:
                     if violates_minor_curfew(employee, shift["start"], new_end):
                         continue
                     if delta < 0 and not self._can_shorten_to(shift, new_end):
+                        continue
+                    # A CONTRACT IS NOT A REASON TO BREAK A STATUTORY REST
+                    # PERIOD.
+                    #
+                    # This pass pushes a finish later to land a salaried
+                    # employee inside their band, and checked only the
+                    # curfew. Measured on the reference shop it left eight
+                    # hours before the next morning's shift — worse than the
+                    # ten `_close_short_hours` produced, because a band can
+                    # ask for a bigger extension than a changeover hour can.
+                    #
+                    # The hours the contract cannot reach this way are
+                    # reported by `under_contract` instead, which is what
+                    # that report is for.
+                    if delta > 0 and self._rest_breach(
+                        employee_id, shift["day"], shift["start"], new_end
+                    ) is not None:
                         continue
 
                     self._reshape_shift(shift, new_end)
