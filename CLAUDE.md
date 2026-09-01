@@ -407,6 +407,38 @@ list them one per line. Never render an error object directly into JSX.
 **Migrations are `ml/*.py` scripts** — dry run by default, `--commit` to apply,
 and they print what they would change first.
 
+## 9b. Top Oil is a fixture, not the specification
+
+Said plainly by the shop owner, and it is the right frame:
+
+> Top Oil data is not the universal data. I am just using that data to test
+> and give the feedback and improve what is wrong.
+
+The importer had only ever been shaped by that one workbook, and it had
+quietly taken its habits for rules:
+
+| Assumed, because Top Oil does it | Actually true |
+|---|---|
+| one sheet is one week | a manager keeps a **month** in one tab, blocks stacked |
+| the sheet **name** dates the week | it may be `Sheet1`; the dates are in the header rows |
+| column 0 holds a role heading | it may hold **names**, and there may be no role column |
+
+Every one of those produced a wrong import that looked like a solver
+problem. Six weeks arrived as one week of 42 shifts, which put the shop
+below `MIN_WEEKS_FOR_DEMAND`, so the profile stayed generic and nothing
+could be owned — and the visible symptom was "it is ignoring who works
+Mondays and using role priority instead". The parser was at fault three
+layers upstream.
+
+**So: when a real file does not import, the parser is the suspect, not the
+shop.** And a fixture that has never failed is not evidence the code is
+general — it is evidence the code has only met one shop. `find_header_rows`
+returning more than one row is what the second shop needed and the first
+never exercised.
+
+The same warning applies to `ml/` diagnostics, which are all written
+against Top Oil's shape.
+
 ## 10b. One shop's evidence, every shop's code
 
 The logic is general — there is no shop id, name or special case anywhere in

@@ -283,6 +283,20 @@ into Monday, two people overlapping, leave not counting — and later a syntheti
 roster with a deliberate hole, to prove the detector fires at all. That is what
 made the eventual zero trustworthy.
 
+**A second real file is worth more than another test.** He uploaded his own
+month-in-one-tab spreadsheet and it broke the importer three ways at once —
+weeks merged, dates lost, roles invented — none of which 60 passing tests had
+caught, because every one of them was written against Top Oil's shape. His
+framing is now §9b of CLAUDE.md:
+
+> Top Oil data is not the universal data. I am just using that data to test
+> and give the feedback and improve what is wrong.
+
+The tell was that the symptom he reported ("it is using role priority, not
+who works Mondays") was three layers downstream of the actual fault. When a
+complaint is about the solver, check what the solver was FED before checking
+what it did.
+
 **Attribute before fixing.** Half-hour finishes had an obvious suspect and a
 plausible story. Rather than edit it, `--edges` split every off-hour edge four
 ways: start or finish, inherited or manufactured, salaried or hourly. It came
