@@ -490,6 +490,8 @@ async def update_roster(
         if not (s.get("unpaid_holiday") or s.get("sick") or s.get("paid_holiday"))
     )
 
+    uncovered = compliance.uncovered_hours(shifts, shop=scope.shop)
+
     await scope.rosters.update_one({"roster_id": roster_id}, {
         "shifts": shifts,
         "labor_cost": round(labor_cost, 2),
@@ -502,6 +504,24 @@ async def update_roster(
         # first and separate in the response below, because "this change did
         # that" is a different sentence from "this was already true".
         "edit_warnings": verdict.warnings + pre_existing,
+        # Recomputed from the shifts just saved. These describe the roster,
+        # and after an edit the generator's version describes one that no
+        # longer exists — a gap filled by hand stayed on screen, and approval
+        # went on refusing it.
+        #
+        # The sentences are plainer than the solver's. It can say WHY nobody
+        # was placed (whose day off, what the shortfall was); after a manual
+        # edit that reasoning is stale too, and guessing at a new one would be
+        # inventing a cause. The hour is the fact worth keeping.
+        "gaps": [
+            {**gap, "required": 1, "actual": 0, "severity": "uncovered"}
+            for gap in uncovered
+        ],
+        "critical_issues": [
+            f"CRITICAL: {gap['day']} {gap['window']} has NO coverage — "
+            f"the shop would be left unattended."
+            for gap in uncovered
+        ],
         "updated_at": _now(),
     })
     saved = await scope.rosters.find_one({"roster_id": roster_id})
@@ -716,12 +736,25 @@ async def approve_roster(
                 "of the account authorising it.",
             )
 
-    critical = roster.get("critical_issues") or []
-    if critical and not acknowledge_gaps:
+    # RECOMPUTED, not read off the roster.
+    #
+    # `critical_issues` is what the SOLVER found when it built the week. Fill
+    # one of those gaps by hand and the stored list still names it, so
+    # approval refused a week that was actually covered — and no amount of
+    # editing could clear it, because nothing rewrites that field. Reported
+    # as a bug against exactly that: a Friday gap filled by hand, approval
+    # still insisting the shop was unattended.
+    #
+    # §5, and the audit immediately above was already doing it correctly.
+    empty = compliance.uncovered_hours(roster.get("shifts") or [], shop=scope.shop)
+    if empty and not acknowledge_gaps:
+        windows = ", ".join(f"{g['day']} {g['window']}" for g in empty[:4])
+        more = f" and {len(empty) - 4} more" if len(empty) > 4 else ""
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            f"This roster leaves the shop unattended for {len(critical)} hour(s). "
-            f"Fill the gaps, or approve again confirming you accept them.",
+            f"This roster leaves the shop unattended for {len(empty)} hour(s) "
+            f"({windows}{more}). Fill the gaps, or approve again confirming "
+            f"you accept them.",
         )
 
     superseded = await scope.rosters.find({
@@ -751,7 +784,7 @@ async def approve_roster(
         "approved_at": _now(),
         # Recorded on the roster, so a week that went out with known gaps
         # says so afterwards rather than looking like a clean approval.
-        "approved_with_gaps": len(critical) if critical else 0,
+        "approved_with_gaps": len(empty),
         "corrections": changes,
         # The number the product exists to reduce. Zero means the manager
         # approved what the solver proposed, unchanged.
@@ -782,12 +815,12 @@ async def approve_roster(
         scope.shop_id, "roster_approved",
         f"Approved {roster['version']} for week of {roster['week_start']} "
         f"({len(superseded)} draft(s) archived)"
-        + (f" — ACCEPTING {len(critical)} uncovered hour(s)" if critical else ""),
+        + (f" — ACCEPTING {len(empty)} uncovered hour(s)" if empty else ""),
     )
     return {
         "ok": True,
         "archived_drafts": len(superseded),
-        "approved_with_gaps": len(critical) if critical else 0,
+        "approved_with_gaps": len(empty),
     }
 
 

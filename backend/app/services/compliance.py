@@ -110,6 +110,68 @@ def _leave_dates(holidays: List[Dict[str, Any]]) -> Dict[str, set]:
     return blocked
 
 
+def uncovered_hours(
+    shifts: List[Dict[str, Any]],
+    *,
+    shop: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Open hours with nobody in the shop, computed from the shifts NOW.
+
+    WHY THIS IS NOT READ OFF THE ROSTER
+    -----------------------------------
+    The solver writes `critical_issues` when it builds a week, and approval
+    used to read that list back. It is a stored fact about a roster that has
+    since changed: fill the gap by hand and the list still names it, so
+    approval refuses a week that is actually covered and the manager has no
+    way to clear it. §5 — derive state, never store it. The compliance audit
+    beside this already recomputes from the shifts; this brings the coverage
+    check into line.
+
+    The SENTENCE the solver writes is still worth more, because it knows why
+    nobody could be placed — whose day off, what the capacity shortfall is.
+    That reasoning cannot be reconstructed here and is not the question being
+    asked at approval, which is only: is anybody in the shop.
+
+    Hours are counted the way the rest of the app counts them (§7d), so this
+    agrees with the solver about what "covered" means rather than inventing a
+    second answer.
+    """
+    from app.services.scheduler import _RosterBuilder
+
+    open_24h = bool((shop or {}).get("open_24h"))
+    by_day = {h.get("day"): h for h in (shop or {}).get("hours") or []}
+
+    def open_hours(day: str) -> List[int]:
+        if open_24h:
+            return list(range(24))
+        hours = by_day.get(day)
+        if not hours or hours.get("closed"):
+            return []
+        start, end = to_minutes(hours.get("open") or "00:00"), \
+            to_minutes(hours.get("close") or "00:00")
+        if end <= start:
+            return list(range(24))
+        return sorted({(m // 60) % 24 for m in range(start, end, 60)})
+
+    on_duty: Dict[tuple, int] = {}
+    for shift in _worked(shifts):
+        for pair in _RosterBuilder.hours_covered(
+            shift["day"], shift["start"], shift["end"], wrap_week=True,
+        ):
+            on_duty[pair] = on_duty.get(pair, 0) + 1
+
+    empty = []
+    for day in DAYS:
+        for hour in open_hours(day):
+            if on_duty.get((day, hour), 0) == 0:
+                empty.append({
+                    "day": day,
+                    "hour": hour,
+                    "window": f"{hour:02d}:00-{(hour + 1) % 24:02d}:00",
+                })
+    return empty
+
+
 def audit(
     shifts: List[Dict[str, Any]],
     *,

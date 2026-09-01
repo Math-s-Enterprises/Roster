@@ -1628,7 +1628,16 @@ def test_uncovered_hours_can_be_accepted_deliberately(client):
     )
     assert accepted.status_code == 200
     # Recorded, so a week that went out with known gaps says so afterwards.
-    assert accepted.json()["approved_with_gaps"] == len(roster["critical_issues"])
+    #
+    # Counted against the GAPS, not against critical_issues. That list also
+    # carries a headline — "NOT ENOUGH STAFF: this week needs 80h..." — which
+    # is a summary of the week, not an hour of it, so using its length
+    # recorded one more unattended hour than the roster actually had.
+    hours = [g for g in roster["gaps"] if g["severity"] == "uncovered"]
+    assert accepted.json()["approved_with_gaps"] == len(hours)
+    assert len(hours) < len(roster["critical_issues"]), (
+        "the headline should not be counted as an uncovered hour"
+    )
 
 
 def test_hierarchy_endpoint_surfaces_unplaced_roles(client):
@@ -2729,9 +2738,17 @@ class TestCorrectionsReport:
                 headers=auth(token),
             )
             assert saved.status_code == 200, saved.text
-            client.post(
-                f"/api/rosters/{roster['roster_id']}/approve", headers=auth(token),
+            # acknowledge_gaps because the edit above DELETES a shift, which
+            # is what leaves an hour uncovered. Approval now recomputes that
+            # from the shifts rather than reading the generator's list, so a
+            # roster edited into a gap is caught — which it was not before,
+            # and this fixture was silently failing to approve anything.
+            approved = client.post(
+                f"/api/rosters/{roster['roster_id']}/approve"
+                f"?acknowledge_gaps=true",
+                headers=auth(token),
             )
+            assert approved.status_code == 200, approved.text
         return employee_id
 
     def test_the_report_counts_what_was_changed(self, client):
@@ -2895,8 +2912,19 @@ class TestForceApproval:
         token = register(client)
         roster_id, employee_id = self._roster_with_a_six_day_week(client, token)
 
+        # acknowledge_gaps as well as force: this fixture rewrites one
+        # person's week to 09:00-17:00 six days running, which leaves the
+        # evening uncovered as a side effect. Those are two separate
+        # decisions — a password for the rules somebody is overriding, a
+        # confirmation for the hours nobody will be in the shop — and this
+        # test is about the first.
+        #
+        # It passed WITHOUT this until the gap check started recomputing.
+        # Before that it read `critical_issues` off the roster, which only
+        # the solver ever writes, so on any hand-built or hand-edited roster
+        # the check was vacuous. That was the reported bug.
         response = client.post(
-            f"/api/rosters/{roster_id}/approve",
+            f"/api/rosters/{roster_id}/approve?acknowledge_gaps=true",
             json={"force": True, "password": self.PASSWORD,
                   "reason": "Cover for a delivery"},
             headers=auth(token),
@@ -3256,3 +3284,52 @@ def test_recipients_can_be_cleared(client):
     client.put("/api/shop", json={"roster_recipients": []}, headers=auth(token))
     assert client.get("/api/shop", headers=auth(token)).json()[
         "roster_recipients"] == []
+
+
+def test_a_gap_filled_by_hand_can_then_be_approved(client):
+    """THE REPORTED BUG.
+
+    A generated week left Friday evening uncovered, correctly. The manager
+    added a shift covering it. Approval went on refusing, saying the shop
+    would be unattended — and no amount of editing could clear it, because
+    approval read `critical_issues` off the roster and only the SOLVER ever
+    writes that field. §5: derive state, never store it.
+    """
+    token = register(client, "gapfill@example.com")
+    client.post("/api/employees", json=EMPLOYEE, headers=auth(token))
+    roster = client.post(
+        "/api/roster/generate", json={"week_start": "2026-08-10"},
+        headers=auth(token),
+    ).json()
+    roster_id = roster["roster_id"]
+    assert roster["critical_issues"], "this fixture needs a genuinely gapped week"
+
+    refused = client.post(f"/api/rosters/{roster_id}/approve", headers=auth(token))
+    assert refused.status_code == 409
+
+    # Cover every hour the shop is open, by hand.
+    shop = client.get("/api/shop", headers=auth(token)).json()
+    staff = client.get("/api/employees", headers=auth(token)).json()
+    filled = [
+        {"employee_id": staff[0]["employee_id"], "day": h["day"],
+         "start": h["open"], "end": h["close"],
+         "paid_holiday": False, "unpaid_holiday": False, "sick": False}
+        for h in shop["hours"] if not h.get("closed")
+    ]
+    saved = client.put(
+        f"/api/rosters/{roster_id}", json={"shifts": filled}, headers=auth(token),
+    )
+    assert saved.status_code == 200, saved.text
+
+    # The screen must agree with approval: the gap list is recomputed too,
+    # so a filled gap stops being listed rather than lingering.
+    assert saved.json()["critical_issues"] == []
+
+    # And approval accepts it, WITHOUT being asked to acknowledge anything.
+    approved = client.post(
+        f"/api/rosters/{roster_id}/approve",
+        json={"force": True, "password": "password123"},
+        headers=auth(token),
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["approved_with_gaps"] == 0
