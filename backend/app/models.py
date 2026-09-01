@@ -136,9 +136,17 @@ class ShopUpdate(BaseModel):
     # Organisation of Working Time Act, which puts the Irish floor at 11.
     #
     # Configurable because jurisdictions differ and some shops promise more.
-    # Nothing here stops a shop setting it lower than 11 — that is a decision
-    # the owner makes and can be held to, not one the app can make for them.
-    min_rest_hours: Optional[float] = Field(None, ge=0, le=24)
+    #
+    # FLOORED AT 10. Eleven hours is the daily rest entitlement in the
+    # Organisation of Working Time Act and remains the default; the floor
+    # exists so that a shop which needs to go below it goes to ten and no
+    # further, rather than to zero. It was previously `ge=0`, which allowed
+    # the rest rule to be switched off entirely by typing a number.
+    #
+    # A roster below the statutory figure still reports every breach and
+    # still needs force approval, so the decision is recorded either way
+    # (§4b). What the app must not do is let it happen silently.
+    min_rest_hours: Optional[float] = Field(None, ge=10, le=24)
     # Manual row order for the roster grid and exports, as employee_ids.
     # Presentation only: it never changes who gets hours first, so grouping
     # the night staff together cannot quietly promote them. Send an empty

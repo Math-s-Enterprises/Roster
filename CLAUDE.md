@@ -23,8 +23,18 @@ These are the product. A roster that breaks one is wrong, however convenient.
 4. **Nobody exceeds their own limits** — contracted hours, weekly cap, or the
    under-16 curfew (never before 08:00 or after 19:00).
 5. **No shift longer than 12 hours** (`ABSOLUTE_MAX_SHIFT_HOURS`).
-6. **At least 11 hours between shifts** (`MIN_REST_HOURS`) — the daily rest
-   entitlement in the Organisation of Working Time Act.
+6. **At least `min_rest_hours` between shifts**, defaulting to 11
+   (`MIN_REST_HOURS`) — the daily rest entitlement in the Organisation of
+   Working Time Act. Per shop, and **floored at 10** in `models.py`: a shop
+   that needs to go below the statutory figure goes to ten and no further,
+   rather than switching the rule off by typing a number. A roster under the
+   shop's own figure still reports every breach and still needs force
+   approval, so the decision is recorded either way (§4b).
+
+   **Every check must read the shop's figure, not the constant.** The solver
+   did and `compliance.py` and `roster_validation.py` did not, so a manager
+   who set 10 watched the caution keep saying 11 and reasonably concluded the
+   page was stale. Two switches that can disagree is one too many (§11).
 7. **Nobody works more than 5 days a week** (`MAX_WORKING_DAYS`), so everyone
    gets two off.
 

@@ -66,13 +66,21 @@ def _week_span(day: str, start: str, end: str) -> Optional[tuple]:
 
 
 def _rest_breach(
-    shift: Dict[str, Any], others: List[Dict[str, Any]], employee_id: str
+    shift: Dict[str, Any], others: List[Dict[str, Any]], employee_id: str,
+    min_rest: float = MIN_REST_HOURS,
 ) -> Optional[float]:
-    """Hours of rest around this shift, if any neighbour leaves too few."""
+    """Hours of rest around this shift, if any neighbour leaves too few.
+
+    `min_rest` is the SHOP's figure. It used to be the module constant, so
+    the solver built to the shop's setting while this warned against a
+    hardcoded 11 — a manager who changed the setting watched the caution stay
+    put and reasonably concluded the page needed refreshing (§11: two
+    switches that can disagree is one too many).
+    """
     mine = _week_span(shift.get("day"), shift.get("start"), shift.get("end"))
     if not mine:
         return None
-    required = MIN_REST_HOURS * 60
+    required = min_rest * 60
 
     for other in others:
         if other.get("employee_id") != employee_id or _is_leave(other):
@@ -154,6 +162,7 @@ def validate_shifts(
 
     breaks_paid = shop_breaks_paid(shop)
     max_days = int((shop or {}).get("max_working_days") or MAX_WORKING_DAYS)
+    min_rest = float((shop or {}).get("min_rest_hours") or MIN_REST_HOURS)
     days_worked: Dict[str, Set[str]] = {}
     seen: Set[tuple] = set()
     worked: Dict[str, float] = {}    # paid hours — an hourly ceiling
@@ -216,11 +225,14 @@ def validate_shifts(
         # Eleven consecutive hours off between shifts. Measured across days
         # in real time: a night finishing 07:00 Tuesday and a 17:00 Tuesday
         # start is a ten-hour turnaround, not a thirty-four hour one.
-        rest = _rest_breach(shift, [s for s in shifts if s is not shift], employee_id)
+        rest = _rest_breach(
+            shift, [s for s in shifts if s is not shift], employee_id,
+            min_rest,
+        )
         if rest is not None:
             verdict.blocking.append(
                 f"{name} would get only {rest:.1f}h rest around their {day} "
-                f"shift — {MIN_REST_HOURS:g}h is required between shifts."
+                f"shift — {min_rest:g}h is required between shifts."
             )
             continue
 

@@ -191,6 +191,18 @@ def audit(
     blocked = _leave_dates(holidays or [])
     max_days = int((shop or {}).get("max_working_days") or MAX_WORKING_DAYS)
     breaks_paid = bool((shop or {}).get("breaks_are_paid"))
+    # THE SHOP'S SETTING, not the module constant.
+    #
+    # `max_working_days` and `breaks_are_paid` were already read from the
+    # shop here; the rest gap was not, so `scheduler.py` built rosters to the
+    # shop's figure while this warned against a hardcoded 11. A manager who
+    # changed the setting saw the caution stay put for ever and reasonably
+    # concluded the page needed refreshing. Two switches that can disagree is
+    # one too many (§11).
+    #
+    # 11 hours is the figure in the Organisation of Working Time Act; the
+    # model floors the setting at 10 so a shop cannot quietly go lower still.
+    min_rest = float((shop or {}).get("min_rest_hours") or MIN_REST_HOURS)
 
     try:
         monday = datetime.strptime(week_start, "%Y-%m-%d").date()
@@ -312,11 +324,11 @@ def audit(
             # A gap under an hour is a break in one long stint, not a
             # turnaround: a split shift is ordinary in retail and the rest rule
             # is not about it.
-            if 1.0 <= rest < MIN_REST_HOURS:
+            if 1.0 <= rest < min_rest:
                 add(employee, "rest_gap",
                     f"{name} finishes {earlier['end']} on {earlier['day']} and "
                     f"starts {later['start']} on {later['day']} — {rest:.1f}h "
-                    f"off, under the {MIN_REST_HOURS:.0f}h between shifts.")
+                    f"off, under the {min_rest:g}h between shifts.")
 
     # Hard breaches first, then by person: whoever reads this should meet the
     # thing they cannot override before the things they can.

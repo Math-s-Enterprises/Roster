@@ -191,3 +191,61 @@ class TestLeaveExplainsShortHours:
         breaches = audit(shifts, shop=SHOP, employees=self._salaried(),
                          week_start=WEEK)
         assert any(b["rule"] == "days_worked" for b in breaches)
+
+
+class TestTheRestGapFollowsTheShopSetting:
+    """`min_rest_hours` is a shop setting, and the warning has to use it.
+
+    Reported: the manager set it to 10, went back to the roster, and the
+    caution still said 11. He assumed the page was stale and asked for a
+    refresh button. It was not stale — `scheduler.py` read the shop's figure
+    while this module and `roster_validation` both compared against a
+    hardcoded constant, so the warning would never have changed however many
+    times he reloaded. Two switches that can disagree is one too many (§11).
+    """
+
+    def _ten_hour_turnaround(self):
+        return [
+            {"employee_id": "e1", "day": "mon", "start": "12:00", "end": "22:00"},
+            {"employee_id": "e1", "day": "tue", "start": "08:00", "end": "16:00"},
+        ]
+
+    def test_a_ten_hour_gap_is_a_breach_at_the_default(self):
+        breaches = audit(self._ten_hour_turnaround(), shop=SHOP,
+                         employees=_team(), week_start=WEEK)
+        assert any(b["rule"] == "rest_gap" for b in breaches), (
+            "ten hours is under the statutory eleven and must be reported"
+        )
+
+    def test_the_same_gap_is_allowed_when_the_shop_sets_ten(self):
+        shop = {**SHOP, "min_rest_hours": 10}
+        breaches = audit(self._ten_hour_turnaround(), shop=shop,
+                         employees=_team(), week_start=WEEK)
+        assert not any(b["rule"] == "rest_gap" for b in breaches), (
+            "the shop's own setting was ignored — this is the bug that read "
+            "as a stale page"
+        )
+
+    def test_a_shop_may_ask_for_more_rest_than_the_law(self):
+        """The setting is not only a way down. A shop that promises twelve
+        hours should be warned at eleven."""
+        shop = {**SHOP, "min_rest_hours": 12}
+        shifts = [
+            {"employee_id": "e1", "day": "mon", "start": "12:00", "end": "22:00"},
+            {"employee_id": "e1", "day": "tue", "start": "09:00", "end": "17:00"},
+        ]
+        breaches = audit(shifts, shop=shop, employees=_team(), week_start=WEEK)
+        assert any(b["rule"] == "rest_gap" for b in breaches)
+
+    def test_the_message_quotes_the_shop_figure_not_the_constant(self):
+        shop = {**SHOP, "min_rest_hours": 12}
+        shifts = [
+            {"employee_id": "e1", "day": "mon", "start": "12:00", "end": "22:00"},
+            {"employee_id": "e1", "day": "tue", "start": "09:00", "end": "17:00"},
+        ]
+        breach = next(b for b in audit(shifts, shop=shop, employees=_team(),
+                                       week_start=WEEK)
+                      if b["rule"] == "rest_gap")
+        assert "12h" in breach["message"], (
+            f"the message still quotes a hardcoded figure: {breach['message']}"
+        )

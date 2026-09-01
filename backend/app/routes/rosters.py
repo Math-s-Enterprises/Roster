@@ -342,6 +342,35 @@ async def get_roster(roster_id: str, scope: ShopScope = CurrentScope):
     roster = await scope.rosters.find_one({"roster_id": roster_id})
     if not roster:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Roster not found")
+
+    # COVERAGE IS DERIVED ON READ, NOT SERVED FROM WHENEVER IT WAS STORED.
+    #
+    # `gaps` and `critical_issues` describe the shifts against the shop's
+    # OPENING HOURS. Both were written when the roster was generated or last
+    # edited, so changing the hours afterwards left them describing a shop
+    # that no longer exists — and the only way to clear them was to edit the
+    # roster into rewriting them, which is what a "refresh" button would
+    # have papered over.
+    #
+    # §5: a stored flag starts lying the moment the data behind it changes.
+    # This costs one pass over the week's shifts per read and is always true.
+    #
+    # Not written back. A GET that quietly rewrites the document it was asked
+    # for turns a page load into an edit, and `updated_at` would then move
+    # every time somebody looked at the week.
+    uncovered = compliance.uncovered_hours(
+        roster.get("shifts") or [], shop=scope.shop)
+    roster = dict(roster)
+    roster["gaps"] = [
+        {**gap, "required": 1, "actual": 0, "severity": "uncovered"}
+        for gap in uncovered
+    ]
+    roster["critical_issues"] = [
+        f"CRITICAL: {run['day']} {run['window']} has NO coverage"
+        + (f" ({run['hours']} hours)" if run["hours"] > 1 else "")
+        + " — the shop would be left unattended."
+        for run in collapse_hour_runs(uncovered)
+    ]
     return roster
 
 
