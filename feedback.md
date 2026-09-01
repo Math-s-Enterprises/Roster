@@ -104,6 +104,39 @@ slot already has a shift", which is true and useless — two people trading
 shifts is the commonest reason to drag at all. Same instinct as §4b: refusing
 is rarely the right answer to a manager who knows what they want.
 
+**He knows his staff, and that beats my model every time.** In one session he
+corrected four of my "findings" out of existence with facts the app already
+held but was not using:
+
+| I reported | He said | Where the app already knew |
+|---|---|---|
+| Teja 56.6h/week | — | duplicate week; `latest_per_week` |
+| Everyone under their hours | six of them left months ago | `is_active` |
+| Aneesh under by 8.8h | *"he changed his availability to Saturday and Sunday only… he might end up getting 16 or 17 hours. That's okay, that's how it works."* | availability rules |
+| Emma and Jamie badly under | *"Emma was on holiday and Jamie was also on holiday"* | the holidays collection |
+| Megan and John stealing each other's shifts | *"both of them work 6 to 4"* | `SlotHistory`'s own docstring |
+| Emma stealing John's Friday 06:00 | *"Emma usually works on Friday at 6 a.m."* | same |
+
+**Ask him before building.** Each of those was a question he could answer in
+one line and I could not answer at all. A shortfall and a resignation are
+indistinguishable from inside the data.
+
+**"Top Oil data is not the universal data" — he has now said this three
+times.** Once about the importer, once mid-session unprompted, and once more
+after I proposed a fix. Every time he was right and every time it was because I
+had started designing from one shop's symptom. The swap pass was built from a
+gap that a corrupt import invented; deleting it was the direct consequence of
+taking him seriously. **Treat the reference shop as a fixture that can be
+wrong, not as the specification** (CLAUDE.md §9b, §10b).
+
+**He asks the deflating question at exactly the right moment.** *"Do I have to
+do these changes for my product to work?"* after I had laid out three
+increasingly large options. The answer was no, and I should have led with it.
+He also asked *"do I need AI because it decides whether it can swap or no?"* —
+which correctly identified that I was reaching for machinery where arithmetic
+would do. **When he asks whether something is necessary, he has usually already
+noticed it is not.**
+
 ---
 
 ## 3. My recurring failure modes
@@ -229,9 +262,87 @@ current and the cause was in the logic. He restarted everything twice on my
 say-so. **Build the check instead of guessing** (`ml/check_live_code.py` now
 answers it in one command).
 
+**I check that the arithmetic is right without checking that the POPULATION
+can give an honest answer.** This is the single most expensive habit I have,
+and it cost most of one session in four separate forms:
+
+- **Duplicate weeks.** Reported Teja averaging 56.6h — above his 40h cap and
+  above the 48h legal limit. A week with two approved rosters had both counted.
+  `demand.py`, `slot_owners.py`, `corrections.py` and `learning.py` all dedupe
+  through `latest_per_week`; my diagnostic did not.
+- **Leakage.** Solved an already-approved week to grade the solver against it.
+  `_weighted_weeks` skips only `age < 0`, so the target week itself carries
+  full weight — I asked it to reproduce something it had memorised and took
+  the perfect result as evidence. *He* spotted this, not me.
+- **A model I had only half read.** Reported eight shifts as stolen from their
+  owners. `owner_of` returns ONE person; a shape that runs twice has two
+  regulars, and `SlotHistory`'s own docstring says so in the very case he
+  raised (Megan and John both on 06:00–16:00). My script had only ever met
+  slots that run once a day.
+- **Leavers.** "Everybody is under their hours" was six people who had left
+  months earlier and were still marked active.
+
+Every one of these produced a confident, plausible, wrong number. **Before
+running a measurement, write down what a non-zero answer would look like AND
+what would make the population unable to produce one.** Implausible outputs —
+56.6h, a perfect score, eight simultaneous bugs — are almost always the
+measurement, not the system.
+
+**A test that a value is non-zero is not a test that it DISCRIMINATES.** I
+built an hours-need ranking term, wrote nine passing tests, and it changed not
+one hour of the roster. `hours_aim` was populated, `_hours_need` returned a
+plausible negative number, everything was green — and it returned the SAME
+number for everyone, because I had copied `_contract_need`'s `-min(shortfall,
+span)` without thinking about what it needed to express. Early in a week
+everybody is short by more than one shift, so everybody tied. **Anything whose
+job is to ORDER things needs a test that two different inputs give two
+different outputs.** A constant passes every other kind of test.
+
+**Local rules cannot fix global properties.** The same hours term failed again
+even once it discriminated, and the reason is structural: a per-slot tie-break
+answers "who takes THIS shift", while "Jane should finish the week near 28.8h"
+is a property of all forty slots together. No ordering rule inside a greedy
+per-slot loop can express it. Ranking it higher does not fix the mismatch, it
+just makes it steal settled shifts. **Before adding a term to a sort, ask
+whether the thing being fixed is local to that decision.**
+
+**I mixed two shops in one summary table and frightened him.** Listed an ILS
+finding (Teja, 56.6h) in a table about Top Oil with no column for which shop
+each row came from. He read it as a tenant-isolation leak, which is the most
+serious class of bug this product can have. The data was fine — every query
+filters on `shop_id` — but the presentation was not. **Two shops in one
+session means every number carries its shop's name.**
+
 ---
 
 ## 4. What worked — keep doing
+
+**Set the keep/delete criterion BEFORE running the measurement, then honour
+it.** Twice in one session this deleted work I had just finished:
+
+- **The swap pass** (338 lines, 26 tests, all green) — built to fill a Friday
+  that came out empty. The criterion was "keep only if uncovered hours fall".
+  Once a corrupt import week was unapproved, the gap disappeared and the pass
+  never fired on any week. Deleted.
+- **The hours-need ranking term** — built to even out hourly staff. The
+  criterion was "keep only if fewer than 11 of 18 are off their aim". It
+  changed not one hour, twice, for two different reasons. Deleted.
+
+Neither deletion was a wasted session: the swap pass work found the corrupt
+week, and the hours work produced four diagnostics and the structural insight
+that a per-slot sort cannot fix a whole-week property. **Stating the bar first
+is what makes it possible to walk away from something that already works and
+looks reasonable.** Writing it down after the fact never survives contact with
+having built the thing.
+
+**Sabotage every test, including the ones that pass.** Three of four sabotages
+failed correctly; the fourth — the guard against repeating the
+`scheduler.py:1738` bug — stayed green when I deliberately moved the term up
+the sort. It used an OWNED slot, where rank 0 wins regardless, so it could
+never have caught the thing it was named after. The replacement uses a slot at
+58% ownership, just under the bar, where the ordering actually decides.
+**A test named after a bug is not a test for that bug until you have seen it
+fail.**
 
 **Build the diagnostic instead of theorising.** The Emma question went through
 four wrong explanations from me — stale code, ownership ranking, apportionment
@@ -430,6 +541,88 @@ over-counted hours 25/week → 12.75 against the manager’s own 12. Making
 `hours_covered` strict (option A) is the only remaining source and would
 re-base learning and solving together. See CLAUDE.md §7d.
 
+**Two features built and deleted, on stated criteria.** `_swap_to_unlock` (fill
+an empty day by freeing somebody from an earlier shift) and `_hours_need` (an
+hours-distribution term in the rank tuple). Both worked, both were tested, both
+changed nothing measurable. See §4. Do not rebuild either without new evidence
+— and if a second shop reports "somebody could have covered that day", start by
+running `find_corrupt_weeks.py`, because that is what the first report turned
+out to be.
+
+**The third attempt at hours distribution was KEPT** — see below. The pattern
+across all three is the lesson: two local mechanisms aimed at a global
+property did nothing at all, and the one that worked reads every person's
+weekly total and moves shifts between them.
+
+**The hours-distribution question is now ANSWERED — third attempt, kept.**
+`_rebalance_hours` (CLAUDE.md §2f) runs after the fill and moves unowned
+shifts from people above their usual week to people below it. Total distance
+from usual 68.4h → 50.6h; worst case −15.8h → −8.8h; nobody left above their
+usual. The COUNT of people more than 2h off did not move, which was the bar I
+set, and I caught myself arguing past it — so the keep/delete call went to
+him and he said keep.
+
+Three things that only worked on the third try, and are the transferable part:
+
+- **The target must be a WINDOW, not a decayed average.** An average lags
+  anybody whose hours are changing, which is precisely who a fair share-out
+  is for. He spotted this: *"maybe in the last few weeks jane is working 30
+  to 34 hours a week."* She was, and my figure said 28.5.
+- **The mechanism must be GLOBAL.** Two attempts inside the per-slot sort
+  changed literally nothing. A sort answers "who takes this shift"; the
+  target is a property of the whole week.
+- **"Strictly fairer" is not enough on its own.** Total distance falling
+  permitted stripping 16h off somebody 10h over. Roisín went +9.8 → −6.2
+  before the "never push the donor below their own usual" rule existed.
+
+His question *"will our hours be reduced and lost, or will Jane keep her
+hours?"* found a guarantee nobody had written down: the pass MOVES work and
+never deletes it. Now three tests.
+
+**The earlier record of this, for context.**
+On the 25-person shop, hourly staff come out spread around what they normally
+work — Jane 13h against 28.8h, Roisín 31h against 21.2h — while the week is the
+right size (+2%) and every displacement of an owner is lawful. Three ways to
+address it, none built:
+
+1. **Report it, do not solve it** — show "Jane 13h, usually 28.8h" beside the
+   roster. No solver change, cannot produce a wrong roster.
+2. **A balancing pass after the fill**, moving unowned shifts from people above
+   their aim to people below. Global, so it CAN work — but it is the swap
+   pass's shape, and that earned nothing.
+3. **Replace greedy per-slot assignment with real matching.** Correct, and a
+   rewrite of the solver's core.
+
+**Measure whether it is a problem first.** "Aim" is a construct I invented and
+never validated against what the manager actually corrects. `measure_edit_
+burden.py` answers it from real corrections. If managers approve these weeks
+untouched, the misallocation is mine, not theirs.
+
+**New diagnostics, all shop-agnostic:**
+
+- `why_empty.py` — why nobody could be placed on a day, in the solver's own
+  words, including the silent rejections `_is_eligible` never states and the
+  leave cases that never reach it at all
+- `check_hours_vs_history.py` — recency-weighted usual hours vs generated,
+  split salaried/hourly, bounded by availability and booked leave, with
+  suspected leavers separated and a "is the week the right SIZE" verdict that
+  distinguishes a demand problem from a distribution one
+- `check_why_these_shifts.py` — owned vs tie-break hours, and whether any owner
+  lost a slot without a lawful reason
+- `find_corrupt_weeks.py` — approved weeks that cannot physically have
+  happened; unapproves rather than deletes, dry run by default
+
+**Two real faults found, neither fixed:**
+
+- **Leavers stay active.** Six at Top Oil, gone 10–28 weeks, still holding
+  ownership claims and still considered for every shift. `is_active` handles
+  them correctly the moment somebody sets it; nothing ever prompts the manager.
+  Small feature, affects every shop that has ever lost staff.
+- **A corrupt import week survived in the data.** The multi-week parser was
+  fixed, but the bad week it had already written stayed approved, and
+  `demand.py` believed the shop ran four times the staff it does. Everything
+  measured on that shop was wrong until it was unapproved. There is no guard.
+
 Still outstanding: **Phase 5** (re-run `measure_edit_burden.py` and prove the
 numbers moved). That is the only honest verdict on the whole session, and it
 needs several more approved weeks before it can be run.
@@ -445,10 +638,28 @@ letting him find the broken one.
 
 ## 7. Still parked, by his choice
 
-- **Resend email setup** — `RESEND_API_KEY` empty; password reset and dispatch
-  silently do nothing
 - **Billing / paywall** — disabled in two places that can disagree
-- **Docker, CI, rate limiting, error tracking, backups, GDPR paperwork**
+- **Docker, CI, rate limiting, error tracking, backups, GDPR paperwork** (DPA,
+  data export and delete). He will write the privacy policy himself before
+  hosting.
 
-He said "not now" to billing and "we will work on this later" for email. Do not
-re-raise unprompted more than once.
+**Resend email is DONE** — verified domain, dispatch working, roster PDF
+attached, boss recipients configured. Remove it from any "parked" list.
+
+He said "not now" to billing. On the §13 list generally: *"Leave this out."*
+Do not re-raise unprompted more than once. When he asked what §13 was, the
+honest answer was that it — not the solver — is what stands between this and a
+paying customer, and that remains true.
+
+**Also parked, from this session:**
+
+- The three hours-distribution options above. He asked *"do I have to do these
+  changes for my product to work?"* and the answer is no: the roster is legal,
+  fully covered, respects settled shifts, honours contracts, and is within 2%
+  of a normal week.
+- `strict_days_off` as a per-shop setting. He chose it, I never built it. The
+  field exists in `models.py` and the check at `scheduler.py:959` is already
+  correct — the work is only the settings API and UI, default staying `True`.
+  Worth knowing: because it defaults True everywhere, `relax_preferences`
+  currently cannot reach the day-off check at all, so that branch is dead in
+  practice despite the comment describing it as live.

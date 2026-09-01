@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.services import availability as avail
 from app.services import hierarchy
+from app.services import hours_target
 from app.services import slot_owners
 
 DAYS: Tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -562,6 +563,16 @@ class _RosterBuilder:
         # at least two off. Configurable, because a shop may run a different
         # pattern, but five is the rule until told otherwise.
         self.max_working_days = int(shop.get("max_working_days") or MAX_WORKING_DAYS)
+
+        # What a normal week currently looks like for each hourly employee.
+        # Built last, because it needs the caps, the bands, the day limit and
+        # the leave index above it.
+        #
+        # Derived every solve, never stored (§5): a cached copy would keep
+        # describing somebody's old pattern after they changed it, which is
+        # the exact failure this is meant to fix.
+        self.hours_aim: Dict[str, float] = self._build_hours_aim(
+            history_rosters)
 
         self.result = SolveResult()
         self.hours_used: Dict[str, float] = {e["employee_id"]: 0.0 for e in employees}
@@ -1191,6 +1202,267 @@ class _RosterBuilder:
             self.on_duty[covered_day][hour] += 1
             if role:
                 self.role_on_duty[covered_day][role][hour] += 1
+
+    def _build_hours_aim(self, history_rosters) -> Dict[str, float]:
+        """What each hourly person could reasonably be given this week.
+
+        The smallest of four, because any one alone is wrong:
+
+          * what they have been working lately — the median of the last
+            `TREND_WEEKS` weeks they appear in (`hours_target`)
+          * what their availability can physically hold — somebody who has
+            dropped to weekends cannot be given a full week, and their
+            availability says so the moment it is entered, without waiting
+            eight weeks for the trend to catch up
+          * leave booked in THIS week — three days off cannot be worked, and
+            aiming at a full week would push their hours onto days they are
+            not there
+          * their weekly cap, which for a student differs between term time
+            and their summer break
+
+        Salaried staff are absent from this entirely: their band is a promise
+        the shop pays either way, and `_contract_need` already expresses it.
+        """
+        usual = hours_target.usual_hours(
+            history_rosters or [], self.week_start,
+            breaks_paid=self.breaks_paid,
+        )
+        aim: Dict[str, float] = {}
+        for employee in self.employees:
+            employee_id = employee["employee_id"]
+            if employee_id not in usual or self.span_bands.get(employee_id):
+                continue
+            if not avail.is_active(employee):
+                continue
+            best = []
+            for day in DAYS:
+                if self.date_for_day.get(day) in self.employee_off_dates.get(
+                    employee_id, set()
+                ):
+                    continue
+                options = [
+                    paid_hours(start, end, breaks_paid=self.breaks_paid)
+                    for start, end in self._shapes_for_aim(day)
+                    if avail.check_availability(
+                        employee, day, start, end).allowed
+                    and not violates_minor_curfew(employee, start, end)
+                ]
+                best.append(max(options) if options else 0.0)
+            ceiling = sum(sorted(best, reverse=True)[:self.max_working_days])
+            aim[employee_id] = min(
+                usual[employee_id],
+                ceiling,
+                self.hour_caps.get(employee_id, usual[employee_id]),
+            )
+        return aim
+
+    def _shapes_for_aim(self, day: str) -> List[Tuple[str, str]]:
+        """The shift shapes this shop runs on a day, for sizing the aim."""
+        if self.demand is None:
+            return []
+        return [tuple(slot) for slot in self.demand.slots_for(day)]
+
+    def _unrecord_shift(self, shift: Dict[str, Any]) -> None:
+        """The exact inverse of `_record_shift`, for undoing a trial move.
+
+        Every counter `_record_shift` touches is reversed here, and that
+        pairing is the whole safety of the rebalance pass: a counter left
+        un-reversed does not fail loudly, it quietly inflates somebody's hours
+        for the rest of the week and the roster comes out wrong somewhere
+        else entirely.
+
+        `test_recording_then_unrecording_a_shift_leaves_no_trace` keeps the
+        two in step — it fails the moment `_record_shift` starts tracking
+        something this does not give back.
+        """
+        employee_id = shift["employee_id"]
+        day, start, end = shift["day"], shift["start"], shift["end"]
+        span = shift_duration_minutes(start, end) / 60
+
+        self.result.shifts.remove(shift)
+        self.hours_used[employee_id] -= paid_hours(
+            start, end, breaks_paid=self.breaks_paid)
+        self.span_used[employee_id] -= span
+
+        # Only give the day back if nothing else of theirs remains on it: two
+        # shifts in a day is a split shift, which is ordinary in retail (§8).
+        if not any(
+            s["employee_id"] == employee_id and s["day"] == day
+            for s in self.result.shifts
+        ):
+            self.days_worked.get(employee_id, set()).discard(day)
+            self.assigned_by_day.get(day, set()).discard(employee_id)
+
+        role = self.employees_by_id.get(employee_id, {}).get("role") or ""
+        for covered_day, hour in self.hours_covered(
+            day, start, end, wrap_week=self.wrap_week
+        ):
+            self.on_duty[covered_day][hour] -= 1
+            if role:
+                self.role_on_duty[covered_day][role][hour] -= 1
+
+    # -- rebalancing hours ------------------------------------------------
+    def _rebalance_hours(self) -> None:
+        """Even out hourly staff against the hours they are currently working.
+
+        WHY THIS IS A PASS AND NOT A SORT KEY
+        -------------------------------------
+        Two attempts to do this inside the per-slot ranking changed nothing at
+        all, and could not have: the sort answers "who takes THIS shift",
+        while "Jane should finish the week near 32 hours" is a property of all
+        forty shifts together. A local rule cannot express a global target.
+        Ranked high enough to bite, it stops being a fair share-out and starts
+        taking settled shifts off the people who always work them.
+
+        So the week is built exactly as before, and only then are the totals
+        compared. By this point coverage, contracts and the demand shape are
+        all settled, and what is left is genuinely a question of who holds
+        which of the shifts nobody has a claim on.
+
+        WHAT IT WILL NOT DO
+        -------------------
+        Move an OWNED shift (§2b), a pin, an extra, a fixed shift or a locked
+        one. Break any rule — both people go back through `_is_eligible` and
+        the whole move is rolled back on any failure, so coverage, rest,
+        curfew, caps and the five-day limit are all exactly as before.
+        Change anything at all unless it makes the week measurably fairer.
+
+        Skipped entirely during a single-day rebalance: the manager asked
+        about Wednesday, and quietly reshaping Monday to even out a total is
+        not an answer to that (§2e).
+        """
+        if self.only_day is not None or not self.hours_aim:
+            return
+
+        # Bounded, and each move must strictly improve the total, so this
+        # cannot oscillate between two people forever.
+        for _ in range(self._MAX_REBALANCE_MOVES):
+            if not self._one_rebalance_move():
+                return
+
+    _MAX_REBALANCE_MOVES = 40
+
+    # How far off their usual week somebody has to be before it is worth
+    # moving a shift. Below this the roster is being churned to chase
+    # rounding, and every moved shift is a line the manager has to read.
+    _REBALANCE_TOLERANCE_HOURS = 2.0
+
+    def _one_rebalance_move(self) -> bool:
+        """Find and apply the single best move. True if anything changed."""
+        gap = {
+            employee_id: self.hours_used.get(employee_id, 0.0) - aim
+            for employee_id, aim in self.hours_aim.items()
+        }
+        over = sorted(
+            (e for e, d in gap.items() if d > self._REBALANCE_TOLERANCE_HOURS),
+            key=lambda e: (-gap[e], e),
+        )
+        under = sorted(
+            (e for e, d in gap.items() if d < -self._REBALANCE_TOLERANCE_HOURS),
+            key=lambda e: (gap[e], e),
+        )
+        if not over or not under:
+            return False
+
+        for receiver_id in under:
+            receiver = self.employees_by_id.get(receiver_id)
+            if not receiver:
+                continue
+            for donor_id in over:
+                for shift in self._rebalanceable_shifts(donor_id):
+                    hours = paid_hours(
+                        shift["start"], shift["end"],
+                        breaks_paid=self.breaks_paid)
+                    # Strictly fairer, or it does not happen. Moving a
+                    # 10-hour shift to somebody 2 hours short just moves the
+                    # unfairness onto the other person.
+                    before = abs(gap[donor_id]) + abs(gap[receiver_id])
+                    after = (abs(gap[donor_id] - hours)
+                             + abs(gap[receiver_id] + hours))
+                    if after >= before:
+                        continue
+
+                    # AND the donor must not be pushed below their own usual
+                    # week. Total distance falling is not enough on its own:
+                    # taking 16 hours off somebody who was 10 hours over
+                    # improves the total while leaving them 6 hours short,
+                    # which is the same complaint from the other direction.
+                    # Measured at the reference shop, Roisín went from +9.8h
+                    # to -6.2h in exactly this way.
+                    if gap[donor_id] - hours < 0:
+                        continue
+                    if self._try_move_shift(shift, receiver):
+                        return True
+        return False
+
+    def _rebalanceable_shifts(self, employee_id: str) -> List[Dict[str, Any]]:
+        """This person's shifts that nobody has a claim on, longest first.
+
+        Longest first because it closes the gap in fewest moves, and every
+        move is a change the manager has to recognise.
+        """
+        movable = [
+            s for s in self.result.shifts
+            if s["employee_id"] == employee_id
+            and not s.get("pinned")
+            and not s.get("extra")
+            and not s.get("fixed")
+            and not s.get("paid_holiday")
+            and not s.get("unpaid_holiday")
+            and not s.get("sick")
+            # A settled shift is not spare capacity. This is the rule the
+            # whole ownership design exists to protect (§2b), and the reason
+            # the earlier ranking attempt had to sit below it.
+            and slot_owners.owner_of(
+                self.slot_owners, s["day"], s["start"], s["end"]) != employee_id
+        ]
+        return sorted(
+            movable,
+            key=lambda s: (
+                -paid_hours(s["start"], s["end"], breaks_paid=self.breaks_paid),
+                s["day"], s["start"],
+            ),
+        )
+
+    def _try_move_shift(
+        self, shift: Dict[str, Any], receiver: Dict[str, Any]
+    ) -> bool:
+        """Hand one shift to somebody else, or leave everything untouched.
+
+        Eligibility is judged against the week as it stands, and the move
+        changes that week, so the receiver is checked AFTER the donor's shift
+        is lifted — otherwise their own hours count against them and a
+        straight swap of one shift for another looks impossible.
+        """
+        day = shift["day"]
+        date_iso = self.date_for_day[day]
+        hours = self.hours_by_day.get(day) or {}
+        open_m = to_minutes(hours.get("open") or "00:00")
+        close_m = to_minutes(hours.get("close") or "23:59")
+        segment = Segment(start=shift["start"], end=shift["end"])
+        donor_id = shift["employee_id"]
+
+        self._unrecord_shift(shift)
+        assigned = self.assigned_by_day.setdefault(day, set())
+
+        if not self._is_eligible(
+            receiver, segment, day, date_iso, assigned,
+            open_m, close_m, relax_preferences=True,
+        ):
+            self._record_shift(donor_id, day, shift["start"], shift["end"])
+            assigned.add(donor_id)
+            return False
+
+        self._record_shift(
+            receiver["employee_id"], day, shift["start"], shift["end"])
+        assigned.add(receiver["employee_id"])
+        self.result.issues.append(
+            f"{day} {shift['start']}-{shift['end']} moved from "
+            f"{self.employees_by_id.get(donor_id, {}).get('name', donor_id)} "
+            f"to {receiver.get('name', receiver['employee_id'])} — closer to "
+            f"the hours they have each been working lately."
+        )
+        return True
 
     def _typical_paid_day(self, employee: Dict[str, Any]) -> float:
         """A normal day's pay for this person, in hours.
@@ -2452,6 +2724,16 @@ class _RosterBuilder:
             # body short — cheaper and closer to the real rota than adding a
             # whole extra person for a single hour at changeover.
             self._close_short_hours()
+
+        # Pass 2c — share the hours out against what people actually work.
+        #
+        # Last of the building passes, and deliberately so: coverage,
+        # contracts and the demand shape are all settled by here, so what is
+        # left is only the question of who holds the shifts nobody has a
+        # claim on. Running it earlier would have it arguing with passes that
+        # are answering harder questions.
+        if self.demand is not None:
+            self._rebalance_hours()
 
         # Pass 3 — report against final coverage.
         if self.demand is not None:

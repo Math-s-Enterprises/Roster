@@ -164,6 +164,68 @@ to the target day** (`only_day`), including `_top_up_contracts`,
 *short* gets quietly restaffed, and half an hour appears on somebody's Friday
 finish. The manager asked about Wednesday.
 
+## 2f. Hourly staff are evened out after the week is built, not during it
+
+A salaried contract is a promise the shop pays either way, so `_contract_need`
+pulls a full-timer up to their band. Somebody paid by the hour is promised
+nothing in particular, and `_contract_need` returns **0.0** for all of them —
+so they were perfectly tied on that term and nothing knew that one had been
+given 25 hours and another 5.
+
+Measured at the reference shop: the week was the right SIZE (+2% against a
+normal week) and 11 of 18 hourly staff were more than 2h from what they had
+been working. Jane on 13h against a recent 32; Roisín on 31h against 21. The
+volume was right and the distribution was not.
+
+**Two attempts to fix it inside the per-slot ranking changed nothing, and
+could not have.** The sort answers *"who takes this shift"*; "Jane should
+finish the week near 32 hours" is a property of all forty shifts together. A
+local rule cannot express a global target, and ranked high enough to bite it
+stops being a fair share-out and starts taking settled shifts off the people
+who always work them. Both attempts are recorded in `feedback.md`; do not
+try a third.
+
+So `_rebalance_hours` runs **after** the fill, when coverage, contracts and
+the demand shape are all settled, and what is left is only who holds the
+shifts nobody has a claim on.
+
+**The target is the median of the last `TREND_WEEKS` (8) weeks they appear
+in**, bounded by what their availability can hold, leave booked in the target
+week, and their cap.
+
+- A **window**, not a decayed average over everything. The average always lags
+  anybody who is CHANGING, which is exactly who this is for: Jane climbing
+  from 14h to 34h read as 28.5h, and Aneesh dropping to weekends kept
+  reading as full weeks.
+- The **median**, so covering one holiday at 40 hours does not quietly become
+  somebody's new baseline for two months.
+- **Availability bounds it immediately.** Somebody who has just dropped to
+  weekends cannot be given a full week, and their availability says so the
+  moment it is entered rather than after eight weeks of evidence.
+
+Four rules the pass never breaks:
+
+1. **It moves work, it never deletes it.** Nothing happens unless somebody is
+   below their usual week to receive it, and a refused move puts the shift
+   straight back. Somebody over their hours with nobody able to take them
+   KEEPS them — the shop needs those shifts, and dropping one to tidy a total
+   would leave an hour unstaffed.
+2. **Never an owned shift** (§2b), a pin, an extra, a fixed or a locked one.
+3. **Every move must be strictly fairer, AND must not push the donor below
+   their own usual week.** Total distance falling is not enough on its own:
+   stripping 16 hours off somebody 10 hours over improves the total and
+   leaves them 6 short. That happened, to Roisín, before the second half of
+   this rule existed.
+4. **Skipped entirely during a single-day rebalance.** The manager asked about
+   Wednesday; quietly reshaping Monday to even out a weekly total is not an
+   answer to that (§2e).
+
+> Honest scale of the win: total distance from usual 68.4h → 50.6h, worst case
+> −15.8h → −8.8h, nobody left above their usual. The COUNT of people more
+> than 2h off did not move (11 of 18) — a count cannot tell −15.8 from −2.6.
+> Whether that is worth a pass in the solver was a judgement call, made by the
+> shop owner, not by the measurement.
+
 ## 3. Approved weeks are locked
 
 Approving is when a roster becomes the schedule people work, **and** when it
@@ -454,6 +516,8 @@ calibrated against Top Oil South Link's 30 weeks, which is one shop:
 | `MIN_REPEATS` | 3 | `corrections.py` | judgement — untested |
 | `VARIATION_DEPTH` | 2 | `scheduler.py` | judgement — untested |
 | `FAMILIARITY_MIN_SHIFTS` | 8 | `availability.py` | Top Oil's rota |
+| `TREND_WEEKS` | 8 | `hours_target.py` | judgement — chosen by the owner |
+| `_REBALANCE_TOLERANCE_HOURS` | 2.0 | `scheduler.py` | judgement — untested |
 | import defaults | €13 / 25 / 40h | `setup_status.py` | arbitrary |
 
 What breaks, and how it will present:
