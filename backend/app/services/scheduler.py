@@ -3535,6 +3535,42 @@ class _RosterBuilder:
 
         return True
 
+    # How many consecutive short hours still count as a changeover rather
+    # than a missing shift. Two, because that is what the stretch can
+    # actually reach — a shift may grow by at most `_FIT_STEP_MINUTES * 2`
+    # measured against the shape it started with — and because §7d already
+    # calls four consecutive short hours a missing shift.
+    #
+    # Untested judgement, like the rest of §10b's table. A shop whose rota
+    # habitually runs three-hour dips would see them reported rather than
+    # closed, which is the safe direction but worth knowing.
+    _CHANGEOVER_RUN_HOURS = 2
+
+    def _changeover_hours(self, day: str) -> Set[int]:
+        """Short hours that sit in a run brief enough to stretch into.
+
+        Computed once per day, before any stretching, so that closing the
+        first hour of a run cannot make the rest of it look shorter than it
+        was and pull the pass into a hole it should have reported.
+        """
+        if self.demand is None:
+            return set()
+        short = [
+            hour for hour in self._open_hours(day)
+            if self.demand.required(day, hour) > 0
+            and 0 < self.on_duty[day][hour] < self.demand.required(day, hour)
+        ]
+        out: Set[int] = set()
+        run: List[int] = []
+        for hour in short + [None]:
+            if run and hour is not None and hour == run[-1] + 1:
+                run.append(hour)
+                continue
+            if 0 < len(run) <= self._CHANGEOVER_RUN_HOURS:
+                out.update(run)
+            run = [hour] if hour is not None else []
+        return out
+
     def _close_short_hours(self) -> None:
         """Stretch a neighbouring shift over an hour that is one body short.
 
@@ -3581,6 +3617,7 @@ class _RosterBuilder:
             if self.only_day not in (None, day):
                 continue
             previous = DAYS[(DAYS.index(day) - 1) % 7]
+            changeover = self._changeover_hours(day)
             for hour in self._open_hours(day):
                 required = self.demand.required(day, hour)
                 # ONLY AN HOUR WITH NOBODY ON IT, NOT EVERY HOUR BELOW THE
@@ -3606,13 +3643,31 @@ class _RosterBuilder:
                 # of 63.6. The week comes out 1.5% lighter and closer to the
                 # shapes he actually writes.
                 #
-                # An hour that is short but not EMPTY is reported instead, by
-                # "Against the usual" (§7c) — information the manager can act
-                # on rather than a shift quietly made longer. An hour with
-                # nobody on it is a different thing entirely: that is §1 rule
-                # 1, and stretching a neighbour is much cheaper than adding a
-                # whole shift for it.
-                if required <= 0 or self.on_duty[day][hour] > 0:
+                # A LONG run short is a missing shift; a SHORT one is a
+                # changeover.
+                #
+                # Narrowing this to empty hours only was an over-correction.
+                # It removed eighteen advisories a week, which was the point,
+                # but it also stopped the app doing the obvious cheap thing:
+                # "on Sunday there is one short for 2 hours. Why can't he
+                # extend the one who finishes at 2 by an hour, or call
+                # somebody an hour earlier?" That is exactly what a manager
+                # does with a pen, and it was right to do it.
+                #
+                # What it must NOT do is paper over a real hole. Wednesday
+                # 16:00-23:00 one short is seven hours — a whole missing
+                # evening shift, which no stretch can reach anyway (the
+                # cumulative cap is two hours) and which the manager needs to
+                # see rather than have smeared across three people's finish
+                # times. §7d already draws this line: "Four consecutive short
+                # hours is a missing shift. Leaving it short says so; hiding
+                # it inside somebody else's day does not."
+                #
+                # So: an empty hour always, a short hour only when it belongs
+                # to a run of at most _CHANGEOVER_RUN_HOURS.
+                if required <= 0:
+                    continue
+                if self.on_duty[day][hour] > 0 and hour not in changeover:
                     continue
 
                 nearby = [

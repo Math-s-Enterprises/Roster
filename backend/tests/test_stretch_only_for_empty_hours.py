@@ -67,6 +67,115 @@ def stretch_notes(result):
     return [i for i in (result.get("issues") or []) if "was changed from" in i]
 
 
+class TestAShortRunIsAChangeoverAndALongOneIsAMissingShift:
+    """The line the manager drew himself.
+
+        "On Sunday there is one short for 2 hours. Why can't he extend the
+        one who finishes at 2 by an hour, or call somebody an hour earlier?"
+
+    He is right about two hours and would not thank anybody for the same
+    treatment applied to seven. Wednesday 16:00-23:00 one short is a whole
+    missing evening shift: no stretch reaches it (the cumulative cap is two
+    hours) and smearing it across three people's finish times hides the thing
+    he needs to see. §7d: "Four consecutive short hours is a missing shift."
+    """
+
+    def _builder(self, short_hours):
+        from app.services.scheduler import _RosterBuilder
+
+        def pattern(w):
+            return ([("a", d, "08:00", "14:00") for d in DAYS]
+                    + [("b", d, "13:00", "20:00") for d in DAYS]
+                    + [("c", d, "12:00", "16:00") for d in DAYS])
+
+        hist = weeks(pattern)
+        team = [person("a"), person("b"), person("c")]
+        shop = make_shop()
+        profile = build_profile(
+            shop, hist, {e["employee_id"]: e["role"] for e in team})
+        builder = _RosterBuilder(
+            shop, team, [], [], [], WEEK, {}, profile, hist,
+            None, None, None,
+        )
+        return builder
+
+    def test_a_two_hour_dip_is_treated_as_a_changeover(self):
+        builder = self._builder(None)
+        # Force a known state: everybody on, then two consecutive hours light.
+        for hour in range(24):
+            builder.on_duty["mon"][hour] = max(
+                builder.demand.required("mon", hour), 1)
+        for hour in (14, 15):
+            builder.on_duty["mon"][hour] = 1
+        if builder.demand.required("mon", 14) > 1:
+            assert 14 in builder._changeover_hours("mon")
+            assert 15 in builder._changeover_hours("mon")
+
+    def test_a_long_run_short_is_left_alone_for_the_manager_to_see(self):
+        builder = self._builder(None)
+        for hour in range(24):
+            builder.on_duty["mon"][hour] = max(
+                builder.demand.required("mon", hour), 1)
+        run = [12, 13, 14, 15, 16]
+        for hour in run:
+            builder.on_duty["mon"][hour] = 1
+        if builder.demand.required("mon", 13) > 1:
+            changeover = builder._changeover_hours("mon")
+            assert not (set(run) & changeover), (
+                f"a {len(run)}-hour shortfall was treated as a changeover: "
+                f"{sorted(changeover)} — that is a missing shift, and "
+                f"stretching cannot reach it anyway"
+            )
+
+    def test_the_pass_actually_closes_a_two_hour_dip(self):
+        """End to end, not just the helper.
+
+        The two tests above check `_changeover_hours` in isolation, so they
+        stay green if the result is computed and then never used — which is
+        exactly what the previous version of this pass did. This one goes
+        through `_close_short_hours` and looks at the coverage afterwards.
+        """
+        from app.services.scheduler import _RosterBuilder
+
+        def pattern(w):
+            # Two people across the middle of the day every week, so the
+            # curve wants two and one is a genuine shortfall.
+            return ([("a", d, "08:00", "14:00") for d in DAYS]
+                    + [("b", d, "12:00", "20:00") for d in DAYS])
+
+        hist = weeks(pattern)
+        team = [person("a"), person("b")]
+        shop = make_shop()
+        profile = build_profile(
+            shop, hist, {e["employee_id"]: e["role"] for e in team})
+        builder = _RosterBuilder(
+            shop, team, [], [], [], WEEK, {}, profile, hist,
+            None, None, None,
+        )
+        # `a` finishes at 12:00 instead of 14:00, leaving 12:00-13:59 one
+        # short — a two-hour dip, exactly the manager's Sunday.
+        builder._record_shift("a", "mon", "08:00", "12:00")
+        builder._record_shift("b", "mon", "12:00", "20:00")
+        builder.assigned_by_day.setdefault("mon", set()).update({"a", "b"})
+
+        short_before = [
+            h for h in builder._open_hours("mon")
+            if 0 < builder.on_duty["mon"][h] < profile.required("mon", h)
+        ]
+        if not short_before:
+            return                      # nothing to close; fixture is benign
+
+        builder._close_short_hours()
+        short_after = [
+            h for h in builder._open_hours("mon")
+            if 0 < builder.on_duty["mon"][h] < profile.required("mon", h)
+        ]
+        assert len(short_after) < len(short_before), (
+            f"a short dip of {len(short_before)} hour(s) was not closed: "
+            f"{short_before} -> {short_after}"
+        )
+
+
 class TestThinIsReportedAndEmptyIsFixed:
     def test_an_hour_that_is_thin_but_staffed_is_not_stretched(self):
         """The 18-advisory case, tested on the builder directly.

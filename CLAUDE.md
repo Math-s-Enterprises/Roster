@@ -429,6 +429,27 @@ then the app is choosing a shape on the strength of the rounding:
   then 16:00, then 17:00 was being stretched an hour at a time into a four-hour
   extension nobody agreed to. Four consecutive short hours is a *missing shift* —
   leave it short and say so.
+- **A stretch only closes an EMPTY hour, or a short run of at most
+  `_CHANGEOVER_RUN_HOURS` (2).** `required(day, hour)` is a 24-week average of
+  bodies per hour; the shifts placed are a discrete list of the shop's own
+  shapes. Ten real shapes cannot reproduce an average hour by hour — measured
+  here, the shapes fall 24 hours short of the curve and run 25 hours over it,
+  the same total distributed differently. Correcting only the short side
+  inflated every week and produced eighteen advisories, each one a shift the
+  manager would not have written.
+
+  But narrowing it to empty hours alone was an over-correction, and he said so:
+  *"On Sunday there is one short for 2 hours. Why can't he extend the one who
+  finishes at 2 by an hour, or call somebody an hour earlier?"* That is a
+  changeover and closing it is right. Seven consecutive hours one short is a
+  missing evening shift — no stretch reaches it anyway, and smearing it across
+  three people's finish times hides the thing he needs to see.
+
+  The run is measured once per day, before any stretching. Nothing yet ADDS a
+  shift for a long run short of the curve: `_staff_by_slots` fills the learned
+  list and stops, `_enforce_coverage_floor` only fires at zero, and
+  `_top_up_contracts` only serves salaried staff below their band. That gap is
+  open and was hidden until the stretching stopped covering for it.
 - **A contract trim rounds down to a whole hour.** A 42.5h band is 8.5h a day
   and the half-hour used to land on the finish. Rounding down gives back half an
   hour a shift; `_top_up_contracts` makes it up, and `under_contract` reports
@@ -569,6 +590,7 @@ calibrated against Top Oil South Link's 30 weeks, which is one shop:
 | `FAMILIARITY_MIN_SHIFTS` | 8 | `availability.py` | Top Oil's rota |
 | `TREND_WEEKS` | 8 | `hours_target.py` | judgement — chosen by the owner |
 | `_REBALANCE_TOLERANCE_HOURS` | 2.0 | `scheduler.py` | judgement — untested |
+| `_CHANGEOVER_RUN_HOURS` | 2 | `scheduler.py` | judgement — untested |
 | import defaults | €13 / 25 / 40h | `setup_status.py` | arbitrary |
 
 What breaks, and how it will present:
