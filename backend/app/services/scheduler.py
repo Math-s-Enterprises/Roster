@@ -507,9 +507,22 @@ class _RosterBuilder:
         # Who normally works each shift. Built once per solve — it is asked
         # for every slot on every day.
         # Leavers keep their history but lose their claim: see build_owners.
+        #
+        # `known_shapes` lets an EXTRA count toward ownership, but only on a
+        # shape the demand profile has already settled on as a real slot. A
+        # shift the manager adds week after week eventually earns its place
+        # in `day_slots` on its own frequency, and from then on the app can
+        # learn whose it is. A one-off extra never creates an owner of a slot
+        # that does not exist — which would turn "as well as" into "instead
+        # of" (§2d).
         self.slot_owners = slot_owners.build_owners(
             history_rosters or [],
             {e["employee_id"] for e in employees if avail.is_active(e)},
+            known_shapes={
+                (day, start, end)
+                for day in DAYS
+                for start, end in (demand.slots_for(day) if demand else [])
+            } or None,
         )
 
         # Why each employee ended up with no shifts. Every active employee

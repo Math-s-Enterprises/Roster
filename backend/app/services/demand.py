@@ -452,7 +452,25 @@ def learn_demand(
             start, end = shift.get("start"), shift.get("end")
             if day not in headcount_totals or not (start and end):
                 continue
-            on_day[day].add(shift.get("employee_id", ""))
+
+            # AN EXTRA TEACHES THE SHAPE, NOT THE STAFFING LEVEL.
+            #
+            # `extra` means "this person AS WELL AS the usual cover" (§2d) —
+            # a deliberate addition for one week, not a statement that the
+            # shop needs another body on Fridays for ever. Counting it toward
+            # the headcount made every extra permanently raise the level, so
+            # a manager who added somebody once was asked for that person
+            # again every week afterwards.
+            #
+            # The SHAPE is different. If the same 17:00-21:00 is added ten
+            # weeks running, that is a shift this shop runs, and it belongs
+            # in the vocabulary — where it competes with every other shape on
+            # frequency and earns a slot or does not. So `slot_counts` still
+            # sees it while `headcount_totals`, `role_totals` and
+            # `staff_totals` do not.
+            counts_toward_level = not shift.get("extra")
+            if counts_toward_level:
+                on_day[day].add(shift.get("employee_id", ""))
 
             # Shifts worked by people who have since left still tell us how
             # many bodies the shop needed, so they count toward headcount.
@@ -463,12 +481,13 @@ def learn_demand(
             employee_id = shift.get("employee_id", "")
             role = employee_roles.get(employee_id) or shift.get("role") or ""
 
-            for hour in _hours_covered(start, end):
-                headcount_totals[day][hour] += weight
-                if role:
-                    role_totals[day][role][hour] += weight
-                else:
-                    departed_hours[day][hour] += weight
+            if counts_toward_level:
+                for hour in _hours_covered(start, end):
+                    headcount_totals[day][hour] += weight
+                    if role:
+                        role_totals[day][role][hour] += weight
+                    else:
+                        departed_hours[day][hour] += weight
 
             pattern_counts[(start, end)] += 1
             slot_counts[day][(start, end)] += weight

@@ -78,22 +78,52 @@ class SlotHistory(NamedTuple):
     weeks: int                      # weeks in which the slot ran at all
 
 
-def _is_signal(shift: Dict[str, Any]) -> bool:
-    """Leave and one-off overrides say nothing about who owns a shift."""
-    return not (
-        shift.get("sick")
-        or shift.get("temp_override")
-        or shift.get("unpaid_holiday")
-        or shift.get("paid_holiday")
-        or shift.get("extra")          # deliberately above the requirement
-    )
+def _is_signal(
+    shift: Dict[str, Any], known_shapes: Optional[Set[DaySlot]] = None
+) -> bool:
+    """Leave and one-off overrides say nothing about who owns a shift.
+
+    EXTRAS ARE A SPECIAL CASE, and the rule is "once the shape is real".
+
+    An `extra` is "this person AS WELL AS the usual cover" (§2d), so counting
+    every one of them would let somebody added four times become the OWNER of
+    a slot the shop does not run — and the solver would then place them there
+    as ordinary cover, turning "as well as" into "instead of". That is the
+    precise thing §2d exists to prevent.
+
+    But a shift added ten weeks running IS a shift this shop runs, and the
+    manager should not have to keep re-adding it while the app refuses to
+    notice whose it is. `demand.py` already settles that question: a shape
+    that recurs often enough earns a place in `day_slots` on its own
+    frequency, and extras no longer inflate the staffing level, so it has to
+    earn it honestly.
+
+    So an extra counts toward ownership only for a shape that is ALREADY a
+    real slot. `known_shapes` is that set. Passed None — as the diagnostics
+    do — extras are ignored entirely, which is the old, safe behaviour.
+    """
+    if (shift.get("sick") or shift.get("temp_override")
+            or shift.get("unpaid_holiday") or shift.get("paid_holiday")):
+        return False
+    if shift.get("extra"):
+        if known_shapes is None:
+            return False
+        return (shift.get("day"), shift.get("start"),
+                shift.get("end")) in known_shapes
+    return True
 
 
 def build_owners(
     approved_rosters: Sequence[Dict[str, Any]],
     active_ids: Optional[Set[str]] = None,
+    known_shapes: Optional[Set[DaySlot]] = None,
 ) -> Dict[DaySlot, SlotHistory]:
     """(day, start, end) -> who has worked it, and how many weeks it ran.
+
+    `known_shapes` is the set of (day, start, end) the demand profile has
+    settled on as real slots for this shop. Extras count toward ownership
+    only on those — see `_is_signal`. Omit it and extras are ignored, which
+    is the old behaviour and what the diagnostics want.
 
     One roster per week, newest wins — a duplicated week would let one week's
     staffing look like a settled habit.
@@ -118,7 +148,7 @@ def build_owners(
             continue
         week_start = roster.get("week_start")
         for shift in roster.get("shifts", []):
-            if not _is_signal(shift):
+            if not _is_signal(shift, known_shapes):
                 continue
             employee_id = shift.get("employee_id")
             day, start, end = shift.get("day"), shift.get("start"), shift.get("end")

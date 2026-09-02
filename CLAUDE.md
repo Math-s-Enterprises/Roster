@@ -162,6 +162,31 @@ The one trap: `_apply_locked_shifts` must carry `extra` back through. Laid
 down as an ordinary pin it starts cancelling a slot, turning "as well as"
 into "instead of".
 
+**What an extra teaches: the timing and who worked it, never the headcount.**
+The three learners used to disagree, and none of them did that — `demand.py`
+counted extras toward the staffing LEVEL, so adding somebody once meant the
+shop was thought to need an extra body on that day for ever, while
+`slot_owners.py` ignored extras entirely, so a shift added every week for six
+months never became anybody's.
+
+| | counts an extra? | why |
+|---|---|---|
+| `required()` staffing level | **no** | "as well as, this week" is not "we need another body every week" |
+| `staff_targets` day size | **no** | same |
+| `day_slots` shape vocabulary | **yes** | the same 17:00-21:00 ten weeks running IS a shift this shop runs |
+| ownership, who works it | **only on a real slot** | see below |
+
+Ownership is the careful one. Counting every extra would let somebody added
+four times become the OWNER of a slot the shop does not run, and the solver
+would then place them there as ordinary cover — "as well as" becoming
+"instead of" by a different route. So an extra counts toward ownership only
+for a shape that has ALREADY earned a place in `day_slots` on its own
+frequency (`build_owners(known_shapes=...)`). Because extras no longer
+inflate the level, that shape has to earn it honestly.
+
+Called without `known_shapes` — as the `ml/` diagnostics do — extras are
+ignored entirely, which is the older, safer behaviour.
+
 ## 2e. Rebalance Day re-solves one day and freezes the rest
 
 The other six days are handed in as **locked shifts** — not skipped. Locking
