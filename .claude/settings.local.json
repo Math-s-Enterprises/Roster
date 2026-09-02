@@ -62,7 +62,11 @@
       "Bash(/c/Users/anees/.claude/skills/gstack/browse/dist/browse --headed js 'JSON.stringify\\({w:innerWidth,h:innerHeight,sy:scrollY,sh:document.documentElement.scrollHeight}\\)')",
       "Bash(/c/Users/anees/.claude/skills/gstack/browse/dist/browse --headed js 'window.scrollTo\\(0,0\\)')",
       "Bash(/c/Users/anees/.claude/skills/gstack/browse/dist/browse --headed screenshot --viewport /c/Users/anees/AppData/Local/Temp/claude/errigal_vp_top.png)",
-      "Bash(/c/Users/anees/.claude/skills/gstack/browse/dist/browse --headed goto https://myjobs.indeed.com/applied)"
+      "Bash(/c/Users/anees/.claude/skills/gstack/browse/dist/browse --headed goto https://myjobs.indeed.com/applied)",
+      "Bash(python -c \"import pypdf,sys; print\\(len\\(pypdf.PdfReader\\(sys.argv[1]\\).pages\\)\\)\" \"C:/Users/anees/Downloads/Aneesh_Thimmapurmath_CV_Microchip_SoCFPGA_Embedded_v2.pdf\")",
+      "Bash(echo \"no pypdf\")",
+      "Bash(/c/Users/anees/.claude/skills/gstack/browse/dist/browse --headed status)",
+      "Bash(/c/Users/anees/.claude/skills/gstack/browse/dist/browse disconnect *)"
     ]
   }
 }

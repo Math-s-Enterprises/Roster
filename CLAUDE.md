@@ -64,9 +64,35 @@ available. `slot_owners.py`.
 Ownership is per **(day, slot)** — Emma may own Monday 06:00–16:00 without
 owning Saturday's.
 
+**A START TIME IS A CLAIM IN ITS OWN RIGHT.** Ownership keyed on the exact
+`(day, start, end)` misses the commonest real pattern there is: opening at the
+same time every week while the finish moves. Emma's Monday, from 31 approved
+weeks at the reference shop:
+
+| shape | worked | share | owns? | offered? |
+|---|---|---|---|---|
+| `06:00-16:00` | 10 of 29 | 34% | no | yes |
+| `06:00-14:00` | 2 of 26 | 8% | no | yes |
+| `06:00-12:00` | 13 of 14 | **93%** | **YES** | **NO** |
+| `06:00` any finish | 25 of 31 | **81%** | **YES** | — |
+
+She owns the short opener outright, and `day_slots` drops that shape for being
+rarer than its neighbours — so the solver never offers it. She was then left
+competing for a `06:00-16:00` she works a third of the time, lost it on the
+tie-break three rosters running, and every ownership check reported "sound".
+All of them were right: **she did not lose the slot she owns, it was never on
+the board.**
+
+So when the exact shape is UNOWNED, whoever owns the START gets rank 0.
+`regulars_of_start` in `slot_owners.py`, same 60% over 4 weeks. An exact owner
+still wins outright — a claim on the hour never ranks level with a settled
+claim on the whole shift. Familiarity has always worked this way (§2) for the
+same reason: a person is either there to open or they are not, and the finish
+is a separate question the contract and hour-fitting passes settle.
+
 The order when filling a slot:
 
-1. **the owner** — the shift is theirs
+1. **the owner** — the shift is theirs, or failing that whoever owns the start
 2. contract need — a full-timer below their band, among people with no claim
 3. whoever else actually covers it, most often first
 4. role priority, as before

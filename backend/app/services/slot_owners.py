@@ -223,6 +223,52 @@ def regulars_of(
     }
 
 
+def regulars_of_start(
+    owners: Dict[DaySlot, SlotHistory],
+    day: str,
+    start: str,
+) -> Set[str]:
+    """Everybody with a settled claim on OPENING at this time, any finish.
+
+    Ownership keyed on the exact `(day, start, end)` misses the commonest
+    real pattern there is: somebody who opens at the same time every week
+    while their finish moves. Measured at the reference shop, Emma's Monday:
+
+        06:00-16:00   worked 10 of 29   34%   no claim
+        06:00-14:00   worked  2 of 26    8%   no claim
+        06:00-12:00   worked 13 of 14   93%   HERS
+        06:00 (any)   worked 25 of 31   81%   HERS
+
+    She owns the short opener outright — and `day_slots` drops that shape for
+    being rarer than its neighbours, so the solver never offers it. She is
+    then left competing for a 06:00-16:00 she works a third of the time, and
+    loses it on the tie-break. Every ownership check reported "sound", and
+    was right: she did not lose the slot she owns, it was never on the board.
+
+    Familiarity has always worked this way (§2) for the same reason — a
+    person is either there to open or they are not, and the finish is a
+    separate question that the contract and hour-fitting passes settle.
+
+    The denominator is the weeks the START ran at all, whoever worked it, so
+    a colleague occasionally opening does not dilute the regular's claim —
+    the same reasoning as SlotHistory's `weeks`.
+    """
+    worked: Dict[str, int] = defaultdict(int)
+    weeks = 0
+    for (a_day, a_start, _end), history in owners.items():
+        if (a_day, a_start) != (day, start):
+            continue
+        weeks = max(weeks, history.weeks)
+        for employee_id, count in history.people:
+            worked[employee_id] += count
+    if weeks < MIN_OCCURRENCES:
+        return set()
+    return {
+        employee_id for employee_id, count in worked.items()
+        if min(count, weeks) / weeks >= OWNERSHIP_SHARE
+    }
+
+
 def ownership_strength(
     owners: Dict[DaySlot, SlotHistory],
     day: str,

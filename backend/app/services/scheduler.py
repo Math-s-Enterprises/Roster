@@ -2063,6 +2063,38 @@ class _RosterBuilder:
         )
         if owner and owner in available:
             ranks[owner] = 0
+        else:
+            # NOBODY OWNS THIS EXACT SHAPE — SO ASK WHO OWNS THE START.
+            #
+            # Ownership keyed on `(day, start, end)` misses the commonest
+            # real pattern: opening at the same time every week while the
+            # finish moves. Emma's Monday at the reference shop —
+            #
+            #     06:00-16:00   10 of 29   34%   no claim
+            #     06:00-14:00    2 of 26    8%   no claim
+            #     06:00-12:00   13 of 14   93%   HERS
+            #     06:00 (any)   25 of 31   81%   HERS
+            #
+            # — and `day_slots` drops the 06:00-12:00 for being rarer than
+            # its neighbours, so the shift she owns is never offered. She
+            # competed for the 06:00-16:00 she works a third of the time and
+            # lost it on the tie-break, three rosters running, while every
+            # ownership check correctly reported "sound".
+            #
+            # Only when the exact shape is UNOWNED. Somebody who owns
+            # 06:00-16:00 outright keeps it; this speaks where nothing else
+            # has a claim, which is exactly where the tie-break used to hand
+            # the opening to whoever ranked highest.
+            #
+            # The finish is not settled here. They start where they always
+            # start, on the shape the shop is running, and the contract and
+            # hour-fitting passes deal with the length — the same division of
+            # labour familiarity has always used (§2).
+            for employee_id in sorted(slot_owners.regulars_of_start(
+                self.slot_owners, day, start
+            )):
+                if employee_id in available:
+                    ranks[employee_id] = 0
 
         # The usual person may be off. Falling back to seniority would hand a
         # 06:00 opening to whoever ranks highest rather than to whoever

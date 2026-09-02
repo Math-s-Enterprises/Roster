@@ -41,6 +41,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import db                                          # noqa: E402
 from app.services import slot_owners                        # noqa: E402
+from app.services.demand import build_profile               # noqa: E402
+from app.services.scheduler import DAYS                     # noqa: E402
 from app.services.learning import latest_per_week           # noqa: E402
 
 
@@ -74,6 +76,24 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
         {"shop_id": shop["shop_id"], "approved": True}, {"_id": 0}).to_list(500)
     weeks = latest_per_week(list(approved))
 
+    # OWNING A SHAPE IS NO USE IF THE SOLVER NEVER OFFERS IT.
+    #
+    # `day_slots` is built by apportioning the shop's most COMMON shapes to a
+    # headcount target. Ownership is measured per shape. Nothing connects the
+    # two, so a shift somebody owns outright can be left out of the list for
+    # being less frequent than its neighbours — and then every ownership
+    # check reports "sound", because they did not lose a slot that was never
+    # on the board.
+    profile = build_profile(
+        shop, approved,
+        {e["employee_id"]: e.get("role", "") for e in employees},
+    )
+    offered = {
+        (day, start, end)
+        for day in DAYS
+        for start, end in (profile.slots_for(day) or [])
+    }
+
     # How often each exact shape ran at all, and how often this person was on
     # it — the same two numbers `owner_of` divides.
     ran: Dict[tuple, set] = defaultdict(set)
@@ -99,7 +119,9 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
           + (f", {day_filter} only" if day_filter else ""))
 
     print(f"\n{'=' * 72}\nBY EXACT SHAPE — this is what ownership uses\n{'=' * 72}")
-    print(f"  {'shape':26}{'they worked':>12}{'slot ran':>10}{'share':>8}  owns?")
+    print(f"  {'shape':26}{'they worked':>12}{'slot ran':>10}{'share':>8}"
+          f"  owns?  offered?")
+    stranded: list = []
     rows = sorted(
         ((k, v) for k, v in theirs.items() if v),
         key=lambda kv: (kv[0][0], kv[0][1]),
@@ -111,8 +133,14 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
         share = count / total if total else 0
         owns = (share >= slot_owners.OWNERSHIP_SHARE
                 and total >= slot_owners.MIN_OCCURRENCES)
+        on_board = (day, start, end) in offered
+        note = ""
+        if owns and not on_board:
+            note = "   <<< THEIRS, BUT NEVER OFFERED"
+            stranded.append(f"{day} {start}-{end} ({share:.0%} of {total})")
         print(f"  {day} {start}-{end:14}{count:>12}{total:>10}"
-              f"{share:>7.0%}  {'YES' if owns else 'no'}")
+              f"{share:>7.0%}  {'YES' if owns else 'no':5}"
+              f"  {'yes' if on_board else 'NO':4}{note}")
 
     # Regrouped by start time only. Familiarity already works this way (§2)
     # because a person is either there to open or they are not.
@@ -150,6 +178,22 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
               f"  {'YES' if would else 'no'}{flag}")
 
     print(f"\n{'=' * 72}\nVERDICT\n{'=' * 72}")
+    if stranded:
+        print(f"  {len(stranded)} shift(s) this person OWNS that the solver")
+        print("  never offers, because the shape is not in `day_slots`:")
+        for entry in stranded:
+            print(f"      {entry}")
+        print()
+        print("  `day_slots` picks the shop's most COMMON shapes and")
+        print("  apportions them to a headcount target. Ownership is measured")
+        print("  per shape. Nothing connects the two, so a shift somebody owns")
+        print("  outright is dropped for being less frequent than its")
+        print("  neighbours — and they are then left competing for a shape")
+        print("  they do NOT own, which they lose on the tie-break.")
+        print()
+        print("  Every ownership check reports 'sound', correctly: they did")
+        print("  not lose the slot they own. It was never on the board.")
+        print()
     if changed:
         print(f"  {len(changed)} shift(s) this person would own if ownership")
         print("  were keyed on START TIME rather than the exact shape:")
@@ -161,11 +205,11 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
         print("  tie-break, nothing is reported as displaced because nothing")
         print("  was owned, and the manager watches a settled shift change")
         print("  hands while every check says ownership is sound.")
-    else:
-        print("  Ownership by exact shape and by start time agree for this")
-        print("  person. If a shift of theirs still changed hands, the cause")
-        print("  is elsewhere — check_why_these_shifts.py names displacements")
-        print("  and their reasons.")
+    elif not stranded:
+        print("  Ownership by exact shape and by start time agree, and every")
+        print("  shape they own is offered. If a shift of theirs still")
+        print("  changed hands, the cause is elsewhere —")
+        print("  check_why_these_shifts.py names displacements and reasons.")
 
 
 def main() -> None:
