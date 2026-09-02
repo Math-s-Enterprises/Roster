@@ -25,7 +25,7 @@ import math
 import random
 import re
 import uuid
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -532,6 +532,16 @@ class _RosterBuilder:
             defaultdict(lambda: defaultdict(int))
         self._shop_finish_counts: Dict[Tuple[str, str], Dict[str, int]] = \
             defaultdict(lambda: defaultdict(int))
+        # The shifts this shop actually writes starting in each hour, and how
+        # often. Arrivals are counted per HOUR, but a slot must carry a start
+        # the shop really uses: Top Oil writes 07:30, and offering 07:00 would
+        # be a start nobody has worked, which familiarity (§2) would then have
+        # to exclude everybody from. Keyed on the hour and holding the whole
+        # (start, end) so `_shapes_for_hour` can share an hour's arrivals out
+        # over the shapes that really run in it.
+        self._shapes_by_hour: Dict[Tuple[str, int],
+                                   Dict[Tuple[str, str], int]] = \
+            defaultdict(lambda: defaultdict(int))
         for _roster in (history_rosters or []):
             for _s in _roster.get('shifts') or []:
                 if _s.get('paid_holiday') or _s.get('unpaid_holiday') \
@@ -543,6 +553,8 @@ class _RosterBuilder:
                     continue
                 self._finish_counts[(_e, _d, _st)][_en] += 1
                 self._shop_finish_counts[(_d, _st)][_en] += 1
+                self._shapes_by_hour[
+                    (_d, to_minutes(_st) // 60)][(_st, _en)] += 1
 
         # Who OPENS at each time, with the weeks each start ran. Built
         # separately because the weeks a start ran is the union across its
@@ -657,6 +669,7 @@ class _RosterBuilder:
         self.blocked_by_day: Dict[str, List[str]] = {}
 
         self.on_duty: Dict[str, List[int]] = {d: [0] * 24 for d in DAYS}
+        self.extra_on_duty: Dict[str, List[int]] = {d: [0] * 24 for d in DAYS}
         self.role_on_duty: Dict[str, Dict[str, List[int]]] = {
             d: defaultdict(lambda: [0] * 24) for d in DAYS
         }
@@ -1270,6 +1283,13 @@ class _RosterBuilder:
             day, start, end, wrap_week=self.wrap_week
         ):
             self.on_duty[covered_day][hour] += 1
+            # An extra is deliberately ON TOP of the requirement (§2d), so it
+            # is tracked separately and taken back out before the presence
+            # cap asks whether the hour is already covered. Counting it there
+            # would cancel a slot, which is the one thing an extra must never
+            # do.
+            if extra.get("extra"):
+                self.extra_on_duty[covered_day][hour] += 1
             if role:
                 self.role_on_duty[covered_day][role][hour] += 1
 
@@ -1364,98 +1384,10 @@ class _RosterBuilder:
                 turns.setdefault(day, []).append(due)
         return turns
 
-    # Fill by ARRIVALS rather than by shape. A named switch so the two can be
-    # measured against each other, like OWNER_BEATS_CONTRACT.
-    USE_ARRIVALS = False
-
-    def _staff_by_arrivals(
-        self, day: str, date_iso: str, assigned_today: Set[str],
-        open_m: int, close_m: int,
-    ) -> None:
-        """Walk the day and put on however many people normally start each hour.
-
-        Asked for from the first week: "at 6:00 two people are coming in, and
-        it should schedule two people. Next it goes to 7:00. If somebody is
-        starting at 7:00, let it put 1."
-
-        `_staff_by_slots` could not answer that. It picks SHAPES by frequency
-        independently, so three shapes that all begin at 06:00 each look
-        common and all three are chosen — the manager starts between 2.05 and
-        2.85 people at 06:00 and the shape list started 3, on every day of
-        the week. Where a band is fragmented the reverse happens: he starts
-        2.11 at 16:00 on a Friday and the shape list started 1, because none
-        of that band's many shapes clears the bar alone. 23.1 people-starts
-        adrift across the week.
-
-        PRESENCE CAPS ARRIVALS, which is the shop owner's rule: "if there are
-        two people starting at 8:00 and the shop needs just 2 people, and we
-        already have them who started at 6:00, then it should not put them at
-        8:00." So an arrival is skipped when the floor already holds what the
-        curve asks for. The coverage floor (§1 rule 1) is a separate pass and
-        is deliberately NOT capped — somebody must be on the premises whatever
-        the arrival pattern says.
-
-        The FINISH is not decided here. Whoever takes the start brings their
-        own usual finish for it, which is where Emma's 06:00-12:00 and Jane's
-        10:00-17:00 live — shapes the frequency-based list dropped for being
-        rarer than their neighbours.
-        """
-        for hour in self._open_hours(day):
-            wanted = self.demand.starting_at(day, hour)
-            for _ in range(wanted):
-                if self.on_duty[day][hour] >= self.demand.required(day, hour):
-                    # Already as many on the floor as this shop normally has.
-                    # Both numbers are averages and each is rounded, so this
-                    # is a >= rather than an exact match: vetoing on a
-                    # rounding disagreement would under-staff systematically.
-                    break
-                if not self._place_one_arrival(
-                    day, date_iso, hour, assigned_today, open_m, close_m
-                ):
-                    break
-
-    def _place_one_arrival(
-        self, day: str, date_iso: str, hour: int,
-        assigned_today: Set[str], open_m: int, close_m: int,
-    ) -> bool:
-        """Put one person on starting at this hour. True if somebody went on."""
-        start = f"{hour:02d}:00"
-        # Candidates are ranked per candidate, because the finish differs per
-        # person and eligibility depends on it — a 10-hour finish may breach
-        # somebody's cap where a 6-hour one does not.
-        best = None
-        best_key = None
-        for employee in self.employees:
-            if employee["employee_id"] in assigned_today:
-                continue
-            end = self._usual_finish(employee["employee_id"], day, start)
-            if end is None:
-                continue
-            segment = Segment(start=start, end=end)
-            for relax in (False, True):
-                if self._is_eligible(
-                    employee, segment, day, date_iso, assigned_today,
-                    open_m, close_m, relax_preferences=relax,
-                ):
-                    break
-            else:
-                continue
-            history_rank = self._history_rank([employee], day, start, end)
-            key = (
-                history_rank.get(employee["employee_id"], _UNRANKED_FOR_SLOT),
-                self._contract_need(employee, segment.span_hours),
-                self._rank_for_demand(
-                    employee, f"{start}-{end}", day, segment.span_hours),
-            )
-            if best_key is None or key < best_key:
-                best, best_key = (employee, end), key
-
-        if best is None:
-            return False
-        employee, end = best
-        self._record_shift(employee["employee_id"], day, start, end)
-        assigned_today.add(employee["employee_id"])
-        return True
+    # Build the day's slot list from ARRIVALS rather than shape frequency.
+    # A named switch so the two can be measured against each other, like
+    # OWNER_BEATS_CONTRACT.
+    USE_ARRIVALS = True
 
     def _usual_finish(
         self, employee_id: str, day: str, start: str
@@ -2421,6 +2353,130 @@ class _RosterBuilder:
 
         return best
 
+    def _slots_for_day(self, day: str) -> List[Tuple[str, str]]:
+        """The shifts to fill today — from ARRIVALS when the shop has them.
+
+        `day_slots` picks SHAPES by frequency, scoring each independently, so
+        it does not know that three shapes all starting at 06:00 compete for
+        the same job. Measured on the reference shop: the manager starts
+        between 2.05 and 2.85 people at 06:00 and the shape list started 3,
+        on every day of the week — the reported "usually two people at 6am,
+        the new roster has three". Where a band is fragmented the reverse
+        happens, and 16:00 on a Friday started 1 against his 2.11.
+
+        Arrivals answer the question directly: how many people begin a shift
+        at this hour. The FINISH here is only a placeholder — whoever wins
+        the slot brings their own, see `_usual_finish` at the point of
+        placement. It has to be something, because eligibility, familiarity
+        and the rest gap are all judged on a concrete pair.
+
+        Everything downstream is unchanged: pins still cancel a slot by
+        START time, owners are still reserved across the day, the seed still
+        varies unowned choices (§2c), and salaried finishes are still fitted
+        to the contract.
+        """
+        if self.demand is None:
+            return []
+        if not (self.USE_ARRIVALS and self.demand.has_arrivals(day)):
+            return self.demand.slots_for(day)
+
+        slots: List[Tuple[str, str]] = []
+        for hour in range(24):
+            wanted = self.demand.starting_at(day, hour)
+            if wanted:
+                slots.extend(self._shapes_for_hour(day, hour, wanted))
+        return sorted(slots, key=lambda pair: to_minutes(pair[0]))
+
+    def _shapes_for_hour(
+        self, day: str, hour: int, wanted: int,
+    ) -> List[Tuple[str, str]]:
+        """`wanted` slots, shared out over the shapes this hour really runs.
+
+        Arrivals fix the COUNT and say nothing about the shape, so the naive
+        thing is to hand every slot the hour's commonest shift. That collapses
+        a genuinely mixed hour: the reference shop runs `16:00-00:00` and
+        `16:00-23:00`, and giving both slots the first erases the second
+        along with the four people who share it — the same "pick one shape
+        and hunt for somebody to fit it" fault arrivals exist to remove,
+        moved one layer down.
+
+        So the hour's slots are apportioned across its shapes by how often
+        each is worked, largest remainder, exactly as `demand.py` apportions
+        the day. Starts stay as the shop writes them (07:30, not 07:00)
+        because familiarity is keyed on the start (§2), and the finish is
+        still only a placeholder — see `_their_finish`.
+
+        Deleting this in favour of the commonest shape was measured over 120
+        randomised shops and appeared to change nothing, so it nearly went.
+        That measurement was wrong: every shop in it had the same structure —
+        a band of people who all work all of the hour's shapes — which is
+        exactly the case where `_usual_finish` falls back to the shop's
+        commonest finish and the placeholder cannot matter. A slot SHARED by
+        four people who each work only that one shape is a different shape of
+        shop, and `test_slot_scheduling` has one. Both regenerate tests fail
+        without this.
+        """
+        counts = self._shapes_by_hour.get((day, hour))
+        if not counts:
+            return []           # never worked; not a start to invent (§9)
+
+        total = sum(counts.values())
+        shapes: List[Tuple[str, str]] = []
+        remainders = []
+        for shape in sorted(counts, key=lambda k: (-counts[k], k)):
+            exact = wanted * counts[shape] / total
+            whole = int(exact)
+            shapes.extend([shape] * whole)
+            remainders.append((exact - whole, counts[shape], shape))
+
+        # Ties broken by how often the shape is worked, then by the shape
+        # itself, so the list is the same on every solve (§2c: only the seed
+        # varies anything).
+        remainders.sort(key=lambda r: (-r[0], -r[1], r[2]))
+        for _, _, shape in remainders:
+            if len(shapes) >= wanted:
+                break
+            shapes.append(shape)
+        return shapes
+
+    def _their_finish(
+        self, employee: Dict[str, Any], day: str, start: str, end: str,
+        date_iso: str, assigned_today: Set[str],
+        open_m: int, close_m: int, *, relax: bool,
+    ) -> str:
+        """This person's own finish after this start, if it is legal for them.
+
+        Only under arrivals: with a shape list the end came from the shape,
+        and changing it now would silently resize a shift the demand profile
+        chose deliberately.
+        """
+        if not (self.USE_ARRIVALS and self.demand is not None
+                and self.demand.has_arrivals(day)):
+            return end
+        theirs = self._usual_finish(employee["employee_id"], day, start)
+        if not theirs or theirs == end:
+            return end
+        if not self._is_eligible(
+            employee, Segment(start=start, end=theirs, min_staff=1),
+            day, date_iso, assigned_today, open_m, close_m,
+            relax_preferences=relax,
+        ):
+            return end
+        return theirs
+
+    def _already_covered(self, day: str, start: str) -> bool:
+        """Does the floor already hold what the curve asks for at this hour?
+
+        Only under arrivals. With a shape list the count IS the answer and
+        second-guessing it here would drop shifts the profile chose.
+        """
+        if not (self.USE_ARRIVALS and self.demand is not None
+                and self.demand.has_arrivals(day)):
+            return False
+        hour = to_minutes(start) // 60
+        ordinary = self.on_duty[day][hour] - self.extra_on_duty[day][hour]
+        return ordinary >= self.demand.required(day, hour)
+
     def _staff_by_slots(
         self, day: str, date_iso: str, assigned_today: Set[str],
         open_m: int, close_m: int,
@@ -2441,7 +2497,7 @@ class _RosterBuilder:
         Slots are taken earliest first: the opener is usually the hardest to
         fill, so it gets to choose while the most people are still free.
         """
-        slots = self.demand.slots_for(day) if self.demand else []
+        slots = self._slots_for_day(day)
         if not slots:
             return
 
@@ -2528,6 +2584,18 @@ class _RosterBuilder:
         unfilled = set(outstanding)
 
         for start, end in outstanding:
+            # PRESENCE CAPS ARRIVALS.
+            #
+            # Two people usually start at 08:00, but if the ones who came in
+            # at 06:00 are still on the floor and the shop only wants three
+            # bodies, an eighth-hour arrival makes four. Arrivals say how
+            # many normally come in; presence says whether the shop needs
+            # them yet. The coverage floor is exempt and runs separately —
+            # somebody is on the floor open to close whatever the curve says
+            # (§1 rule 1).
+            if self._already_covered(day, start):
+                continue
+
             segment = Segment(start=start, end=end, min_staff=1)
             hours = [h for d, h in self.hours_covered(day, start, end) if d == day]
             unfilled.discard((start, end))
@@ -2607,6 +2675,22 @@ class _RosterBuilder:
                 # see the blank and decide, rather than it being filled by
                 # somebody the rules would not allow.
                 continue
+
+            # Whoever won the slot brings their own finish.
+            #
+            # Under arrivals the slot's end is a placeholder — the day says
+            # how many come in at 06:00, not how long each of them stays.
+            # Emma finishes her Monday 06:00 at 12:00 in 13 of the 14 weeks
+            # that shape ran and Megan finishes hers at 16:00; picking one
+            # shape for the slot and then hunting for somebody to fit it is
+            # what left Emma's shift owned but never offered (§2b).
+            #
+            # Re-checked, not assumed: eligibility was judged against the
+            # placeholder, and a longer finish can cross the 12-hour cap, the
+            # rest gap or a curfew. If it does, the placeholder stands.
+            end = self._their_finish(
+                best, day, start, end, date_iso, assigned_today,
+                open_m, close_m, relax=relax)
 
             # A salaried employee's shift is sized to their contract rather
             # than to the slot: the start is what the day needs, the finish
@@ -3237,13 +3321,7 @@ class _RosterBuilder:
         for day, date_iso, open_m, close_m in fill:
             assigned_today = assigned_by_day[day]
 
-            if (self.demand is not None and self.USE_ARRIVALS
-                    and self.demand.has_arrivals(day)):
-                # How many come in each hour, which is what the manager
-                # writes. See _staff_by_arrivals.
-                self._staff_by_arrivals(
-                    day, date_iso, assigned_today, open_m, close_m)
-            elif self.demand is not None and self.demand.slots_for(day):
+            if self.demand is not None and self.demand.slots_for(day):
                 # Slot-driven: rebuild the shifts this shop actually runs.
                 self._staff_by_slots(day, date_iso, assigned_today, open_m, close_m)
             elif self.demand is not None:

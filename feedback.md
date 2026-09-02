@@ -663,3 +663,87 @@ paying customer, and that remains true.
   Worth knowing: because it defaults True everywhere, `relax_preferences`
   currently cannot reach the day-off check at all, so that branch is dead in
   practice despite the comment describing it as live.
+
+---
+
+## 8. The arrivals model, and two ways the measurement lied
+
+The fix itself is in `CLAUDE.md` §7a. What belongs here is how nearly it went
+wrong twice, in the same session, in the same way.
+
+### The design mistake: a parallel fill instead of a different slot list
+
+The first attempt wrote `_staff_by_arrivals` and `_place_one_arrival` beside
+`_staff_by_slots` — a second fill path with its own ranking. It broke about
+forty tests, because `_staff_by_slots` does seven things that had to be
+reimplemented and were not: pins cancelling a slot, owner reservation across
+the day, seeded variation (§2c), extras consuming nothing, `only_day`
+narrowing, duplicate-day prevention, gap reporting.
+
+The right change was **one line**: `_staff_by_slots` already matches pins on
+START time, so arrivals only had to change where the slot list comes from.
+`slots = self._slots_for_day(day)` instead of `self.demand.slots_for(day)`,
+and everything downstream was already correct. Estimated at three times the
+effort it needed, and the reason was not reading `_staff_by_slots` before
+starting.
+
+> **Before writing a second version of a pass, read the first one to the end.**
+> Most of what looks like new behaviour is a different input to old behaviour.
+
+### The measurement mistake, twice, both times a population that could not answer
+
+**Once for the fixtures.** Five tests were written for the arrivals model and
+all five passed with `USE_ARRIVALS = False`. Every one was vacuous: the
+fixtures were small, tidy shops where the shape list happens to be right.
+Reasoning about *when* it would be wrong also failed — a prediction about the
+apportionment tie-break was wrong because recency weighting breaks the ties.
+What worked was **searching**: 400 randomised fragmented shops, of which the
+shape list gets 189 wrong, then freezing two as fixtures — one that starts
+four openers where three open, one that starts **none** where two open.
+
+**Once for a deletion.** The per-hour apportionment was measured over 120
+randomised shops, changed the roster in **zero** of them, and was deleted on
+that evidence, with a comment explaining why. Two existing tests failed
+immediately. The 120 shops all had one structure — a pool of people who all
+work all of an hour's shapes — which is precisely the case where
+`_usual_finish` falls back to the shop's commonest finish and the placeholder
+cannot matter. The fixture that catches it is a slot **shared by four people
+who each work only that shape**, and `test_slot_scheduling` already had one.
+
+Both are the same fault as the five before them, recorded in §2 above:
+**arithmetic verified on a population incapable of giving a different answer.**
+Randomising one dimension is not a general population. The question to ask is
+not "did I test enough cases" but **"what structure would make this matter, and
+is it in my sample at all"**.
+
+### What the sabotage sweep is for
+
+Every mechanism was switched off in turn and the suite re-run:
+
+| sabotage | tests that fail |
+|---|---|
+| `USE_ARRIVALS = False` | 4 |
+| collapse the hour onto its commonest shape | 2 (in `test_slot_scheduling`) |
+| the slot's finish wins, not the person's | 2 |
+| presence does not cap arrivals | 1 |
+| the coverage floor obeys the cap | 1 |
+
+Three of the five caught nothing on the first pass. A test that passes with
+the fix removed is not a weak test, it is an absent one — and it is
+indistinguishable from a real one until sabotaged.
+
+### Still owed
+
+`ml/check_arrivals_ab.py` has not been run against the real shop, because the
+sandbox has no MongoDB. Until it has, the honest statement is that the model
+is right in principle and green in tests, and **nobody has yet checked whether
+it reproduces the manager better or worse**. The bar was fixed before the
+model was built and the script applies that bar rather than a new one:
+
+> arrivals difference falls substantially AND exact matches do not drop. If
+> matches fall, revert — a model that is theoretically right and reproduces
+> the manager worse is not an improvement.
+
+Baselines to beat: arrivals difference **23.1 people-starts**, exact matches
+**14** of the ~56 shifts the solver actually chooses (Megan's, John's and
+Kelvin's fixed shifts excluded — the solver did not decide those).

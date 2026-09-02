@@ -440,6 +440,85 @@ generic block coverage below that.
   totals rather than dropping shapes.
 - Overnight hours belong to the day the shift **starts**.
 
+## 7a. The day is built from ARRIVALS — how many people come IN each hour
+
+The quantity the manager actually rosters by, in his words: *"at 6:00 two
+people are coming in, and it should schedule two people. At 7:00 there are
+three people on the floor. At 8:00 somebody is finishing, so bring two people
+in."*
+
+Three models have been tried and only the third can say that.
+
+| | counts | fails because |
+|---|---|---|
+| presence | bodies on the floor each hour | a night worker still in at 06:00 is already in the curve, so filling 06:00 to target put a **fourth** body on an hour that always had three |
+| shapes | whole shifts, by how often each is worked | scores every shape **independently**, so it cannot know that `06:00-16:00`, `06:00-14:00` and `06:00-12:00` compete for the same job |
+| **arrivals** | people who **start** each hour | — |
+
+Arrivals cannot double-count changeover, because somebody still on the floor
+at 06:00 did not start at 06:00; and cannot split a band, because every shape
+starting in the hour is the same arrival.
+
+The shape list goes wrong in **both directions**, which is why the symptoms
+never looked like one bug:
+
+- **Over-counts a concentrated band.** Three openers on every day where the
+  manager writes between 2.05 and 2.85 — the reported *"usually on Saturdays
+  it's just two people starting at 6:00, but the new roster has three."*
+- **Erases a fragmented one.** Friday 16:00 started 1 against his 2.11. Split
+  a band four ways and every one of its shapes rounds to zero, so a shift the
+  shop runs every week disappears — and with it, everybody who owns it. This
+  is the likelier reason Emma's `06:00-12:00`, Jane's three Saturday shapes
+  and Corey's Thursday were all **owned but never offered** (§2b).
+
+Measured on the reference shop: **23.1 people-starts adrift over a week, 13
+hours out by half a person or more.** Measured on 400 synthetic fragmented
+shops, the shape list gets **189 of them** wrong.
+
+Three rules, and the interaction between them is the whole design:
+
+1. **Arrivals fix the count, never the shape.** The slot carries a
+   placeholder — it has to, because eligibility, familiarity and the rest gap
+   are all judged on a concrete pair — and whoever wins the slot replaces the
+   finish with **their own** (`_their_finish`, from `_usual_finish`). Emma
+   finishes her Monday 06:00 at 12:00 and Megan finishes hers at 16:00; both
+   open. Measured over 120 randomised shops this changes the week in **all
+   120**. It is where most of the value is.
+2. **Starts are never rounded to the hour.** Arrivals are counted per hour but
+   the slot carries a start the shop really writes — Top Oil writes `07:30`,
+   and offering `07:00` would be a start nobody has worked, which familiarity
+   (§2) would then have to exclude everybody from.
+3. **Presence caps arrivals.** *"If there are two people starting at 8:00 and
+   the shop needs just 2, and we already have them who started at 6:00, then
+   it should not put them at 8:00."* Consulted on every slot, fires on about
+   one in twelve. It rarely changes the day's headcount — the day-level
+   rounding in `_build_arrivals` already keeps totals honest — but it stops
+   the passes that run afterwards reacting to a floor they wrongly think is
+   short, which is what produced a Sunday `05:00` start this shop has never
+   used.
+
+**The coverage floor is exempt** (§1 rule 1). A shop open around the clock but
+covering the small hours only every sixth week has `required` of 0 from 22:00,
+and arrivals of nobody. Both are honest averages and both are beside the
+point. The cap asks whether the floor holds what the curve wants, and at an
+hour wanting nobody an empty floor satisfies it — so a cap applied there would
+read "covered" of a dark shop. That is why the cap lives in the slot fill and
+not in `demand.py`, which has no way to know.
+
+The hour's slots are **apportioned across the shapes it really runs**, largest
+remainder. Deleting that in favour of the commonest shape was measured over
+120 randomised shops and appeared to change nothing — and that measurement was
+**wrong**: every shop in it had the same structure, a pool of people who all
+work all of the hour's shapes, which is exactly the case where `_usual_finish`
+falls back to the shop's own commonest finish and the placeholder cannot
+matter. A slot **shared by four people who each work only that one shape** is
+a different shop, and two existing tests fail without it.
+
+`USE_ARRIVALS` on `_RosterBuilder` is a named switch, like
+`OWNER_BEATS_CONTRACT`, so the two models can be A/B'd on real weeks:
+`ml/check_arrivals_ab.py` solves every approved week both ways, held out of
+its own history, and scores both against what the manager wrote.
+
 ## 7b. Recent weeks count for more
 
 Every week used to count the same, so a deliberate change took the full
