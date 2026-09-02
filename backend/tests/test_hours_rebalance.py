@@ -354,6 +354,36 @@ class TestTheRulesItMustNeverBreak:
             "every week"
         )
 
+    def test_a_salaried_employee_can_never_receive_a_rebalanced_shift(self):
+        """Asked directly: "Emma's shift was given to Corey — did you cause
+        that?"
+
+        Corey is salaried. This pass only moves work between people paid by
+        the hour: `_build_hours_aim` skips anybody with a contract band, and
+        both donors and receivers are drawn from that map. So it could not
+        have been this, whatever else it was.
+
+        Written as a test rather than left as reasoning, because "I checked
+        and it cannot be us" is worth nothing the next time somebody asks.
+        """
+        salaried = person("corey", employment_type="full_time_contract",
+                          contract_span_hours=40)
+        hist = history({"emma": ["mon", "tue"],
+                        "corey": ["wed", "thu", "fri"]})
+        shop = make_shop()
+        profile = build_profile(
+            shop, hist, {e["employee_id"]: e["role"]
+                         for e in [person("emma"), salaried]})
+        builder = _RosterBuilder(
+            shop, [person("emma"), salaried], [], [], [], WEEK, {}, profile,
+            hist, None, None, None,
+        )
+        assert "corey" not in builder.hours_aim, (
+            "a salaried employee is in the rebalance map, so this pass could "
+            "hand them somebody else's settled shift"
+        )
+        assert builder.hours_aim, "the fixture has nobody hourly to balance"
+
     def test_a_pinned_shift_is_never_moved(self):
         builder = lopsided_builder(
             {"hog": ["mon", "tue", "wed", "thu"], "spare": ["fri"]},

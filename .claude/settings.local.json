@@ -10,7 +10,11 @@
       "Bash(curl -s -H \"Cache-Control: no-cache\" http://127.0.0.1:8001/api/auth/providers)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:8001/api/health)",
       "Bash(taskkill //PID 39604 //F)",
-      "Bash(git fetch *)"
+      "Bash(git fetch *)",
+      "Skill(browse)",
+      "Skill(browse:*)",
+      "mcp__7d4b9992-052d-4060-983d-f39f2998793f__search_jobs",
+      "mcp__7d4b9992-052d-4060-983d-f39f2998793f__get_job_details"
     ]
   }
 }
