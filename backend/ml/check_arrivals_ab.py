@@ -150,9 +150,11 @@ async def run(email: str, limit: int | None) -> None:
 
     print(f"\n{shop.get('name', '?')} — {len(weeks)} weeks, each solved twice "
           f"and held out of its own history\n")
-    print(f"  {'week':12}  {'ARRIVALS MODEL':>26}   {'SHAPE LIST':>26}")
-    print(f"  {'':12}  {'exact':>6}{'person':>7}{'times':>6}{'arr':>7}"
-          f"   {'exact':>6}{'person':>7}{'times':>6}{'arr':>7}")
+    print(f"  {'week':12}  {'manager':>8}   {'ARRIVALS MODEL':>33}"
+          f"   {'SHAPE LIST':>33}")
+    print(f"  {'':12}  {'shifts':>8}   "
+          f"{'shifts':>7}{'exact':>6}{'person':>7}{'times':>6}{'arr':>7}   "
+          f"{'shifts':>7}{'exact':>6}{'person':>7}{'times':>6}{'arr':>7}")
 
     totals: Dict[str, Dict[str, int]] = {
         "arrivals": defaultdict(int), "shapes": defaultdict(int)}
@@ -184,19 +186,29 @@ async def run(email: str, limit: int | None) -> None:
 
         graded += 1
         a, s = row["arrivals"], row["shapes"]
-        print(f"  {week:12}  {a['exact']:>6}{a['person']:>7}{a['times']:>6}"
-              f"{a['arrivals']:>7}   "
-              f"{s['exact']:>6}{s['person']:>7}{s['times']:>6}"
-              f"{s['arrivals']:>7}")
+        print(f"  {week:12}  {a['his']:>8}   "
+              f"{a['ours']:>7}{a['exact']:>6}{a['person']:>7}"
+              f"{a['times']:>6}{a['arrivals']:>7}   "
+              f"{s['ours']:>7}{s['exact']:>6}{s['person']:>7}"
+              f"{s['times']:>6}{s['arrivals']:>7}")
 
     if not graded:
         sys.exit("Nothing gradeable.")
 
     a, s = totals["arrivals"], totals["shapes"]
-    print(f"\n  {'TOTAL':12}  {a['exact']:>6}{a['person']:>7}{a['times']:>6}"
+    print(f"\n  {'TOTAL':12}  {a['his']:>8}   "
+          f"{a['ours']:>7}{a['exact']:>6}{a['person']:>7}{a['times']:>6}"
           f"{a['arrivals']:>7}   "
-          f"{s['exact']:>6}{s['person']:>7}{s['times']:>6}{s['arrivals']:>7}")
-    print(f"  {graded} weeks, {a['his']} shifts written by the manager")
+          f"{s['ours']:>7}{s['exact']:>6}{s['person']:>7}{s['times']:>6}"
+          f"{s['arrivals']:>7}")
+    print(f"  {graded} weeks")
+    print(f"\n  Shifts produced, against the manager's {a['his']}:")
+    print(f"    arrivals model {a['ours']}  ({a['ours'] - a['his']:+d})")
+    print(f"    shape list     {s['ours']}  ({s['ours'] - a['his']:+d})")
+    if abs(a["ours"] - s["ours"]) >= 20:
+        print("\n  The two models are building weeks of DIFFERENT SIZES. That")
+        print("  is upstream of who gets which shift: compare the day totals")
+        print("  with --explain before reading anything into exact matches.")
 
     print(f"\n{'=' * 78}\nVERDICT — against the bar set before the model was "
           f"built\n{'=' * 78}")
@@ -230,13 +242,122 @@ async def run(email: str, limit: int | None) -> None:
             print("  the shop owner, not for this script.")
 
 
+async def explain(email: str, week: str) -> None:
+    """Hour by hour for one week: learned, placed, and what he wrote.
+
+    The A/B says arrivals reproduces the manager worse AND does not move the
+    arrivals distance. The second half is the one that does not add up: the
+    day is built by asking how many people start each hour and placing that
+    many, so the distance should fall by construction.
+
+    So this prints the chain the number travels along:
+
+      his        how many people the manager started that hour, that week
+      learned    what `demand.starting_at` says, from the other 30 weeks
+      placed     how many the arrivals fill actually put on
+      shapes     how many the shape list put on, for comparison
+
+    `learned` vs `placed` is the diagnostic. If they agree, the model is
+    working and simply describes this shop worse than shapes do — a real
+    finding, and the end of it. If they DISAGREE, the fill is losing slots it
+    asked for, and the fault is a bug rather than a model.
+    """
+    user = await db.users.find_one({"email": email.lower()}, {"_id": 0})
+    if not user:
+        sys.exit(f"No account for {email}")
+    shop = await db.shops.find_one({"owner_id": user["user_id"]}, {"_id": 0})
+    if not shop:
+        sys.exit("That account has no shop yet.")
+    shop_id = shop["shop_id"]
+
+    approved = latest_per_week(await db.rosters.find(
+        {"shop_id": shop_id, "approved": True}, {"_id": 0}).to_list(500))
+    target = next((r for r in approved if r.get("week_start") == week), None)
+    if not target:
+        sys.exit(f"No approved roster for {week}. Available: "
+                 f"{', '.join(sorted(r['week_start'] for r in approved))}")
+
+    employees = await db.employees.find(
+        {"shop_id": shop_id}, {"_id": 0}).to_list(1000)
+    holidays = await db.holidays.find(
+        {"shop_id": shop_id}, {"_id": 0}).to_list(1000)
+    fixed = await db.fixed_shifts.find(
+        {"shop_id": shop_id}, {"_id": 0}).to_list(1000)
+    rules = await db.ai_rules.find(
+        {"shop_id": shop_id, "enabled": True}, {"_id": 0}).to_list(200)
+    team = sort_employees(employees, shop)
+
+    history = [r for r in approved if r.get("week_start") != week]
+    profile = build_profile(
+        shop, history,
+        {e["employee_id"]: e.get("role", "") for e in employees},
+        for_week=week)
+    weights = compute_weights(history)
+
+    placed = {}
+    for name, flag in (("arrivals", True), ("shapes", False)):
+        original = _RosterBuilder.USE_ARRIVALS
+        _RosterBuilder.USE_ARRIVALS = flag
+        try:
+            placed[name] = _arrivals(_shifts(solve_roster(
+                shop, team, holidays, fixed, rules, week, weights, profile,
+                history_rosters=history)))
+        finally:
+            _RosterBuilder.USE_ARRIVALS = original
+
+    his = _arrivals(_shifts(target))
+
+    print(f"\n{shop.get('name', '?')} — week of {week}")
+    print("How many people START each hour.\n")
+    print(f"  {'':4}{'hour':>6}{'his':>6}{'learned':>9}{'placed':>8}"
+          f"{'shapes':>8}   note")
+
+    mismatched = 0
+    for day in ("mon", "tue", "wed", "thu", "fri", "sat", "sun"):
+        hours = sorted({h for d, h in set(his) | set(placed["arrivals"])
+                        | set(placed["shapes"]) if d == day}
+                       | {h for h in range(24)
+                          if profile.starting_at(day, h)})
+        if not hours:
+            continue
+        print(f"\n  {day.upper()}")
+        for hour in hours:
+            learned = profile.starting_at(day, hour)
+            mine = placed["arrivals"].get((day, hour), 0)
+            theirs = placed["shapes"].get((day, hour), 0)
+            wrote = his.get((day, hour), 0)
+            note = ""
+            if learned != mine:
+                note = f"<<< asked for {learned}, placed {mine}"
+                mismatched += 1
+            print(f"  {'':4}{hour:>4}:00{wrote:>6}{learned:>9}{mine:>8}"
+                  f"{theirs:>8}   {note}")
+
+    print(f"\n{'=' * 72}")
+    if mismatched:
+        print(f"  {mismatched} hours where the fill placed a different number")
+        print("  from the one it learned. THAT is the bug — the model is not")
+        print("  being asked the question it answers. Fix the fill before")
+        print("  judging the model.")
+    else:
+        print("  The fill placed exactly what it learned, everywhere.")
+        print("  So the model is working as designed and simply describes")
+        print("  this shop worse than the shape list does. That is a real")
+        print("  finding and the end of it: keep USE_ARRIVALS off.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--email", required=True)
     parser.add_argument("--weeks", type=int,
                         help="grade only the most recent N weeks")
+    parser.add_argument("--explain", metavar="YYYY-MM-DD",
+                        help="one week, hour by hour: learned vs placed")
     args = parser.parse_args()
-    asyncio.run(run(args.email, args.weeks))
+    if args.explain:
+        asyncio.run(explain(args.email, args.explain))
+    else:
+        asyncio.run(run(args.email, args.weeks))
 
 
 if __name__ == "__main__":

@@ -747,3 +747,40 @@ model was built and the script applies that bar rather than a new one:
 Baselines to beat: arrivals difference **23.1 people-starts**, exact matches
 **14** of the ~56 shifts the solver actually chooses (Megan's, John's and
 Kelvin's fixed shifts excluded — the solver did not decide those).
+
+### The verdict came back: worse, and worse in an informative way
+
+31 approved weeks, each solved both ways and held out of its own history:
+
+| | exact matches | arrivals distance |
+|---|---|---|
+| shape list | **702** | **870** |
+| arrivals | 641 | 877 |
+
+Reverted, per the bar, the same day it was measured. `USE_ARRIVALS = False`.
+
+**The exact-match drop is not the interesting number.** The interesting one
+is that the arrivals distance DID NOT FALL. That distance is the single
+quantity the model exists to fit, and it is fitted *by construction* — the
+day is built by asking how many people start each hour and placing that many.
+It should have collapsed. It moved by 0.8%, in the wrong direction.
+
+A model that cannot move its own objective on real data is not a model that
+is merely unready. Either the fill is not placing what the profile learned,
+or a later pass is undoing it. Both are bugs, not judgements about the model.
+
+None of it is visible synthetically: 200 randomised shops agree exactly on
+the day's total, and the presence cap does not fire in a reproduction of Top
+Oil's own night-shift overlap. **Four weeks came out byte-identical under both
+models**, which means arrivals was not active for them at all — worth
+explaining before anything else.
+
+`--explain WEEK` was added to print the chain the number travels along —
+learned, placed, and what the manager wrote, hour by hour. `learned` vs
+`placed` decides it: agreeing means the model genuinely suits this shop worse
+and the matter is closed; disagreeing means a bug upstream of the model.
+
+**The discipline that held:** the bar was written down before the model was
+built, in the script, so the number could not be re-argued after the fact.
+It said revert on exactly this result, and it was applied without
+negotiation. Two days of work is not a reason to move a threshold.

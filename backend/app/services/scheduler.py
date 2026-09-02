@@ -1387,7 +1387,27 @@ class _RosterBuilder:
     # Build the day's slot list from ARRIVALS rather than shape frequency.
     # A named switch so the two can be measured against each other, like
     # OWNER_BEATS_CONTRACT.
-    USE_ARRIVALS = True
+    #
+    # OFF, on the measurement. `ml/check_arrivals_ab.py` solved all 31
+    # approved weeks of the reference shop both ways, each held out of its
+    # own history, and arrivals reproduced the manager WORSE: 641 exact
+    # matches against 702, on 2175 shifts he wrote.
+    #
+    # The damning number is not that one. It is that the ARRIVALS DISTANCE
+    # DID NOT FALL — 870 to 877, slightly worse. That distance is the single
+    # quantity this model exists to fit, and it is fitted by construction:
+    # the day is built by asking how many people start each hour and placing
+    # that many. A model that cannot move its own objective on real data is
+    # not a model that is merely unready, it is a model whose fill is not
+    # doing what its profile says. Something between "learn 2 openers" and
+    # "place 2 openers" is losing them, and it is not visible in synthetic
+    # shops — 200 randomised ones agree exactly on the day's total.
+    #
+    # Do not turn this on again without `--explain` from that script showing
+    # placed arrivals matching learned arrivals hour by hour. The model is
+    # still believed to be the right one (§7a); the evidence says the
+    # implementation is not yet it.
+    USE_ARRIVALS = False
 
     def _usual_finish(
         self, employee_id: str, day: str, start: str

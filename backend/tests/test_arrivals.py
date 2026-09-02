@@ -25,10 +25,31 @@ synthetic shops rather than against the reference workbook (§9b, §10b).
 """
 from datetime import date, timedelta
 
+import pytest
+
 from app.services.demand import build_profile
-from app.services.scheduler import DAYS, solve_roster
+from app.services.scheduler import DAYS, _RosterBuilder, solve_roster
 
 WEEK = "2026-08-17"
+
+# These tests describe how the ARRIVALS fill behaves, so they turn it on
+# regardless of what the solver currently ships with. It ships OFF: measured
+# over the reference shop's 31 approved weeks it reproduced the manager worse
+# than the shape list, and — the reason it is off rather than merely tuned —
+# it did not move the arrivals distance it exists to fit. See the comment on
+# `_RosterBuilder.USE_ARRIVALS`.
+#
+# Flip this to False to sabotage-check the file: four of the six tests below
+# must fail, because four of them are about counting arrivals rather than
+# shapes. Setting the solver's own default is NOT the sabotage — that would
+# leave these tests silently passing on the model they do not describe.
+ARRIVALS_UNDER_TEST = True
+
+
+@pytest.fixture(autouse=True)
+def _arrivals_on(monkeypatch):
+    monkeypatch.setattr(
+        _RosterBuilder, "USE_ARRIVALS", ARRIVALS_UNDER_TEST, raising=False)
 
 
 def make_shop(**overrides):
