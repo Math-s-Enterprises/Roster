@@ -1275,6 +1275,122 @@ class _RosterBuilder:
             return []
         return [tuple(slot) for slot in self.demand.slots_for(day)]
 
+    # -- did anybody lose a shift that was theirs? ------------------------
+    def _report_displaced_owners(self) -> None:
+        """Say so when a settled shift changed hands for no reason.
+
+        Every ownership fault found at the reference shop was found by the
+        MANAGER reading a roster and asking about it — a Monday 06:00 given
+        away because the code asked `owner_of` (one person) about a shape
+        that runs twice and has two regulars. The check that would have
+        caught it existed only in a diagnostic nobody runs unless something
+        already looks wrong.
+
+        So it lives here now. It moves nothing and blocks nothing; it appends
+        one line when a regular did not get a shape they normally work and
+        nothing was stopping them. On a healthy week it adds NOTHING, so it
+        costs the manager no attention until it has something to say.
+
+        §2b lists when an owner may lawfully lose a slot — leave, the curfew,
+        their cap, the rest gap, a fifth day — and senior cover (Pass 0b) is
+        allowed to displace them by design. All of those stay silent. What is
+        left is a bug, and it should announce itself the week it happens.
+        """
+        if self.demand is None or not self.slot_owners:
+            return
+
+        for day in DAYS:
+            if self.only_day not in (None, day):
+                continue
+            date_iso = self.date_for_day.get(day)
+            for start, end in self.demand.slots_for(day):
+                regulars = slot_owners.regulars_of(
+                    self.slot_owners, day, start, end)
+                if not regulars:
+                    continue
+                # A shape running twice has room for two regulars, so only
+                # somebody who got NONE of its instances has lost anything.
+                holders = {
+                    s["employee_id"] for s in self.result.shifts
+                    if (s["day"], s["start"], s["end"]) == (day, start, end)
+                }
+                # SOMEBODY ELSE MUST ACTUALLY HAVE IT.
+                #
+                # "Displaced" means the shift changed hands. If nobody got
+                # the shape at all, that is an unfilled slot — a different
+                # thing, already reported by the gap machinery — and saying
+                # it twice in different words would bury the one that
+                # matters. It also stops a day the solver could not staff
+                # from producing one of these for every regular on it.
+                if not holders:
+                    continue
+                for employee_id in sorted(regulars - holders):
+                    reason = self._why_they_lost_it(
+                        employee_id, day, date_iso, start, end)
+                    if reason is not None:
+                        continue                    # lawful, and not news
+                    self.result.issues.append(
+                        self._displaced_owner_note(
+                            employee_id, day, start, end, holders)
+                    )
+
+    def _why_they_lost_it(
+        self, employee_id: str, day: str, date_iso: Optional[str],
+        start: str, end: str,
+    ) -> Optional[str]:
+        """A lawful reason this regular did not get their shape, or None.
+
+        None means "nothing was stopping them", which is the only case worth
+        reporting. Checked against the rules themselves rather than against a
+        list of names, so a rule added to `_is_eligible` later does not
+        quietly start producing false alarms here.
+        """
+        employee = self.employees_by_id.get(employee_id)
+        if not employee or not avail.is_active(employee):
+            return "no longer active"
+        if date_iso in self.employee_off_dates.get(employee_id, set()):
+            return "on leave"
+        if day in self.days_worked.get(employee_id, set()):
+            return "already working that day"
+        if len(self.days_worked.get(employee_id, set())) >= self.max_working_days:
+            return "already on their maximum days"
+        if not avail.check_availability(employee, day, start, end).allowed:
+            return "not available"
+        if violates_minor_curfew(employee, start, end):
+            return "under-16 curfew"
+        if self._rest_breach(employee_id, day, start, end) is not None:
+            return "too little rest since their last shift"
+        span = shift_duration_minutes(start, end) / 60
+        band = self.span_bands.get(employee_id)
+        if band:
+            if self.span_used.get(employee_id, 0.0) + span > band[1] + 1e-6:
+                return "at their contracted hours"
+        else:
+            cap = self.hour_caps.get(
+                employee_id, employee.get("max_weekly_hours", 0))
+            paid = paid_hours(start, end, breaks_paid=self.breaks_paid)
+            if self.hours_used.get(employee_id, 0.0) + paid > cap + 1e-6:
+                return "at their weekly limit"
+        return None
+
+    def _displaced_owner_note(
+        self, employee_id: str, day: str, start: str, end: str, holders,
+    ) -> str:
+        """Name the person, the shift, how settled it was, and who has it."""
+        name = self.employees_by_id.get(employee_id, {}).get(
+            "name", employee_id)
+        share = slot_owners.ownership_strength(
+            self.slot_owners, day, start, end)
+        others = sorted(
+            self.employees_by_id.get(h, {}).get("name", h) for h in holders
+        )
+        instead = f" {' and '.join(others)} has it instead." if others else ""
+        settled = f" ({share:.0%} of weeks)" if share else ""
+        return (
+            f"{name} normally works {day} {start}-{end}{settled} and did not "
+            f"get it, and nothing was stopping them.{instead}"
+        )
+
     def _unrecord_shift(self, shift: Dict[str, Any]) -> None:
         """The exact inverse of `_record_shift`, for undoing a trial move.
 
@@ -1482,6 +1598,99 @@ class _RosterBuilder:
             f"the hours they have each been working lately."
         )
         return True
+
+    # -- did anybody lose a settled shift for no reason? -------------------
+    def _report_lost_slots(self) -> None:
+        """Name any regular who lost their shift without a lawful reason.
+
+        §2b lets an owner lose a slot: leave, the curfew, their cap, the rest
+        gap, a fifth day, or senior cover claiming the day first. What must
+        never happen is losing it for none of those.
+
+        WHY THIS IS IN THE SOLVER AND NOT A DIAGNOSTIC
+        ----------------------------------------------
+        It was a diagnostic first, and the manager found the bug before the
+        script did: "Emma usually works every Monday at 6:00 am, but in the
+        new roster she was not rostered at 6:00 at all." By then it had been
+        wrong for several rosters. A check nobody runs until something
+        already looks wrong is not a check.
+
+        So the same question is asked every generation, and the answer is one
+        advisory — only when something is genuinely unexplained. A settled
+        shift changing hands for no stated reason is the single most
+        expensive thing this solver can do, because the manager has to notice
+        it, and then undo it, every week until somebody fixes the cause.
+
+        REGULARS, NOT THE OWNER. `owner_of` names one person; a shape that
+        runs twice has two. Asking about only the top claimant is how the
+        second regular's loss went unreported (see `slot_owners.regulars_of`).
+        """
+        if not self.slot_owners:
+            return
+
+        held: Dict[Tuple[str, str, str], Set[str]] = defaultdict(set)
+        for shift in self.result.shifts:
+            if shift.get("paid_holiday") or shift.get("unpaid_holiday"):
+                continue
+            held[(shift["day"], shift["start"], shift["end"])].add(
+                shift["employee_id"])
+
+        for (day, start, end), holders in sorted(held.items()):
+            for employee_id in sorted(
+                slot_owners.regulars_of(self.slot_owners, day, start, end)
+                - holders
+            ):
+                reason = self._why_not_theirs(employee_id, day, start, end)
+                if reason is None:
+                    name = self.employees_by_id.get(
+                        employee_id, {}).get("name", employee_id)
+                    self.result.issues.append(
+                        f"{name} usually works {day} {start}-{end} and did "
+                        f"not get it this week, and nothing explains why — "
+                        f"no leave, no cap, no clash. Worth checking before "
+                        f"you approve."
+                    )
+
+    def _why_not_theirs(
+        self, employee_id: str, day: str, start: str, end: str
+    ) -> Optional[str]:
+        """A lawful reason this regular did not get their slot, or None.
+
+        None is the only interesting answer, and it means a bug rather than a
+        judgement — so every branch here has to be a rule somebody could
+        point at.
+        """
+        employee = self.employees_by_id.get(employee_id)
+        if not employee or not avail.is_active(employee):
+            return "no longer working here"
+        if self.date_for_day.get(day) in self.employee_off_dates.get(
+            employee_id, set()
+        ):
+            return "on leave"
+        # Working that day at all is a lawful reason to be missing from ONE
+        # of its slots: senior cover and the fill both place people by day.
+        if day in self.days_worked.get(employee_id, set()):
+            return "already working that day"
+        if len(self.days_worked.get(employee_id, set())) >= self.max_working_days:
+            return "already on their maximum days"
+        band = self.span_bands.get(employee_id)
+        if band:
+            span = shift_duration_minutes(start, end) / 60
+            if self.span_used.get(employee_id, 0.0) + span > band[1] + 1e-6:
+                return "would exceed their contracted hours"
+        else:
+            cap = self.hour_caps.get(employee_id, 0.0)
+            if self.hours_used.get(employee_id, 0.0) + paid_hours(
+                start, end, breaks_paid=self.breaks_paid
+            ) > cap + 1e-6:
+                return "would exceed their weekly hours"
+        if self._rest_breach(employee_id, day, start, end) is not None:
+            return "too little rest before or after"
+        if violates_minor_curfew(employee, start, end):
+            return "outside the hours a minor may work"
+        if not avail.check_availability(employee, day, start, end).allowed:
+            return "not available"
+        return None
 
     def _typical_paid_day(self, employee: Dict[str, Any]) -> float:
         """A normal day's pay for this person, in hours.
@@ -2754,6 +2963,11 @@ class _RosterBuilder:
         if self.demand is not None:
             self._rebalance_hours()
 
+        # A settled shift that changed hands for no reason is a fault, and
+        # every one found so far was found by the manager rather than by the
+        # app. Reported last, when nothing further will move.
+        self._report_displaced_owners()
+
         # Pass 3 — report against final coverage.
         if self.demand is not None:
             for day, _, _, _ in trading:
@@ -2764,6 +2978,11 @@ class _RosterBuilder:
 
         # Senior cover is repaired in pass 2a, so a second warning here would
         # only restate what that pass already reported when it could not.
+
+        # Last, once every pass has had its say: did anybody lose a settled
+        # shift with nothing to explain it? Asked here rather than in a
+        # diagnostic because the manager found the last one first (§2b).
+        self._report_lost_slots()
 
         self._drop_duplicate_days()
         self._finalise()

@@ -14,7 +14,10 @@
       "Skill(browse)",
       "Skill(browse:*)",
       "mcp__7d4b9992-052d-4060-983d-f39f2998793f__search_jobs",
-      "mcp__7d4b9992-052d-4060-983d-f39f2998793f__get_job_details"
+      "mcp__7d4b9992-052d-4060-983d-f39f2998793f__get_job_details",
+      "Bash(mkdir -p ~/.claude/agents && echo created)",
+      "Read(//c/Users/anees/.claude/agents/**)",
+      "mcp__7d4b9992-052d-4060-983d-f39f2998793f__get_resume"
     ]
   }
 }

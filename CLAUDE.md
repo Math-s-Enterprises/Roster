@@ -99,6 +99,22 @@ Ownership never beats a hard constraint. An owner on leave, curfewed, at
 their cap, inside the 11-hour rest window or already on five days does not
 get the slot.
 
+**And when a settled shift changes hands for none of those reasons, the
+roster says so.** `_report_displaced_owners` names the person, the shape, how
+settled it was, and who has it instead. It adds nothing to a healthy week.
+
+That exists because every ownership fault so far was found by the MANAGER
+reading a roster and asking — including a Monday 06:00 given away because the
+code asked `owner_of` (one person) about a shape that runs twice and has two
+regulars. **Anything asking "whose shift is this" must use `regulars_of`, not
+`owner_of`.** The second returns the top claimant only: right for "who takes
+this instance", silently wrong for "may I move this". The same mistake was
+made in a diagnostic, found, and then repeated in the solver an hour later,
+which is why the check lives in `slot_owners` rather than at each call site.
+
+An unfilled slot is NOT a displacement and is not reported here — nobody took
+it, and the gap machinery already says so.
+
 Two consequences that are easy to get wrong:
 
 - **Senior cover (Pass 0b) runs first**, so it must prefer a shape the senior
