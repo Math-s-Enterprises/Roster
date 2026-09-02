@@ -67,3 +67,37 @@ class TestCareful:
 
     def test_empty_text_is_not_a_rule(self):
         assert parse_rule("", "", TEAM) is None
+
+
+class TestANumberMustBeAboutPeople:
+    """"Shop floor shifts are a maximum of 8 hours" compiled to max_staff: 8.
+
+    It showed as Enforced and silently capped the shop at eight staff instead
+    of limiting shift length. A rule that quietly does the wrong thing is
+    worse than one that refuses — §9: unparseable rules are reported, not
+    guessed at.
+    """
+
+    def _people(self):
+        return [{"employee_id": "e1", "name": "Jane", "role": "Shop Floor"}]
+
+    def test_a_length_in_hours_is_not_a_headcount(self):
+        for text in (
+            "Shop floor shifts are a maximum of 8 hours",
+            "No more than 8 hours per shift",
+            "At most 10 hrs in a shift",
+        ):
+            assert parse_rule("rule", text, self._people()) is None, text
+
+    def test_a_count_of_days_is_not_a_headcount(self):
+        assert parse_rule(
+            "rule", "At most 3 days a week", self._people()) is None
+
+    def test_a_real_headcount_still_compiles(self):
+        for text in (
+            "No more than 3 people on a Monday",
+            "Maximum of 4 staff on Sunday",
+            "No more than 5 on a Saturday",
+        ):
+            compiled = parse_rule("rule", text, self._people())
+            assert compiled and compiled["type"] == "max_staff", text

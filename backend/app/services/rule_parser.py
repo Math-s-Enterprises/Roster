@@ -119,8 +119,23 @@ def parse_rule(
             }
 
     # "No more than 3 people on a Monday"
-    cap = re.search(r"(?:no more than|maximum of|max|at most)\s+(\d+)", text)
-    if cap:
+    #
+    # The number must be about PEOPLE. Without that check, "shop floor shifts
+    # are a maximum of 8 hours" compiled to `max_staff: 8` — it showed as
+    # Enforced and silently capped the shop at eight staff instead of
+    # limiting shift length. A rule that quietly does the wrong thing is
+    # worse than one that refuses, and §9 says an unparseable rule is
+    # reported rather than guessed at.
+    cap = re.search(
+        r"(?:no more than|maximum of|max|at most)\s+(\d+)\s*"
+        r"(?:people|staff|employees|workers|persons?|bodies|on)?",
+        text,
+    )
+    if cap and not re.search(
+        r"(?:no more than|maximum of|max|at most)\s+\d+\s*"
+        r"(?:hours?|hrs?|h\b|shifts?|days?|minutes?|mins?)",
+        text,
+    ):
         return {
             "type": "max_staff",
             "value": int(cap.group(1)),
