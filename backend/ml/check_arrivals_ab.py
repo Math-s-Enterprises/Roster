@@ -294,16 +294,68 @@ async def explain(email: str, week: str) -> None:
         for_week=week)
     weights = compute_weights(history)
 
+    # Instrumentation. Two things can lose a slot the fill asked for: the
+    # presence cap skipping it, or nobody being eligible for it. Both are
+    # counted here rather than guessed at — two guesses have already been
+    # wrong, one about the cap and one about the placeholder shape.
+    capped: Dict[Tuple[str, int], int] = defaultdict(int)
+    refused: Dict[Tuple[str, int], Dict[str, int]] = defaultdict(
+        lambda: defaultdict(int))
+
+    real_cap = _RosterBuilder._already_covered
+    real_eligible = _RosterBuilder._is_eligible
+
+    def spy_cap(self, day, start):
+        verdict = real_cap(self, day, start)
+        if verdict:
+            capped[(day, to_minutes(start) // 60)] += 1
+        return verdict
+
+    def spy_eligible(self, employee, segment, day, date_iso,
+                     assigned_today, open_m, close_m, **kwargs):
+        employee_id = employee["employee_id"]
+        before = self.exclusions.get(employee_id)
+        verdict = real_eligible(self, employee, segment, day, date_iso,
+                                assigned_today, open_m, close_m, **kwargs)
+        if not verdict:
+            after = self.exclusions.get(employee_id)
+            if employee_id in assigned_today:
+                reason = "already working that day"
+            elif after and after != before:
+                reason = after
+            elif after:
+                reason = after
+            else:
+                reason = "on leave, or unfamiliar with this start"
+            hour = to_minutes(segment.start) // 60
+            refused[(day, hour)][reason] += 1
+        return verdict
+
+    capped_snapshot: Dict[Tuple[str, int], int] = {}
+    refused_snapshot: Dict[Tuple[str, int], Dict[str, int]] = {}
     placed = {}
     for name, flag in (("arrivals", True), ("shapes", False)):
         original = _RosterBuilder.USE_ARRIVALS
         _RosterBuilder.USE_ARRIVALS = flag
+        if flag:
+            _RosterBuilder._already_covered = spy_cap
+            _RosterBuilder._is_eligible = spy_eligible
         try:
             placed[name] = _arrivals(_shifts(solve_roster(
                 shop, team, holidays, fixed, rules, week, weights, profile,
                 history_rosters=history)))
         finally:
             _RosterBuilder.USE_ARRIVALS = original
+            _RosterBuilder._already_covered = real_cap
+            _RosterBuilder._is_eligible = real_eligible
+        if flag:
+            capped_snapshot = {k: v for k, v in capped.items()}
+            refused_snapshot = {k: dict(v) for k, v in refused.items()}
+            capped.clear()
+            refused.clear()
+    capped.update(capped_snapshot)
+    for key, value in refused_snapshot.items():
+        refused[key].update(value)
 
     his = _arrivals(_shifts(target))
 
@@ -329,16 +381,35 @@ async def explain(email: str, week: str) -> None:
             note = ""
             if learned != mine:
                 note = f"<<< asked for {learned}, placed {mine}"
+                if capped.get((day, hour)):
+                    note += f" | presence cap fired {capped[(day, hour)]}x"
+                reasons = refused.get((day, hour)) or {}
+                if reasons and mine < learned:
+                    top = sorted(reasons.items(), key=lambda r: -r[1])[:2]
+                    note += " | refused: " + "; ".join(
+                        f"{count}x {reason[:46]}" for reason, count in top)
                 mismatched += 1
             print(f"  {'':4}{hour:>4}:00{wrote:>6}{learned:>9}{mine:>8}"
                   f"{theirs:>8}   {note}")
 
     print(f"\n{'=' * 72}")
+    total_capped = sum(capped.values())
     if mismatched:
         print(f"  {mismatched} hours where the fill placed a different number")
         print("  from the one it learned. THAT is the bug — the model is not")
         print("  being asked the question it answers. Fix the fill before")
         print("  judging the model.")
+        print(f"\n  presence cap fired {total_capped} times this week, at "
+              f"{len(capped)} distinct hours")
+        if total_capped:
+            print("    " + ", ".join(
+                f"{day} {hour:02d}:00 x{count}"
+                for (day, hour), count in sorted(capped.items())))
+        print("\n  A capped hour is the cap doing its job or doing too much.")
+        print("  An hour with NO cap firing and people refused is an")
+        print("  eligibility problem: the arrivals slot offered a shape")
+        print("  nobody could work, where the shape list offered one they")
+        print("  could.")
     else:
         print("  The fill placed exactly what it learned, everywhere.")
         print("  So the model is working as designed and simply describes")
