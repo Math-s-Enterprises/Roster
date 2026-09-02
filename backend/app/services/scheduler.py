@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from app.services import availability as avail
 from app.services import hierarchy
 from app.services import hours_target
+from app.services import rule_parser
 from app.services import slot_owners
 
 DAYS: Tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -587,6 +588,16 @@ class _RosterBuilder:
         self.hours_aim: Dict[str, float] = self._build_hours_aim(
             history_rosters)
 
+        # Whose turn it is for a rotating day off, day -> employee_ids.
+        # Empty unless a shop has written such a rule, so this changes
+        # nothing for anybody who has not.
+        self.rotation_turns: Dict[str, List[str]] = self._build_rotation_turns(
+            history_rosters)
+        # Turns the week had to override, and which rules actually
+        # changed a decision. Both are reported at the end.
+        self.rotation_overridden: Set[Tuple[str, str]] = set()
+        self.rules_that_fired: Set[int] = set()
+
         self.result = SolveResult()
         self.hours_used: Dict[str, float] = {e["employee_id"]: 0.0 for e in employees}
         self.span_used: Dict[str, float] = {e["employee_id"]: 0.0 for e in employees}
@@ -983,11 +994,26 @@ class _RosterBuilder:
             if self.strict_days_off or not relax_preferences:
                 return False
 
+        # 9b. It is their turn for a rotating day off.
+        #
+        # ALWAYS SOFT, deliberately, and unlike `preferred_days_off` this one
+        # does not consult `strict_days_off`. The shop's own history shows
+        # the manager pausing the rotation on busy weeks — 4 of 11 weekends
+        # at the reference shop had nobody off — so a hard rule would force a
+        # day off he would not have given and leave the floor short. The
+        # relaxed pass gives the shift back when the week needs it, and
+        # `_report_rotation` says so.
+        if employee_id in self.rotation_turns.get(day, ()):
+            if not relax_preferences:
+                return False
+            self.rotation_overridden.add((employee_id, day))
+
         broken = _matching_custom_rule(
             self.custom_constraints, employee_id, day,  # noqa: E128
             to_minutes(segment.start), to_minutes(segment.end), open_m, close_m,
         )
         if broken:
+            self.rules_that_fired.add(id(broken))
             self._note_exclusion(
                 employee_id,
                 f"Blocked by your rule: {broken.get('description', 'custom rule')}.",
@@ -1215,6 +1241,81 @@ class _RosterBuilder:
             self.on_duty[covered_day][hour] += 1
             if role:
                 self.role_on_duty[covered_day][role][hour] += 1
+
+    def _build_rotation_turns(self, history_rosters) -> Dict[str, List[str]]:
+        """Whose turn it is for a rotating day off — day -> employee_ids.
+
+        The manager, asked how he rosters: "If Martin is off for the weekend,
+        then Corey and Jithin will be working. If Corey is off, then Martin
+        and Jithin will be working... There is a combination to give a
+        weekend off because they are on contract. They deserve this."
+
+        Whoever in the group has gone LONGEST without a turn gets the next
+        one. That needs no cycle length, so it works for a group of two or
+        seven, and for any set of days — no number here is calibrated on one
+        shop (§10b).
+
+        Derived every solve, never stored (§5): if the manager overrides a
+        week, the next one accounts for it rather than fighting him.
+
+        SOMEBODY WHO WAS NOT THERE HAS NOT HAD A TURN. A person who has not
+        joined yet, or was away all week, appears "off" every one of those
+        weekends — and counting that as their turn hands the rota to whoever
+        was hired first. Measured on the reference shop, a colleague hired in
+        June showed 13 weekends off against another's 3 for exactly this
+        reason, and the pattern read as no rotation at all when it was a
+        clean three-week cycle.
+        """
+        rules = [
+            r for r in self.custom_constraints
+            if (r.get("type") or "").lower() == "rotating_day_off"
+            and r.get("employee_ids") and r.get("days")
+        ]
+        if not rules:
+            return {}
+
+        weeks = sorted(
+            (r for r in (history_rosters or []) if r.get("week_start")),
+            key=lambda r: r["week_start"],
+        )
+        turns: Dict[str, List[str]] = {}
+        for rule in rules:
+            group = [e for e in rule["employee_ids"] if e in self.employees_by_id]
+            if len(group) < 2:
+                continue
+            days = [d.lower()[:3] for d in rule["days"]]
+
+            # How long ago each of them last had the whole set of days off,
+            # counting only weeks they were actually working.
+            last_turn: Dict[str, int] = {e: -1 for e in group}
+            for index, roster in enumerate(weeks):
+                shifts = roster.get("shifts") or []
+                for employee_id in group:
+                    present = any(
+                        s.get("employee_id") == employee_id
+                        and s.get("start") and s.get("end")
+                        for s in shifts
+                    )
+                    if not present:
+                        continue            # not there; not a turn
+                    worked_any = any(
+                        s.get("employee_id") == employee_id
+                        and s.get("day") in days
+                        and s.get("start") and s.get("end")
+                        and not (s.get("paid_holiday")
+                                 or s.get("unpaid_holiday"))
+                        for s in shifts
+                    )
+                    if not worked_any:
+                        last_turn[employee_id] = index
+
+            # Longest since their last turn goes first; never had one goes
+            # before everybody. Ties broken by id so the same history always
+            # gives the same answer (§2c).
+            due = min(group, key=lambda e: (last_turn[e], e))
+            for day in days:
+                turns.setdefault(day, []).append(due)
+        return turns
 
     def _build_hours_aim(self, history_rosters) -> Dict[str, float]:
         """What each hourly person could reasonably be given this week.
@@ -4060,6 +4161,55 @@ class _RosterBuilder:
 
         self.result.issues = kept
 
+    def _report_rotation(self) -> None:
+        """Say who was given a turn, and who was due one and did not get it.
+
+        A cross-week rule is the hardest kind to trust, because the reason
+        lives in previous rosters rather than on the page. A manager seeing
+        Martin off with no explanation is back to asking why — so both
+        outcomes are stated.
+        """
+        for day, employee_ids in sorted(self.rotation_turns.items()):
+            for employee_id in employee_ids:
+                name = self.employees_by_id.get(
+                    employee_id, {}).get("name", employee_id)
+                if (employee_id, day) in self.rotation_overridden:
+                    self.result.issues.append(
+                        f"{name} was due {day} off under your rotation rule, "
+                        f"but the shop would have been short without them."
+                    )
+                elif day in self.days_worked.get(employee_id, set()):
+                    continue        # placed by a pin or a fixed shift
+                else:
+                    self.result.issues.append(
+                        f"{name} has {day} off — their turn under your "
+                        f"rotation rule."
+                    )
+
+    def _report_unused_rules(self) -> None:
+        """Name rules that were understood but never changed a decision.
+
+        Compiling tells a manager the rule was READ, not that it did
+        anything. A rule can be enabled, compiled, approved and completely
+        inert — worded for a case that never arises, or naming somebody who
+        has left — and nothing said so. "Did my rule work?" was a debugging
+        session; it should be a line in the advisories.
+        """
+        unused = [
+            rule for rule in self.custom_constraints
+            if id(rule) not in self.rules_that_fired
+        ]
+        if not unused or len(unused) == len(self.custom_constraints):
+            # All of them idle usually means a quiet week rather than a
+            # broken rule, and one line per rule would drown the list.
+            if not unused:
+                return
+        for rule in unused[:4]:
+            self.result.issues.append(
+                f"Your rule \"{rule_parser.describe(rule)}\" had no effect on "
+                f"this roster — nothing it covers came up."
+            )
+
     def _report_inactive_rules(self) -> None:
         if not self.inactive_rules:
             return
@@ -4103,6 +4253,8 @@ class _RosterBuilder:
         self._report_understaffed()
         self._report_thin_days()
         self._collapse_repeated_issues()
+        self._report_rotation()
+        self._report_unused_rules()
         self._report_inactive_rules()
         self._order_shifts_for_display()
         rates = {e["employee_id"]: e.get("hourly_rate", 0) for e in self.employees}

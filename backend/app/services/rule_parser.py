@@ -128,6 +128,42 @@ def parse_rule(
             "description": f"At most {cap.group(1)} staff" + (f" on {', '.join(days)}" if days else ""),
         }
 
+    # "Martin, Corey and Jithin take turns having the weekend off"
+    #
+    # The first rule that depends on PREVIOUS weeks: whose turn it is comes
+    # from history, not from the week being built. Everything else here is
+    # answerable from the week alone.
+    #
+    # Checked before `not_together` because "take turns" and "rotate" name
+    # several people and would otherwise be read as a co-working rule.
+    #
+    # No cycle length is stored. "Whoever has gone longest without a turn"
+    # works for a group of two or seven, and for any set of days, so there is
+    # no number here calibrated on one shop (§10b).
+    if len(people) >= 2 and any(
+        phrase in text for phrase in (
+            "take turns", "takes turns", "taking turns", "in turn",
+            "rotate", "rotates", "rotating", "rotation",
+            "one at a time", "alternate", "alternates", "alternating",
+        )
+    ):
+        # Which days the turn is FOR. "the weekend" is the common phrasing
+        # and is not a day name, so it is expanded here rather than left to
+        # `_find_days`, which looks for weekday words.
+        turn_days = days
+        if not turn_days and "weekend" in text:
+            turn_days = ["sat", "sun"]
+        if turn_days:
+            return {
+                "type": "rotating_day_off",
+                "employee_ids": people,
+                "days": turn_days,
+                "description": (
+                    f"{len(people)} people take turns having "
+                    f"{', '.join(turn_days)} off"
+                ),
+            }
+
     # "Ben and Alice must not work together"
     if len(people) >= 2 and ("together" in text or "same shift" in text or "same time" in text):
         return {

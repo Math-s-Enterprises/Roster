@@ -303,6 +303,47 @@ Four rules the pass never breaks:
 > Whether that is worth a pass in the solver was a judgement call, made by the
 > shop owner, not by the measurement.
 
+## 2g. A group can take turns having a day off
+
+The first rule that depends on PREVIOUS weeks. Every other custom rule —
+`max_staff`, `not_together`, `no_open` — is answerable from the week being
+built; whose turn it is cannot be.
+
+The manager, asked how he rosters: *"If Martin is off for the weekend, then
+Corey and Jithin will be working. If Corey is off, then Martin and Jithin
+will be working... There is a combination to give a weekend off because they
+are on contract. They deserve this."* Confirmed in his own rosters — 7 of 11
+weekends with exactly one of them off, in a clean three-week cycle.
+
+Written in plain English and compiled by the regex parser, so **no API key is
+needed**: *"Martin, Corey and Jithin take turns having the weekend off"* →
+`rotating_day_off`. The group and the days come from the rule; nothing about
+the shop is baked in.
+
+**Whoever has gone longest without a turn gets the next one.** That stores no
+cycle length, so it works for a group of two or seven and for any set of days
+— there is no number here calibrated on one shop (§10b). Derived every solve,
+never stored (§5), so an override just feeds the next week.
+
+**Always soft, and unlike `preferred_days_off` it ignores `strict_days_off`.**
+The shop's own history shows the rotation pausing on busy weeks — 4 of 11
+weekends had nobody off — so a hard rule would force a day off the manager
+would not have given and leave the floor short. The relaxed pass gives the
+shift back and `_report_rotation` says why.
+
+**Somebody who was not there has not had a turn.** A person not yet hired
+appears "off" every weekend, and counting that hands the rota to whoever was
+hired first: measured here, a colleague hired in June showed 13 weekends off
+against another's 3, and the pattern read as no rotation at all when it was a
+clean cycle. `_build_rotation_turns` only counts weeks somebody actually
+worked.
+
+**Both outcomes are reported.** A cross-week rule is the hardest kind to
+trust, because the reason lives in previous rosters rather than on the page.
+So the roster says either *"Martin has sat off — their turn under your
+rotation rule"* or *"Martin was due sat off, but the shop would have been
+short without them."*
+
 ## 3. Approved weeks are locked
 
 Approving is when a roster becomes the schedule people work, **and** when it
