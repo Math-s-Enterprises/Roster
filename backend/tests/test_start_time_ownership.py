@@ -104,7 +104,8 @@ class TestAStartTimeIsAClaim:
             "the solver offers and the one she keeps losing"
         )
         assert "emma" in slot_owners.regulars_of_start(
-            owners, "mon", "06:00"), "fixture: emma must own the 06:00 START"
+            slot_owners.build_start_owners(emmas_mondays()),
+            "mon", "06:00"), "fixture: emma must own the 06:00 START"
 
     def test_the_start_owner_is_ranked_first_for_an_unowned_opening(self):
         """The change itself, tested where it happens.
@@ -171,7 +172,7 @@ class TestAStartTimeIsAClaim:
             None, None, None,
         )
         assert "starter" in slot_owners.regulars_of_start(
-            builder.slot_owners, "mon", "06:00"), (
+            builder.start_owners, "mon", "06:00"), (
             "fixture: starter must own the 06:00 start, or this proves "
             "nothing about the two claims competing"
         )
@@ -205,9 +206,9 @@ class TestItDoesNotOverreach:
             })
         owners = slot_owners.build_owners(hist)
         assert "occasional" not in slot_owners.regulars_of_start(
-            owners, "mon", "06:00")
+            slot_owners.build_start_owners(hist), "mon", "06:00")
         assert "regular" in slot_owners.regulars_of_start(
-            owners, "mon", "06:00")
+            slot_owners.build_start_owners(hist), "mon", "06:00")
 
     def test_too_few_weeks_is_not_a_habit(self):
         """MIN_OCCURRENCES applies to starts as it does to shapes — three
@@ -220,9 +221,101 @@ class TestItDoesNotOverreach:
                         "start": "06:00", "end": "16:00"}],
         } for w in range(3)]
         owners = slot_owners.build_owners(hist)
-        assert slot_owners.regulars_of_start(owners, "mon", "06:00") == set()
+        assert slot_owners.regulars_of_start(
+            slot_owners.build_start_owners(hist), "mon", "06:00") == set()
 
     def test_a_different_day_is_a_different_claim(self):
         """Opening every Monday says nothing about Saturday."""
         owners = slot_owners.build_owners(emmas_mondays())
-        assert slot_owners.regulars_of_start(owners, "sat", "06:00") == set()
+        assert slot_owners.regulars_of_start(
+            slot_owners.build_start_owners(emmas_mondays()),
+            "sat", "06:00") == set()
+
+
+class TestNearbyStartsArePooled:
+    """Jane's Saturday, and why an exact start is not enough.
+
+        sat 06:00   12 of 31   39%   no claim
+        sat 10:00    7 of 18   39%   no claim
+        sat 11:00    8 of 19   42%   no claim
+
+    Nothing clears the bar alone, so she has no claim on any Saturday — while
+    plainly being the person who does late-morning Saturdays. Pooling starts
+    within an hour gives her one, and leaves her 06:00 separate, four hours
+    away. That is the tolerance familiarity has always used (§2).
+    """
+
+    def _janes_saturdays(self, weeks=20):
+        out = []
+        for w in range(weeks):
+            # Jane alternates 10:00 and 11:00; a colleague opens at 06:00 and
+            # another takes whichever of the two Jane did not.
+            jane_start = "10:00" if w % 2 else "11:00"
+            other = "11:00" if w % 2 else "10:00"
+            out.append({
+                "week_start": (date(2026, 4, 27)
+                               + timedelta(weeks=w)).isoformat(),
+                "approved": True, "created_at": f"{w:03d}",
+                "shifts": [
+                    {"employee_id": "jane", "day": "sat",
+                     "start": jane_start, "end": "17:00"},
+                    {"employee_id": "other", "day": "sat",
+                     "start": other, "end": "19:00"},
+                    {"employee_id": "opener", "day": "sat",
+                     "start": "06:00", "end": "14:00"},
+                ],
+            })
+        return out
+
+    def test_neither_start_alone_is_a_claim(self):
+        """The fixture must reproduce the problem or the next test proves
+        nothing."""
+        starts = slot_owners.build_start_owners(self._janes_saturdays())
+        for start in ("10:00", "11:00"):
+            assert "jane" not in slot_owners.regulars_of_start(
+                starts, "sat", start), (
+                f"fixture: jane must not clear the bar on {start} alone"
+            )
+
+    def test_pooled_within_an_hour_they_are(self):
+        starts = slot_owners.build_start_owners(self._janes_saturdays())
+        assert "jane" in slot_owners.regulars_of_start(
+            starts, "sat", "11:00", tolerance_minutes=60), (
+            "10:00 and 11:00 are an hour apart and together are plainly her "
+            "shift, but pooling them found no claim"
+        )
+
+    def test_a_distant_start_is_not_pooled_in(self):
+        """An hour absorbs 10:00 against 11:00. It must not reach 06:00 for
+        somebody who never opens."""
+        starts = slot_owners.build_start_owners(self._janes_saturdays())
+        assert "jane" not in slot_owners.regulars_of_start(
+            starts, "sat", "06:00", tolerance_minutes=60)
+        assert "opener" in slot_owners.regulars_of_start(
+            starts, "sat", "06:00", tolerance_minutes=60)
+
+    def test_the_denominator_is_the_union_not_the_sum(self):
+        """The bug most likely to be written here.
+
+        Pooling 10:00 and 11:00 means "weeks either ran". Summing the two
+        week counts would double every week in which both ran, halving every
+        share and finding no owners at all — or, added the other way, push
+        shares over 100% and make everybody an owner of everything.
+        """
+        starts = slot_owners.build_start_owners(self._janes_saturdays())
+        pooled = {
+            employee_id
+            for employee_id in ("jane", "other", "opener")
+            if employee_id in slot_owners.regulars_of_start(
+                starts, "sat", "10:00", tolerance_minutes=60)
+        }
+        # Jane and `other` each do late mornings in every week, on
+        # alternating starts, so BOTH are regulars of the pooled window.
+        assert pooled == {"jane", "other"}, pooled
+
+    def test_zero_tolerance_is_the_old_behaviour(self):
+        """Callers that want an exact start still get one."""
+        starts = slot_owners.build_start_owners(self._janes_saturdays())
+        assert slot_owners.regulars_of_start(
+            starts, "sat", "10:00") == slot_owners.regulars_of_start(
+            starts, "sat", "10:00", tolerance_minutes=0)

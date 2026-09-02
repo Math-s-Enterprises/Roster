@@ -84,7 +84,17 @@ All of them were right: **she did not lose the slot she owns, it was never on
 the board.**
 
 So when the exact shape is UNOWNED, whoever owns the START gets rank 0.
-`regulars_of_start` in `slot_owners.py`, same 60% over 4 weeks. An exact owner
+`regulars_of_start` in `slot_owners.py`, same 60% over 4 weeks, and starts
+**within an hour of each other are pooled** — the tolerance familiarity has
+always used (`FAMILIAR_START_TOLERANCE_MINUTES`). Jane's Saturday needed it:
+06:00 39%, 10:00 39%, 11:00 42%, nothing clearing the bar alone while she is
+plainly the person who does late-morning Saturdays. Pooled, 10:00 and 11:00
+are a real claim; her 06:00 stays separate, four hours away.
+
+The denominator is the UNION of weeks any pooled start ran, which is why
+`build_start_owners` keeps week SETS rather than counts. Summing them
+double-counts a week in which two ran and puts shares over 100%, making
+everybody an owner of everything. An exact owner
 still wins outright — a claim on the hour never ranks level with a settled
 claim on the whole shift. Familiarity has always worked this way (§2) for the
 same reason: a person is either there to open or they are not, and the finish

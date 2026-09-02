@@ -516,9 +516,22 @@ class _RosterBuilder:
         # learn whose it is. A one-off extra never creates an owner of a slot
         # that does not exist — which would turn "as well as" into "instead
         # of" (§2d).
+        _active = {e["employee_id"] for e in employees if avail.is_active(e)}
         self.slot_owners = slot_owners.build_owners(
             history_rosters or [],
-            {e["employee_id"] for e in employees if avail.is_active(e)},
+            _active,
+            known_shapes={
+                (day, start, end)
+                for day in DAYS
+                for start, end in (demand.slots_for(day) if demand else [])
+            } or None,
+        )
+        # Who OPENS at each time, with the weeks each start ran. Built
+        # separately because the weeks a start ran is the union across its
+        # shapes, and the shape map stores only a count (see
+        # build_start_owners).
+        self.start_owners = slot_owners.build_start_owners(
+            history_rosters or [], _active,
             known_shapes={
                 (day, start, end)
                 for day in DAYS
@@ -2229,8 +2242,13 @@ class _RosterBuilder:
             # start, on the shape the shop is running, and the contract and
             # hour-fitting passes deal with the length — the same division of
             # labour familiarity has always used (§2).
+            # Within an hour, the tolerance familiarity already uses
+            # (§2). Jane's Saturday needed it: 06:00 39%, 10:00 39%, 11:00
+            # 42%, nothing clearing the bar alone, while 10:00 and 11:00
+            # pooled are a real claim and her 06:00 stays separate.
             for employee_id in sorted(slot_owners.regulars_of_start(
-                self.slot_owners, day, start
+                self.start_owners, day, start,
+                tolerance_minutes=avail.FAMILIAR_START_TOLERANCE_MINUTES,
             )):
                 if employee_id in available:
                     ranks[employee_id] = 0

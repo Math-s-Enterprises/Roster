@@ -50,6 +50,14 @@ from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Set, Tuple
 
 from app.services.learning import latest_per_week
 
+
+def to_minutes(hhmm: str) -> int:
+    """Minutes since midnight. Local rather than imported from
+    `availability`, which imports this module's siblings — one small
+    function is cheaper than a cycle."""
+    hours, _, minutes = hhmm.partition(':')
+    return int(hours) * 60 + int(minutes or 0)
+
 # Share of a slot's occurrences one person must hold to own it.
 OWNERSHIP_SHARE = 0.6
 
@@ -223,49 +231,103 @@ def regulars_of(
     }
 
 
+class StartHistory(NamedTuple):
+    """Who has opened at a given time, and which weeks that start ran.
+
+    The WEEK SET, not a count, because starts get POOLED. Asking about 11:00
+    with an hour's tolerance means 10:00, 11:00 and 12:00 together, and the
+    denominator is the weeks ANY of them ran — the union. Summing counts
+    would double-count a week where two of them ran and push shares over
+    100%, making everybody an owner of everything.
+    """
+    people: Dict[str, int]
+    weeks: Set[str]
+
+
+def build_start_owners(
+    approved_rosters: Sequence[Dict[str, Any]],
+    active_ids: Optional[Set[str]] = None,
+    known_shapes: Optional[Set[DaySlot]] = None,
+) -> Dict[Tuple[str, str], StartHistory]:
+    """(day, start) -> who opens then, and the weeks that start ran.
+
+    Built separately from `build_owners` rather than derived from it. The
+    shape map stores only a COUNT of weeks per shape, and the weeks a start
+    ran is the union across its shapes, which a count cannot give: Emma's
+    Monday 06:00 ran in 31 weeks while her commonest shape ran in 29, so
+    reusing the shape count inflated her share from 81% to 86%. Harmless
+    there, wrong in general, and hopeless once starts are pooled.
+    """
+    counts: Dict[Tuple[str, str], Dict[str, int]] = defaultdict(
+        lambda: defaultdict(int))
+    weeks: Dict[Tuple[str, str], Set[str]] = defaultdict(set)
+
+    for roster in latest_per_week(list(approved_rosters)):
+        if roster.get("exclude_from_ai"):
+            continue
+        week_start = roster.get("week_start")
+        for shift in roster.get("shifts", []):
+            if not _is_signal(shift, known_shapes):
+                continue
+            employee_id = shift.get("employee_id")
+            day, start = shift.get("day"), shift.get("start")
+            if not (employee_id and day and start):
+                continue
+            weeks[(day, start)].add(week_start)
+            if active_ids is not None and employee_id not in active_ids:
+                continue
+            counts[(day, start)][employee_id] += 1
+
+    return {
+        key: StartHistory(people=dict(people), weeks=weeks[key])
+        for key, people in counts.items()
+    }
+
+
 def regulars_of_start(
-    owners: Dict[DaySlot, SlotHistory],
+    start_owners: Dict[Tuple[str, str], StartHistory],
     day: str,
     start: str,
+    tolerance_minutes: int = 0,
 ) -> Set[str]:
-    """Everybody with a settled claim on OPENING at this time, any finish.
+    """Everybody with a settled claim on STARTING around this time.
 
     Ownership keyed on the exact `(day, start, end)` misses the commonest
-    real pattern there is: somebody who opens at the same time every week
-    while their finish moves. Measured at the reference shop, Emma's Monday:
+    real pattern there is: somebody who comes in at the same time every week
+    while their finish moves. Emma's Monday, from 31 weeks:
 
-        06:00-16:00   worked 10 of 29   34%   no claim
-        06:00-14:00   worked  2 of 26    8%   no claim
-        06:00-12:00   worked 13 of 14   93%   HERS
-        06:00 (any)   worked 25 of 31   81%   HERS
+        06:00-16:00   10 of 29   34%   no claim
+        06:00-14:00    2 of 26    8%   no claim
+        06:00-12:00   13 of 14   93%   HERS, and never offered
+        06:00 (any)   25 of 31   81%   HERS
 
-    She owns the short opener outright — and `day_slots` drops that shape for
-    being rarer than its neighbours, so the solver never offers it. She is
-    then left competing for a 06:00-16:00 she works a third of the time, and
-    loses it on the tie-break. Every ownership check reported "sound", and
-    was right: she did not lose the slot she owns, it was never on the board.
+    `tolerance_minutes` pools nearby starts, which is what familiarity has
+    always done (§2, `FAMILIAR_START_TOLERANCE_MINUTES`): an hour absorbs
+    07:00 against 07:30 without waving through 06:00 for somebody who always
+    starts at 10:00. Jane's Saturday needed it — 06:00 39%, 10:00 39%,
+    11:00 42%, nothing clearing the bar alone, while 10:00 and 11:00
+    together are a real claim and her 06:00 stays separate, four hours away.
 
-    Familiarity has always worked this way (§2) for the same reason — a
-    person is either there to open or they are not, and the finish is a
-    separate question that the contract and hour-fitting passes settle.
-
-    The denominator is the weeks the START ran at all, whoever worked it, so
-    a colleague occasionally opening does not dilute the regular's claim —
-    the same reasoning as SlotHistory's `weeks`.
+    The denominator is the UNION of weeks any pooled start ran. Summing them
+    would count a week twice when two ran in it and put shares over 100%.
     """
-    worked: Dict[str, int] = defaultdict(int)
-    weeks = 0
-    for (a_day, a_start, _end), history in owners.items():
-        if (a_day, a_start) != (day, start):
+    want = to_minutes(start)
+    pooled_people: Dict[str, int] = defaultdict(int)
+    pooled_weeks: Set[str] = set()
+    for (a_day, a_start), history in start_owners.items():
+        if a_day != day:
             continue
-        weeks = max(weeks, history.weeks)
-        for employee_id, count in history.people:
-            worked[employee_id] += count
-    if weeks < MIN_OCCURRENCES:
+        if abs(to_minutes(a_start) - want) > tolerance_minutes:
+            continue
+        pooled_weeks |= history.weeks
+        for employee_id, count in history.people.items():
+            pooled_people[employee_id] += count
+
+    if len(pooled_weeks) < MIN_OCCURRENCES:
         return set()
     return {
-        employee_id for employee_id, count in worked.items()
-        if min(count, weeks) / weeks >= OWNERSHIP_SHARE
+        employee_id for employee_id, count in pooled_people.items()
+        if min(count, len(pooled_weeks)) / len(pooled_weeks) >= OWNERSHIP_SHARE
     }
 
 
