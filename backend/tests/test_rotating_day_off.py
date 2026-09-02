@@ -250,3 +250,47 @@ class TestItIsSoftNotHard:
             assert "due sat off" in notes, (
                 f"ben worked his turn and nothing said why: {notes}"
             )
+
+
+class TestOnlyOneOfThemIsOffAtATime:
+    """"If Martin is off for the weekend, then Corey and Jithin will be
+    working." Somebody already away IS the week's absence — giving another a
+    turn on top takes two of the group off at once, which is the arrangement
+    the rule exists to prevent.
+
+    Reported from the reference shop after the first version shipped:
+    "Jithin and Corey both are off."
+    """
+
+    def _turns(self, hist, group, holidays=None, team=None):
+        team = team or [person(e) for e in group]
+        return _RosterBuilder(
+            make_shop(), team, holidays or [], [], rule(group), WEEK, {},
+            None, hist, None, None, None,
+        ).rotation_turns
+
+    def test_nobody_gets_a_turn_when_one_of_them_is_on_leave(self):
+        group = ["ann", "ben", "cal"]
+        hist = history({6: "cal", 7: "ben", 8: "ann"}, group)
+        saturday = (date(2026, 9, 14) + timedelta(days=5)).isoformat()
+        holidays = [{"scope": "employee", "employee_id": "cal",
+                     "date": saturday, "end_date": saturday}]
+        turns = self._turns(hist, group, holidays=holidays)
+        assert "sat" not in turns, (
+            "cal is already off on leave that Saturday and somebody else was "
+            f"given a turn as well — two of the three off at once: {turns}"
+        )
+        # Sunday is untouched: they are all available, so the rotation runs.
+        assert turns.get("sun") == ["cal"] or "sun" not in turns
+
+    def test_nobody_gets_a_turn_when_one_of_them_has_left(self):
+        group = ["ann", "ben", "cal"]
+        hist = history({6: "cal", 7: "ben", 8: "ann"}, group)
+        team = [person("ann"), person("ben"), person("cal", is_active=False)]
+        assert self._turns(hist, group, team=team) == {}
+
+    def test_a_turn_is_still_given_when_they_are_all_available(self):
+        """The guard must not switch the rule off altogether."""
+        group = ["ann", "ben", "cal"]
+        hist = history({6: "cal", 7: "ben", 8: "ann"}, group)
+        assert self._turns(hist, group).get("sat") == ["cal"]

@@ -1309,13 +1309,51 @@ class _RosterBuilder:
                     if not worked_any:
                         last_turn[employee_id] = index
 
+            # ONE AT A TIME, AND ONLY IF NOBODY IS ALREADY OFF.
+            #
+            # The whole point is "if Martin is off, then Corey and Jithin
+            # will be working". Somebody in the group already away — booked
+            # leave, a standing day off, not employed that week — IS the
+            # week's absence. Giving somebody else a turn on top takes two of
+            # the group off at once, which is the arrangement the rule exists
+            # to prevent. Reported from the reference shop: "Jithin and Corey
+            # both are off."
             # Longest since their last turn goes first; never had one goes
             # before everybody. Ties broken by id so the same history always
             # gives the same answer (§2c).
             due = min(group, key=lambda e: (last_turn[e], e))
             for day in days:
+                # PER DAY, not per weekend. Somebody on leave for one day of
+                # it is that day's absence even though they work the other —
+                # which is the reported case exactly: one of them was on
+                # leave for the Sunday and another was given the whole
+                # weekend, so two of the three were off on Sunday.
+                if any(not self._could_work(e, day) for e in group):
+                    continue
                 turns.setdefault(day, []).append(due)
         return turns
+
+    def _could_work(self, employee_id: str, day: str) -> bool:
+        """Is this person available to work this day at all?
+
+        Used to decide whether the group already has its absence for the day.
+        Only reasons that rule somebody out for the WHOLE day are checked —
+        leave, a standing day off, having left. Hours and the five-day limit
+        are not: those depend on how the week is filled, and this runs before
+        it is.
+        """
+        employee = self.employees_by_id.get(employee_id)
+        if not employee or not avail.is_active(employee):
+            return False
+        if self.date_for_day.get(day) in self.employee_off_dates.get(
+            employee_id, set()
+        ):
+            return False
+        if self.strict_days_off and day in (
+            employee.get("preferred_days_off") or []
+        ):
+            return False
+        return True
 
     def _build_hours_aim(self, history_rosters) -> Dict[str, float]:
         """What each hourly person could reasonably be given this week.

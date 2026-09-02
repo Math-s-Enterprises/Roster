@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api, errorMessage } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Trash2, Shield, AlertCircle, Sparkles, Lock } from "lucide-react";
+import { Plus, Trash2, Shield, AlertCircle, Sparkles, Lock, Check } from "lucide-react";
 
 const catIcon = { legal: Shield, safety: AlertCircle, custom: Sparkles };
 const catClass = { legal: "text-cyan-400", safety: "text-amber-400", custom: "text-violet-400" };
@@ -92,8 +92,23 @@ export default function AIRules() {
                       {r.approved && <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">Enforced</span>}
                     </div>
                     <div className="text-xs text-white/60 mt-1">{r.description}</div>
+                    {/* What the app UNDERSTOOD, in English.
+                        This used to print JSON.stringify(r.compiled) into a
+                        <pre>. A shop owner should never be shown the internal
+                        constraint — and it was the only thing telling them
+                        what had been understood, so checking it meant reading
+                        JSON. Every compiled rule carries a plain `description`
+                        written for exactly this. */}
                     {r.compiled && (
-                      <pre className="mt-3 text-[10px] font-mono bg-black/40 p-3 rounded-lg text-cyan-300 overflow-x-auto scroll-thin">{JSON.stringify(r.compiled, null, 2)}</pre>
+                      <div className="mt-2 text-[11px] text-emerald-300/80 flex items-start gap-1.5">
+                        <Check size={11} className="mt-0.5 shrink-0" />
+                        <span>
+                          Understood as: {r.compiled.description
+                            || r.compiled.type?.replace(/_/g, " ")}
+                          {Array.isArray(r.compiled.days) && r.compiled.days.length > 0
+                            && ` · ${r.compiled.days.join(", ")}`}
+                        </span>
+                      </div>
                     )}
                     <div className="flex gap-2 mt-3 flex-wrap">
                       <button data-testid={`btn-compile-${r.rule_id}`} onClick={() => compile(r)} disabled={compiling === r.rule_id} className="text-[11px] px-3 py-1.5 rounded-full glass-solid hover:border-white/20 flex items-center gap-1">
