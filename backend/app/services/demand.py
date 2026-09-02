@@ -88,6 +88,26 @@ class DemandProfile:
     # floor at 06:00 ended up being counted twice, once in the curve and
     # again as a body added on top.
     day_slots: Dict[str, List[List[str]]] = field(default_factory=dict)
+    # HOW MANY PEOPLE START each hour, per day. {"sat": [0]*6 + [2, 1, ...]}
+    # means two people come in at 06:00 on a Saturday and one at 07:00.
+    #
+    # The shop owner asked for this from the first week: "at 6:00 two people
+    # are coming in, and it should schedule two people." `day_slots` cannot
+    # answer it. It scores each SHAPE independently, so three shapes that all
+    # start at 06:00 each look common and all three get picked — measured
+    # here, the manager starts 2.05 people at 06:00 on a Saturday and the
+    # shape list starts 3, on every day of the week. The reverse happens
+    # where a band is fragmented: he starts 2.11 at 16:00 on a Friday and the
+    # shape list starts 1, because none of that band's many shapes clears the
+    # frequency bar alone. 23.1 people-starts adrift across the week.
+    #
+    # Note this is ARRIVALS, not presence. The original solver counted bodies
+    # present per hour and was dropped because it double-counted changeover —
+    # a night worker still on the floor at 06:00 was in the curve, so filling
+    # 06:00 "to target" put a fourth body on an hour that always had three.
+    # Counting arrivals cannot make that mistake: somebody still on the floor
+    # at 06:00 did not START at 06:00.
+    arrivals: Dict[str, List[int]] = field(default_factory=dict)
     # How many weeks from about a year ago fed into this. Zero until a shop
     # has a year of history — and while it is zero, nothing here knows
     # anything about Christmas. Reported so the UI can say that rather than
@@ -119,6 +139,15 @@ class DemandProfile:
     def slots_for(self, day: str) -> List[Tuple[str, str]]:
         """The shifts this day normally runs, earliest start first."""
         return [tuple(slot) for slot in self.day_slots.get(day, [])]
+
+    def starting_at(self, day: str, hour: int) -> int:
+        """How many people begin a shift at this hour on this day."""
+        grid = self.arrivals.get(day)
+        return grid[hour] if grid and 0 <= hour < len(grid) else 0
+
+    def has_arrivals(self, day: str) -> bool:
+        """Whether this day has a learned arrival pattern to fill from."""
+        return any(self.arrivals.get(day) or ())
 
     def role_target(self, day: str, hour: int, role: str) -> float:
         return self.role_mix.get(day, {}).get(role, [0.0] * HOURS_PER_DAY)[hour]
@@ -327,6 +356,42 @@ def _is_worked(shift: Dict[str, Any]) -> bool:
     )
 
 
+def _build_arrivals(
+    totals: Dict[str, List[float]], weight_sum: float,
+) -> Dict[str, List[int]]:
+    """How many people start each hour, rounded so the DAY's total survives.
+
+    Largest remainder, the same technique `_build_day_slots` uses, and for
+    the same reason: rounding each hour on its own drops or invents whole
+    people. Measured on the reference shop, plain rounding put three openers
+    on every day of the week where the manager writes between 2.05 and 2.85 —
+    every fraction rounded up independently, and Saturday came out with three
+    people at 06:00 where the shop runs two.
+
+    The day total is itself rounded to nearest, which is what §7's own note
+    settled: rounding up "compounds across 168 hours" and inflated the weekly
+    requirement by 21%.
+    """
+    out: Dict[str, List[int]] = {}
+    for day, hours in totals.items():
+        if not weight_sum:
+            continue
+        exact = [value / weight_sum for value in hours]
+        target = int(round(sum(exact)))
+        counts = [int(value) for value in exact]
+        short = target - sum(counts)
+        if short > 0:
+            # Whichever hours were closest to another whole person get them.
+            order = sorted(
+                range(len(exact)),
+                key=lambda h: (-(exact[h] - counts[h]), h),
+            )
+            for hour in order[:short]:
+                counts[hour] += 1
+        out[day] = counts
+    return out
+
+
 def _build_day_slots(
     slot_counts: Dict[str, Counter],
     weeks: int,
@@ -442,6 +507,9 @@ def learn_demand(
     # How often each exact shift ran on each day, so the day's shape can be
     # rebuilt rather than inferred.
     slot_counts: Dict[str, Counter] = {d: Counter() for d in DAYS}
+    # How many people begin a shift each hour, per day.
+    arrival_totals: Dict[str, List[float]] = {
+        d: [0.0] * HOURS_PER_DAY for d in DAYS}
 
     for roster, weight in weighted:
         on_day: Dict[str, set] = {d: set() for d in DAYS}
@@ -491,6 +559,11 @@ def learn_demand(
 
             pattern_counts[(start, end)] += 1
             slot_counts[day][(start, end)] += weight
+            # ARRIVALS: who comes IN at this hour. An extra counts here
+            # — the manager did put somebody on at that time, and this
+            # is a statement about timing, not about the staffing level
+            # (§2d).
+            arrival_totals[day][to_minutes(start) // 60] += weight
 
         for day, people in on_day.items():
             staff_totals[day] += len(people) * weight
@@ -544,6 +617,7 @@ def learn_demand(
         weeks_observed=observed,
         staff_per_day=staff_per_day,
         day_slots=_build_day_slots(slot_counts, weeks, staff_per_day),
+        arrivals=_build_arrivals(arrival_totals, weeks),
         seasonal_weeks=seasonal_weeks,
         # From the SAME weeks the shapes came from, so the convention and the
         # shapes cannot disagree about the shop.

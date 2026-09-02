@@ -526,6 +526,24 @@ class _RosterBuilder:
                 for start, end in (demand.slots_for(day) if demand else [])
             } or None,
         )
+        # When each person normally finishes, given a day and a start.
+        # Two indexes: theirs, and the shop's, used as a fallback.
+        self._finish_counts: Dict[Tuple[str, str, str], Dict[str, int]] = \
+            defaultdict(lambda: defaultdict(int))
+        self._shop_finish_counts: Dict[Tuple[str, str], Dict[str, int]] = \
+            defaultdict(lambda: defaultdict(int))
+        for _roster in (history_rosters or []):
+            for _s in _roster.get('shifts') or []:
+                if _s.get('paid_holiday') or _s.get('unpaid_holiday') \
+                        or _s.get('sick'):
+                    continue
+                _d, _st, _en = _s.get('day'), _s.get('start'), _s.get('end')
+                _e = _s.get('employee_id')
+                if not (_d and _st and _en and _e):
+                    continue
+                self._finish_counts[(_e, _d, _st)][_en] += 1
+                self._shop_finish_counts[(_d, _st)][_en] += 1
+
         # Who OPENS at each time, with the weeks each start ran. Built
         # separately because the weeks a start ran is the union across its
         # shapes, and the shape map stores only a count (see
@@ -1345,6 +1363,121 @@ class _RosterBuilder:
                     continue
                 turns.setdefault(day, []).append(due)
         return turns
+
+    # Fill by ARRIVALS rather than by shape. A named switch so the two can be
+    # measured against each other, like OWNER_BEATS_CONTRACT.
+    USE_ARRIVALS = False
+
+    def _staff_by_arrivals(
+        self, day: str, date_iso: str, assigned_today: Set[str],
+        open_m: int, close_m: int,
+    ) -> None:
+        """Walk the day and put on however many people normally start each hour.
+
+        Asked for from the first week: "at 6:00 two people are coming in, and
+        it should schedule two people. Next it goes to 7:00. If somebody is
+        starting at 7:00, let it put 1."
+
+        `_staff_by_slots` could not answer that. It picks SHAPES by frequency
+        independently, so three shapes that all begin at 06:00 each look
+        common and all three are chosen — the manager starts between 2.05 and
+        2.85 people at 06:00 and the shape list started 3, on every day of
+        the week. Where a band is fragmented the reverse happens: he starts
+        2.11 at 16:00 on a Friday and the shape list started 1, because none
+        of that band's many shapes clears the bar alone. 23.1 people-starts
+        adrift across the week.
+
+        PRESENCE CAPS ARRIVALS, which is the shop owner's rule: "if there are
+        two people starting at 8:00 and the shop needs just 2 people, and we
+        already have them who started at 6:00, then it should not put them at
+        8:00." So an arrival is skipped when the floor already holds what the
+        curve asks for. The coverage floor (§1 rule 1) is a separate pass and
+        is deliberately NOT capped — somebody must be on the premises whatever
+        the arrival pattern says.
+
+        The FINISH is not decided here. Whoever takes the start brings their
+        own usual finish for it, which is where Emma's 06:00-12:00 and Jane's
+        10:00-17:00 live — shapes the frequency-based list dropped for being
+        rarer than their neighbours.
+        """
+        for hour in self._open_hours(day):
+            wanted = self.demand.starting_at(day, hour)
+            for _ in range(wanted):
+                if self.on_duty[day][hour] >= self.demand.required(day, hour):
+                    # Already as many on the floor as this shop normally has.
+                    # Both numbers are averages and each is rounded, so this
+                    # is a >= rather than an exact match: vetoing on a
+                    # rounding disagreement would under-staff systematically.
+                    break
+                if not self._place_one_arrival(
+                    day, date_iso, hour, assigned_today, open_m, close_m
+                ):
+                    break
+
+    def _place_one_arrival(
+        self, day: str, date_iso: str, hour: int,
+        assigned_today: Set[str], open_m: int, close_m: int,
+    ) -> bool:
+        """Put one person on starting at this hour. True if somebody went on."""
+        start = f"{hour:02d}:00"
+        # Candidates are ranked per candidate, because the finish differs per
+        # person and eligibility depends on it — a 10-hour finish may breach
+        # somebody's cap where a 6-hour one does not.
+        best = None
+        best_key = None
+        for employee in self.employees:
+            if employee["employee_id"] in assigned_today:
+                continue
+            end = self._usual_finish(employee["employee_id"], day, start)
+            if end is None:
+                continue
+            segment = Segment(start=start, end=end)
+            for relax in (False, True):
+                if self._is_eligible(
+                    employee, segment, day, date_iso, assigned_today,
+                    open_m, close_m, relax_preferences=relax,
+                ):
+                    break
+            else:
+                continue
+            history_rank = self._history_rank([employee], day, start, end)
+            key = (
+                history_rank.get(employee["employee_id"], _UNRANKED_FOR_SLOT),
+                self._contract_need(employee, segment.span_hours),
+                self._rank_for_demand(
+                    employee, f"{start}-{end}", day, segment.span_hours),
+            )
+            if best_key is None or key < best_key:
+                best, best_key = (employee, end), key
+
+        if best is None:
+            return False
+        employee, end = best
+        self._record_shift(employee["employee_id"], day, start, end)
+        assigned_today.add(employee["employee_id"])
+        return True
+
+    def _usual_finish(
+        self, employee_id: str, day: str, start: str
+    ) -> Optional[str]:
+        """When this person normally goes home after starting at this time.
+
+        The half of the shift that `day_slots` used to decide for everybody,
+        moved to where the evidence actually is. Emma finishes her Monday
+        06:00 at 12:00 in 13 of the 14 weeks that shape ran; Megan finishes
+        hers at 16:00. Both open, and the app should say so rather than
+        picking one shape and hunting for somebody to fit it.
+
+        Falls back to what the SHOP does at that start when this person has
+        never worked it, and to nothing at all when neither is known — a
+        start nobody has ever worked is not one to invent a finish for (§9).
+        """
+        counts = self._finish_counts.get((employee_id, day, start))
+        if not counts:
+            counts = self._shop_finish_counts.get((day, start))
+        if not counts:
+            return None
+        return max(sorted(counts), key=lambda end: counts[end])
 
     def _could_work(self, employee_id: str, day: str) -> bool:
         """Is this person available to work this day at all?
@@ -3104,7 +3237,13 @@ class _RosterBuilder:
         for day, date_iso, open_m, close_m in fill:
             assigned_today = assigned_by_day[day]
 
-            if self.demand is not None and self.demand.slots_for(day):
+            if (self.demand is not None and self.USE_ARRIVALS
+                    and self.demand.has_arrivals(day)):
+                # How many come in each hour, which is what the manager
+                # writes. See _staff_by_arrivals.
+                self._staff_by_arrivals(
+                    day, date_iso, assigned_today, open_m, close_m)
+            elif self.demand is not None and self.demand.slots_for(day):
                 # Slot-driven: rebuild the shifts this shop actually runs.
                 self._staff_by_slots(day, date_iso, assigned_today, open_m, close_m)
             elif self.demand is not None:
