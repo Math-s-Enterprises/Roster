@@ -2485,17 +2485,49 @@ class _RosterBuilder:
         return theirs
 
     def _already_covered(self, day: str, start: str) -> bool:
-        """Does the floor already hold what the curve asks for at this hour?
+        """Is the floor at this hour OVER what the shop normally has on?
 
-        Only under arrivals. With a shape list the count IS the answer and
-        second-guessing it here would drop shifts the profile chose.
+        The shop owner's rule: "if there are two people starting at 8:00 and
+        the shop needs just 2, and we already have them who started at 6:00,
+        then it should not put them at 8:00."
+
+        Written first as `on_duty >= required`, which is the literal reading
+        and was wrong. Measured on one real week, the cap fired 8 times and
+        five of those cost a shift the manager actually rosters — Monday
+        07:00, Tuesday 10:00, Thursday 14:00, Friday 13:00, Saturday 18:00.
+        Monday is the clearest: three people open at 06:00, `required` at
+        07:00 rounds to three, so the floor reads "full" and the 07:00
+        arrival is dropped. He brings that person in every week.
+
+        The mistake was comparing two different quantities. `required` is a
+        rounded 24-week average of BODIES PRESENT, and `on_duty` at 07:00
+        counts everybody who started at 06:00 and has not gone home — which
+        is the changeover double-count that killed the presence model in the
+        first place (§7a). Arrivals were learned from the same history and
+        already encode the answer: if this shop historically starts somebody
+        at 07:00, the curve rounding to three at 07:00 is not evidence that
+        it does not.
+
+        So the cap now fires only on a floor STRICTLY ABOVE the curve — real
+        over-staffing, which is what the rule was defending against. Holding
+        exactly what the curve wants is not a reason to refuse somebody the
+        shop brings in every week.
+
+        Worth knowing if this is revisited: under arrivals the failure the
+        rule guards against largely cannot happen, because the day is built
+        from starts rather than filled to an hourly target. A guard against
+        an impossible fault, phrased in a coarser number than the thing it
+        overrides, is the §11 trap — two switches that can disagree. Deleting
+        it entirely is one line, and the A/B should decide, not this comment.
         """
         if not (self.USE_ARRIVALS and self.demand is not None
                 and self.demand.has_arrivals(day)):
             return False
         hour = to_minutes(start) // 60
+        # Extras are deliberately on top of the requirement (§2d), so they
+        # are not evidence that the shop is over-staffed.
         ordinary = self.on_duty[day][hour] - self.extra_on_duty[day][hour]
-        return ordinary >= self.demand.required(day, hour)
+        return ordinary > self.demand.required(day, hour)
 
     def _staff_by_slots(
         self, day: str, date_iso: str, assigned_today: Set[str],

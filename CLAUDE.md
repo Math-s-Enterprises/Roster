@@ -488,14 +488,29 @@ Three rules, and the interaction between them is the whole design:
    the slot carries a start the shop really writes — Top Oil writes `07:30`,
    and offering `07:00` would be a start nobody has worked, which familiarity
    (§2) would then have to exclude everybody from.
-3. **Presence caps arrivals.** *"If there are two people starting at 8:00 and
-   the shop needs just 2, and we already have them who started at 6:00, then
-   it should not put them at 8:00."* Consulted on every slot, fires on about
-   one in twelve. It rarely changes the day's headcount — the day-level
-   rounding in `_build_arrivals` already keeps totals honest — but it stops
-   the passes that run afterwards reacting to a floor they wrongly think is
-   short, which is what produced a Sunday `05:00` start this shop has never
-   used.
+3. **Presence caps arrivals — but only on a floor STRICTLY ABOVE the curve.**
+   *"If there are two people starting at 8:00 and the shop needs just 2, and
+   we already have them who started at 6:00, then it should not put them at
+   8:00."*
+
+   Written first as the literal `on_duty >= required`, and that was wrong.
+   Measured on one real week it fired 8 times and **five of those cost a
+   shift the manager actually rosters**. Monday is the clearest: three people
+   open at 06:00, `required` at 07:00 rounds to three, the floor reads
+   "full", and the 07:00 arrival is dropped — a person he brings in every
+   week.
+
+   The fault was comparing two different quantities. `required` is a rounded
+   average of BODIES PRESENT, and `on_duty` at 07:00 counts everybody who
+   started at 06:00 and has not gone home — the changeover double-count that
+   killed the presence model in the first place. Arrivals were learned from
+   the same history and already encode the answer. So the cap fires only on
+   genuine over-staffing: over 80 randomised shops that drops it from 331
+   firings in 4102 slots to 17.
+
+   No unit test here separates the two thresholds — presence and arrivals
+   round from the same fraction in any shop small enough to write as a
+   fixture. `ml/check_arrivals_ab.py --explain` is the check.
 
 **The coverage floor is exempt** (§1 rule 1). A shop open around the clock but
 covering the small hours only every sixth week has `required` of 0 from 22:00,

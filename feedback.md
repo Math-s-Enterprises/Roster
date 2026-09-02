@@ -784,3 +784,49 @@ and the matter is closed; disagreeing means a bug upstream of the model.
 built, in the script, so the number could not be re-argued after the fact.
 It said revert on exactly this result, and it was applied without
 negotiation. Two days of work is not a reason to move a threshold.
+
+### `--explain` found it, and found something else underneath
+
+Eleven hours where the fill placed a different number from the one it
+learned. Three were not losses at all — a start pulled an hour earlier, which
+is the manager's own *"why can't he call somebody an hour earlier"* working
+as intended. The other eight were real, about five a week, which is the ~155
+shifts across 31 weeks that the A/B saw.
+
+**The presence cap fired at five of them.** Monday 07:00, Tuesday 10:00,
+Thursday 14:00, Friday 13:00, Saturday 18:00 — every one a shift he writes
+every week.
+
+The cap was `on_duty >= required`, the literal reading of his rule, and it
+compared two different quantities. `required` is a rounded average of BODIES
+PRESENT; `on_duty` at 07:00 includes everybody who started at 06:00 and has
+not gone home. **That is the changeover double-count that killed the presence
+model, reintroduced by the guard meant to protect the model that fixed it.**
+Now `>`, which over 80 randomised shops falls from 331 firings in 4102 slots
+to 17.
+
+The remaining three losses are not the model's: Tuesday 13:00 was everybody
+either left or already working, Saturday 08:00 an 8.5h rest gap against a 10h
+rule, Sunday 16:00 seven people unfamiliar with the start. The shape list
+places nothing at Friday 13:00 or Sunday 16:00 either.
+
+**The thing worth remembering is what the wrong threshold was hiding.** A
+test written the day before — "the solver does not invent a start the shop
+has never used" — started failing the moment the cap was corrected. It turned
+out `_close_short_hours` pulls a start back to `hour:00` to close a
+changeover gap without asking whether the shop has ever started anybody then,
+and **the shape list produces the identical `sun 05:00`**. A pre-existing bug
+in both models, invisible because an over-eager guard was suppressing its
+symptom, and credited to the guard by a test written the same day.
+
+Two lessons, and the second is the uncomfortable one:
+
+- a test that passes for a reason you have not verified is not a passing
+  test, it is a coincidence you have not noticed yet
+- **fixing a threshold can reveal bugs, and that is the fix working.** The
+  temptation on seeing that test go red was to put the `>=` back. That would
+  have restored a wrong threshold to keep a real bug hidden.
+
+It is now `xfail(strict=True)`, so it fails loudly if somebody fixes
+`_close_short_hours` and forgets to remove the marker. Not fixed in the same
+change, deliberately: the A/B has to measure one thing at a time.
