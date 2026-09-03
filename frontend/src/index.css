@@ -13,11 +13,15 @@
  * --hairline and never a literal colour, so the whole app can be re-themed
  * from this block alone.
  */
-/* 800 is for the Holidays page, whose handoff specifies weight-800 headings.
-   Extending the existing Inter import rather than adding the mock's Archivo:
-   one typeface, one request, and the weight is the part that carries the
-   design. */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Archivo is the Holidays handoff's typeface, and Inter 800 is its fallback
+   weight — .hol-page asks for Archivo first, so Inter 800 is only rendered
+   if Archivo fails to arrive, and a browser downloads only the faces it
+   actually paints.
+   Substituting Inter was the first attempt: one typeface, one request. The
+   shop owner asked for the handoff's own font, which is the right call —
+   Archivo is a squarer, more geometric face and the design leans on that at
+   weight 800. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=Archivo:wght@400;500;600;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -466,6 +470,23 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
    --canvas-soft — so the handoff's "colours are final" and "use the app's
    styles" turned out not to conflict.
 --------------------------------------------------------------------------- */
+.hol-page {
+  /* The handoff's type: Archivo, body 15px/1.55, headings 800 with -.015em
+     tracking. Scoped to this page — the rest of the app is Inter. */
+  font-family: 'Archivo', 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+}
+.hol-page :is(h1, h2, h3, h4),
+.hol-page .btn,
+.hol-page input,
+.hol-page select,
+.hol-page textarea,
+.hol-page .hol-tag,
+.hol-page .hol-chip {
+  font-family: inherit;
+}
+
 .hol-page .btn,
 .hol-page .card,
 .hol-page input,
