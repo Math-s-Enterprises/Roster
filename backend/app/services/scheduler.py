@@ -574,6 +574,15 @@ class _RosterBuilder:
         # reason rather than being a silent omission.
         self.exclusions: Dict[str, str] = {}
 
+        # Why an hour that is one body short could not be closed by
+        # stretching a neighbour. Same principle as `exclusions`, for hours
+        # instead of people: "one short for 7 hours" tells the manager what
+        # happened and not one thing about what to do next, and the two
+        # answers call for completely different actions — an hour nobody
+        # could be stretched into needs a rota change, a run too long to
+        # stretch needs another person.
+        self._short_hour_reasons: Dict[Tuple[str, int], str] = {}
+
         self.hours_by_day = {h["day"]: h for h in shop.get("hours", [])}
         (
             self.shop_closed_dates,
@@ -3919,9 +3928,27 @@ class _RosterBuilder:
         self, shift: Dict[str, Any], new_start: str, new_end: str
     ) -> bool:
         """Whether stretching this shift stays inside every limit."""
+        return self._lengthen_refusal(shift, new_start, new_end) is None
+
+    def _lengthen_refusal(
+        self, shift: Dict[str, Any], new_start: str, new_end: str
+    ) -> Optional[str]:
+        """Why this shift may not be stretched, or None if it may.
+
+        One implementation, two questions. `_close_short_hours` needs the
+        yes/no; the advisory needs the because. Answering them from separate
+        code is the §11 trap — two switches that can disagree — and here it
+        would disagree in the worst way, telling the manager a reason the
+        solver did not actually act on.
+
+        Phrased for the manager, not the code: they are reading "why is
+        Thursday still one short", and "would exceed the 12-hour limit" is an
+        answer they can act on where `_may_lengthen returned False` is not.
+        """
         employee = self.employees_by_id.get(shift["employee_id"])
         if not employee:
-            return False
+            return "no employee record"
+        who = employee.get("name") or shift["employee_id"]
 
         span = shift_duration_minutes(new_start, new_end) / 60
         max_shift = min(
@@ -3929,10 +3956,10 @@ class _RosterBuilder:
             ABSOLUTE_MAX_SHIFT_HOURS,
         )
         if span > max_shift + 1e-6:
-            return False
+            return f"{who} would be on for {span:g}h, over the {max_shift:g}h limit"
 
         if violates_minor_curfew(employee, new_start, new_end):
-            return False
+            return f"{who} is under 16 and cannot work those hours"
 
         # ELEVEN HOURS OF REST, WHICH THE REST OF THIS PASS ONLY CLAIMED TO
         # CHECK.
@@ -3956,16 +3983,18 @@ class _RosterBuilder:
         # compared against itself, and it checks BOTH directions — a start
         # moved earlier eats the gap from the previous day rather than the
         # next.
-        if self._rest_breach(
+        short_rest = self._rest_breach(
             shift["employee_id"], shift["day"], new_start, new_end
-        ) is not None:
-            return False
+        )
+        if short_rest is not None:
+            return (f"{who} would have only {short_rest:.1f}h rest, "
+                    f"under the {self.min_rest_hours:g}h required")
 
         added_span = span - shift_duration_minutes(shift["start"], shift["end"]) / 60
         band = self.span_bands.get(shift["employee_id"])
         if band:
             if self.span_used.get(shift["employee_id"], 0.0) + added_span > band[1] + 1e-6:
-                return False
+                return f"{who} would go over their {band[1]:g}h contracted hours"
         else:
             cap = self.hour_caps.get(
                 shift["employee_id"], employee.get("max_weekly_hours", 0)
@@ -3975,7 +4004,7 @@ class _RosterBuilder:
                 - paid_hours(shift["start"], shift["end"], breaks_paid=self.breaks_paid)
             )
             if self.hours_used.get(shift["employee_id"], 0.0) + added_paid > cap + 1e-6:
-                return False
+                return f"{who} would go over their {cap:g}h weekly limit"
 
         # Moving a START changes what the shift IS to that person. An hour
         # either side is the same shift; more than that and they are being
@@ -3984,14 +4013,14 @@ class _RosterBuilder:
             if avail.check_familiarity(
                 employee, new_start, new_end, self.shift_history
             ).warning:
-                return False
+                return f"{who} has never started at {new_start}"
             verdict = avail.check_availability(
                 employee, shift["day"], new_start, new_end
             )
             if not verdict.allowed:
-                return False
+                return f"{who} is not available then"
 
-        return True
+        return None
 
     # How many consecutive short hours still count as a changeover rather
     # than a missing shift. Two, because that is what the stretch can
@@ -4126,7 +4155,17 @@ class _RosterBuilder:
                 if required <= 0:
                     continue
                 if self.on_duty[day][hour] > 0 and hour not in changeover:
+                    # Deliberately not attempted, and the manager should be
+                    # told that rather than left to infer it. A run this long
+                    # is a missing shift; stretching three people's finishes
+                    # to cover it would hide the one thing they need to see.
+                    self._short_hour_reasons[(day, hour)] = (
+                        "no stretch was tried — a run this long is a missing "
+                        "shift, not a changeover"
+                    )
                     continue
+
+                refusals: List[str] = []
 
                 nearby = [
                     s for s in self.result.shifts
@@ -4235,9 +4274,13 @@ class _RosterBuilder:
                             shift["day"], candidate[0], candidate[1],
                             wrap_week=self.wrap_week,
                         ))
-                        if not reaches or not self._may_lengthen(
+                        if not reaches:
+                            continue
+                        refused = self._lengthen_refusal(
                             shift, candidate[0], candidate[1]
-                        ):
+                        )
+                        if refused:
+                            refusals.append(refused)
                             continue
 
                         who = self.employees_by_id.get(
@@ -4261,6 +4304,19 @@ class _RosterBuilder:
                         break
                     if self.on_duty[day][hour] >= required:
                         break
+
+                # Still short after trying everybody nearby. Say who could
+                # not be moved and why, deduplicated and in the order they
+                # were tried — the first two are the ones worth reading.
+                if self.on_duty[day][hour] < required and refusals:
+                    seen: List[str] = []
+                    for reason in refusals:
+                        if reason not in seen:
+                            seen.append(reason)
+                    self._short_hour_reasons[(day, hour)] = (
+                        "nobody could be extended into it: "
+                        + "; ".join(seen[:2])
+                    )
 
         for record in stretched.values():
             shift = record["shift"]
@@ -4479,9 +4535,26 @@ class _RosterBuilder:
                 f"{name}'s fixed shift was skipped on {', '.join(days)} — on leave."
             )
         for day, windows in short_hours.items():
+            # WHY, not just what. "one short for 7 hours" is a statement of
+            # fact that tells the manager nothing about what to do, and the
+            # two possible causes call for opposite actions: an hour nobody
+            # could be stretched into is a rota problem, a run too long to
+            # stretch needs another person on the floor.
+            #
+            # One reason per collapsed line, taken from the first hour that
+            # has one. The hours in a run share a cause almost always, and
+            # printing seven near-identical clauses is the same crowding
+            # this method exists to prevent.
+            reason = next(
+                (self._short_hour_reasons[(day, int(window[:2]))]
+                 for window in windows
+                 if (day, int(window[:2])) in self._short_hour_reasons),
+                None,
+            )
             kept.append(
                 f"{day}: one short of the usual cover for {len(windows)} hour(s) "
                 f"({windows[0].split('-')[0]}–{windows[-1].split('-')[1]})."
+                + (f" {reason[0].upper()}{reason[1:]}." if reason else "")
             )
 
         self.result.issues = kept
