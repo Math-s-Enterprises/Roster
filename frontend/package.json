@@ -65,7 +65,8 @@
     "start": "craco start",
     "build": "craco build",
     "test": "craco test",
-    "check:css": "node check-css-vars.js"
+    "check:css": "node check-css-vars.js",
+    "check:runs": "node check-leave-runs.js"
   },
   "browserslist": {
     "production": [

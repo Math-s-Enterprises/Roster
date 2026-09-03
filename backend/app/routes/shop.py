@@ -376,6 +376,45 @@ async def book_leave(payload: LeaveRequest, scope: ShopScope = CurrentScope):
     }
 
 
+@router.put("/holidays/{holiday_id}")
+async def update_holiday(
+    holiday_id: str, payload: HolidayIn, scope: ShopScope = CurrentScope
+):
+    """Correct an existing leave entry in place.
+
+    Added for the redesigned Holidays page, where every row has an Edit that
+    opens the booking form pre-filled. Before this the only way to fix a
+    mistyped date was to delete the entry and add it again, which is fine
+    until somebody deletes the wrong one — the reason the bare per-row trash
+    icon was removed.
+
+    The same validation as `create_holiday`, deliberately: an entry that
+    could not be created should not be reachable by editing into it.
+    """
+    data = payload.model_dump()
+    if data["scope"] in ("employee", "sick") and not data.get("employee_id"):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"An employee must be selected for {data['scope']} leave.",
+        )
+    if data.get("end_date") and data["end_date"] < data["date"]:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "End date cannot precede the start date.",
+        )
+
+    # Existence is checked separately because `update_one` reports how many
+    # documents it CHANGED, and re-saving a booking without touching a field
+    # changes none — which would 404 an edit that opened the form, altered
+    # nothing and pressed Save. Not hypothetical: that is the commonest way
+    # to leave an edit dialog.
+    if not await scope.holidays.find_one({"holiday_id": holiday_id}):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Holiday not found")
+
+    await scope.holidays.update_one({"holiday_id": holiday_id}, data)
+    return await scope.holidays.find_one({"holiday_id": holiday_id})
+
+
 @router.delete("/holidays/{holiday_id}")
 async def delete_holiday(holiday_id: str, scope: ShopScope = CurrentScope):
     if not await scope.holidays.delete_one({"holiday_id": holiday_id}):

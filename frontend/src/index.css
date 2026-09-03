@@ -13,7 +13,11 @@
  * --hairline and never a literal colour, so the whole app can be re-themed
  * from this block alone.
  */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+/* 800 is for the Holidays page, whose handoff specifies weight-800 headings.
+   Extending the existing Inter import rather than adding the mock's Archivo:
+   one typeface, one request, and the weight is the part that carries the
+   design. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -444,4 +448,126 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   .print-table tr { page-break-inside: avoid; }
   .print-role-row { page-break-after: avoid; }
   .print-table thead { display: table-header-group; }
+}
+
+/* ---------------------------------------------------------------------------
+   Holidays page  (design handoff 1a / 2a)
+   ---------------------------------------------------------------------------
+   Scoped to .hol-page so nothing here leaks into the rest of the app.
+
+   SQUARE CORNERS ARE DELIBERATE. The handoff says "radius 0 everywhere — do
+   not round corners", and the shop owner chose to follow it exactly on this
+   page. Everywhere else still uses the 6px/12px radii, so the override is
+   scoped rather than applied to the tokens.
+
+   Colours are the app's own. The mock was drawn from this palette — its
+   --color-text #ededed is our --ink exactly, and its accent, page and
+   surface values sit within a shade of --primary, --canvas and
+   --canvas-soft — so the handoff's "colours are final" and "use the app's
+   styles" turned out not to conflict.
+--------------------------------------------------------------------------- */
+.hol-page .btn,
+.hol-page .card,
+.hol-page input,
+.hol-page select,
+.hol-page textarea { border-radius: 0; }
+
+/* Rules: 2px between sections, 1px inside tables and cell grids. */
+.hol-band    { border-bottom: 2px solid var(--hairline); }
+.hol-surface { background: var(--canvas-soft); }
+
+.hol-kicker {
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.hol-overline {
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+}
+.hol-h1 { font-size: 34px; font-weight: 800; letter-spacing: -.015em; line-height: 1.12; }
+.hol-h2 { font-size: 20px; font-weight: 800; letter-spacing: -.015em; line-height: 1.12; }
+.hol-muted { color: color-mix(in srgb, var(--ink) 62%, transparent); }
+.hol-faint { color: color-mix(in srgb, var(--ink) 55%, transparent); }
+
+/* The "right now" numeral. */
+.hol-numeral {
+  font-size: 76px;
+  line-height: .85;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  color: var(--primary);
+}
+
+/* Tags. Square, unlike the app's pill, because this page is radius 0 — and
+   because a tag is a label, not a count. Never the string "N/A": a field
+   with no value is omitted. */
+.hol-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 2px 8px;
+  border: 1px solid var(--hairline-strong);
+  white-space: nowrap;
+}
+.hol-tag-outline { background: transparent; color: var(--ink-mute); }
+.hol-tag-neutral { background: var(--canvas-raised); color: var(--ink-mute); border-color: var(--hairline); }
+.hol-tag-accent  { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+
+/* Table. Header 11px uppercase; body cells 8px; 1px rules; hover 4%. */
+.hol-table { width: 100%; border-collapse: collapse; }
+.hol-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 60%, transparent);
+  padding: 0 8px 8px 0;
+  border-bottom: 2px solid var(--hairline);
+}
+.hol-table td {
+  font-size: 14px;
+  padding: 8px 8px 8px 0;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: middle;
+}
+.hol-table tbody tr.hol-row:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.hol-table tr.hol-shop-closed { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+.hol-group td {
+  padding-top: 14px;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--primary);
+  border-bottom: 2px solid var(--hairline);
+}
+
+/* Every interactive element takes the same focus ring. */
+.hol-page :is(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Below ~1100px the "right now" band stacks — person cells 2-up, the
+   working-today rail underneath — and the table drops the Days column,
+   keeping Dates / Who / Type. Days is the most easily inferred of the five:
+   the date range already states it. */
+@media (max-width: 1100px) {
+  .hol-page .hol-rightnow { grid-template-columns: 1fr !important; }
+  .hol-page .hol-rightnow > :last-child {
+    border-left: none !important;
+    border-top: 2px solid var(--hairline);
+  }
+  .hol-page .hol-people { grid-template-columns: repeat(2, 1fr) !important; }
+  .hol-page .hol-days-col { display: none; }
+  .hol-page .hol-stats { grid-template-columns: repeat(2, 1fr) !important; }
+}
+@media (max-width: 640px) {
+  .hol-page .hol-people { grid-template-columns: 1fr !important; }
 }
