@@ -227,6 +227,34 @@ export function buildRuns(entries, nameOf) {
 }
 
 /**
+ * A run's days, laid out one calendar week per row.
+ *
+ * Thirteen days as a continuous strip of chips reads as one long ribbon —
+ * "Monday, Tuesday, Wednesday ... Monday, Tuesday" — and you cannot see
+ * where one week ends and the next begins, which is how a manager thinks
+ * about cover. So each week gets a row and every day sits under its own
+ * weekday column, with the days outside the absence left empty.
+ *
+ * The same shape the booking form already uses for picking paid days, for
+ * the same reason.
+ *
+ * Returns [{ week, days: [Mon..Sun] }], each day either {date, scope} or
+ * null. Weeks start Monday, matching the rest of the app.
+ */
+export function weeksOf(dayScopes) {
+  const byWeek = new Map();
+  for (const [date, scope] of dayScopes) {
+    const week = mondayOf(date);
+    if (!byWeek.has(week)) byWeek.set(week, new Array(7).fill(null));
+    // getDay() is 0 for Sunday, so shift it to put Monday at index 0.
+    byWeek.get(week)[(parseIso(date).getDay() + 6) % 7] = { date, scope };
+  }
+  return [...byWeek.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([week, days]) => ({ week, days }));
+}
+
+/**
  * Which buttons a row shows.
  *
  * EDIT IS ALWAYS ONE OF THEM. It used to be swapped out for "Show days"
@@ -732,6 +760,55 @@ function StatStrip({ stats, year }) {
 }
 
 /* -------------------------------------------------------------------------
+   A run's days, as a small week-by-week calendar
+
+   Shared by the expanded row (where a day opens for editing) and the delete
+   dialog (where a day is selected for removal), so the two cannot drift into
+   showing the same absence differently.
+------------------------------------------------------------------------- */
+function DayGrid({ days, onPick, isSelected, label }) {
+  const weeks = weeksOf(days);
+  return (
+    <div>
+      <div className="hol-daygrid hol-daygrid-head">
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+          <span key={d}>{d}</span>
+        ))}
+      </div>
+      {weeks.map(({ week, days: row }) => (
+        <div key={week} className="hol-daygrid">
+          {row.map((day, i) => (
+            day ? (
+              <button
+                key={day.date}
+                type="button"
+                className={`hol-chip${
+                  (isSelected ? isSelected(day.date) : isPaid(day.scope))
+                    ? " hol-chip-paid" : ""}`}
+                onClick={() => onPick(day.date)}
+                title={label ? `${label} ${day.date}` : day.date}
+              >
+                {day.date.slice(8).replace(/^0/, "")}{" "}
+                <span className="hol-chip-kind">
+                  {isPaid(day.scope) ? "paid"
+                    : day.scope === "sick" ? "sick" : "unpaid"}
+                </span>
+              </button>
+            ) : (
+              /* A day the absence does not cover. Kept as an empty cell so
+                 the weekday columns stay aligned down the grid — without it
+                 a run starting on a Wednesday would put Wednesday under
+                 Monday. */
+              <span key={`${week}-${i}`} className="hol-chip-empty" aria-hidden />
+            )
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------
    The table
 
    Columns are Who first: the manager is scanning for a NAME, and the 3a
@@ -817,28 +894,22 @@ function LeaveTable({ groups, expanded, onToggleRun, onEdit, onDelete, emptyMess
                     <tr className="hol-open">
                       <td />
                       <td colSpan={4} style={{ paddingTop: 0 }}>
-                        {/* One chip per day, paid ones filled. This is what
-                            the mixed tag is promising to explain. */}
-                        <div className="flex flex-wrap gap-1" style={{ paddingBottom: 6 }}>
-                          {run.dayScopes.map(([date, scope]) => (
-                            <button
-                              key={date}
-                              type="button"
-                              className={`hol-chip${isPaid(scope) ? " hol-chip-paid" : ""}`}
-                              onClick={() => {
-                                const entry = run.entries.find(
-                                  (e) => e.date === date && !e.end_date,
-                                );
-                                if (entry) onEdit(runForEntry(entry, run));
-                              }}
-                              title="Edit this day on its own"
-                            >
-                              {parseIso(date).toLocaleDateString("en-GB", {
-                                weekday: "short", day: "numeric",
-                              })}{" "}
-                              {isPaid(scope) ? "paid" : scope === "sick" ? "sick" : "unpaid"}
-                            </button>
-                          ))}
+                        {/* One week per row, each day under its own
+                            weekday column. A thirteen-day absence as a
+                            continuous strip reads as an unbroken ribbon and
+                            hides where the weeks divide, which is how cover
+                            is actually thought about. */}
+                        <div style={{ paddingBottom: 8 }}>
+                          <DayGrid
+                            days={run.dayScopes}
+                            label="Edit"
+                            onPick={(date) => {
+                              const entry = run.entries.find(
+                                (e) => e.date === date && !e.end_date,
+                              );
+                              if (entry) onEdit(runForEntry(entry, run));
+                            }}
+                          />
                         </div>
                         <div className="hol-faint" style={{ fontSize: 11, paddingBottom: 8 }}>
                           One absence, {run.days} day{run.days === 1 ? "" : "s"}.
@@ -911,20 +982,13 @@ function DeleteRunDialog({ run, onClose, onDone }) {
             <div className="hol-overline" style={{ marginBottom: 8 }}>
               Or remove only some days
             </div>
-            <div className="flex flex-wrap gap-1">
-              {run.dayScopes.map(([date, scope]) => {
-                const on = selected.includes(date);
-                return (
-                  <button key={date} type="button"
-                          className={`hol-chip${on ? " hol-chip-paid" : ""}`}
-                          onClick={() => setSelected((prev) =>
-                            prev.includes(date) ? prev.filter((d) => d !== date) : [...prev, date])}>
-                    {parseIso(date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric" })}
-                    {" "}{isPaid(scope) ? "paid" : scope === "sick" ? "sick" : "unpaid"}
-                  </button>
-                );
-              })}
-            </div>
+            <DayGrid
+              days={run.dayScopes}
+              label="Remove"
+              isSelected={(date) => selected.includes(date)}
+              onPick={(date) => setSelected((prev) =>
+                prev.includes(date) ? prev.filter((d) => d !== date) : [...prev, date])}
+            />
           </div>
         )}
         {!perDay && run.days > 1 && (

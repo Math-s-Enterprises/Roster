@@ -671,3 +671,26 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   color: var(--on-primary);
 }
 .hol-seg-opt[aria-pressed="true"]:hover:not(:disabled) { background: var(--primary-hover); }
+
+/* A run's days, one calendar week per row.
+   Seven fixed columns so every day sits under its own weekday, and a day the
+   absence does not cover leaves an empty cell rather than shifting the rest
+   along — otherwise a run starting on a Wednesday puts Wednesday under
+   Monday and the grid stops meaning anything. */
+.hol-daygrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.hol-daygrid-head {
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 45%, transparent);
+  margin-bottom: 6px;
+}
+.hol-daygrid-head span { padding-left: 2px; }
+.hol-daygrid .hol-chip { width: 100%; text-align: left; }
+.hol-chip-kind { opacity: 0.75; font-weight: 400; }
+.hol-chip-empty { display: block; min-height: 26px; }

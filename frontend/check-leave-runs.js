@@ -77,12 +77,17 @@ function loadPage() {
   return module_.exports;
 }
 
-const { buildRuns, tagFor, rowActions } = loadPage();
+const { buildRuns, tagFor, rowActions, weeksOf } = loadPage();
 
 const NAMES = {
   e1: 'Elliot', e2: 'Tiago', e3: 'Jamie', e4: 'Aaron', e5: 'Jithin', e6: 'Sofia',
 };
 const nameOf = (id) => NAMES[id] || null;
+const addIso = (iso, n) => {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
+};
 const leave = (id, employee, date, scope = 'unavailable', end = null) => ({
   holiday_id: id, employee_id: employee, date, end_date: end, scope,
   label: 'Holiday',
@@ -211,6 +216,41 @@ check('a range booked as one record has Edit and nothing to expand',
   rowActions(buildRuns(
     [leave('a', 'e5', '2026-09-17', 'unavailable', '2026-09-20')], nameOf)[0]),
   { edit: true, expand: false });
+
+// Expanding a run shows one calendar week per row. Thirteen days as a
+// continuous strip reads as an unbroken ribbon — "Mon Tue Wed ... Mon Tue" —
+// and hides where the weeks divide, which is how cover is thought about.
+const thirteenDays = buildRuns(
+  Array.from({ length: 13 }, (_, i) =>
+    leave(`d${i}`, 'e5', addIso('2026-09-08', i))), nameOf)[0];
+
+check('a run is split into calendar weeks',
+  weeksOf(thirteenDays.dayScopes).map((w) => w.week),
+  ['2026-09-07', '2026-09-14']);
+
+check('every week row has seven slots',
+  weeksOf(thirteenDays.dayScopes).map((w) => w.days.length),
+  [7, 7]);
+
+// THE CASE THAT BREAKS ALIGNMENT. This absence starts on a Tuesday, so the
+// Monday slot of its first week must be EMPTY. Packing the days from the
+// left instead would put Tuesday under Monday and every column after it
+// would be a day out.
+check('a run starting mid-week leaves the earlier days empty',
+  weeksOf(thirteenDays.dayScopes)[0].days.map((d) => d && d.date),
+  [null, '2026-09-08', '2026-09-09', '2026-09-10',
+   '2026-09-11', '2026-09-12', '2026-09-13']);
+
+check('and the trailing days of the last week are empty too',
+  weeksOf(thirteenDays.dayScopes)[1].days.map((d) => d && d.date),
+  ['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17',
+   '2026-09-18', '2026-09-19', '2026-09-20']);
+
+// A Sunday is the LAST column, not the first. getDay() calls it 0, which is
+// the easiest way to get this wrong.
+check('a lone Sunday lands in the seventh column',
+  weeksOf([['2026-09-13', 'unavailable']])[0].days.map((d) => d && d.date),
+  [null, null, null, null, null, null, '2026-09-13']);
 
 console.log(failures
   ? `\n  ${failures} failed\n`
