@@ -1,32 +1,42 @@
 #!/usr/bin/env node
 /**
- * Consecutive leave days collapse into one run, and unrelated days do not.
+ * One continuous absence per person is one row.
  *
  *     node check-leave-runs.js
  *
  * WHY THIS EXISTS
  * ---------------
  * `buildRuns` in pages/CalendarPage.js is the whole point of the Holidays
- * redesign. The old page rendered four consecutive single-day records for one
- * person as four identical rows, which is why nobody could tell how long
- * anybody was actually off. Two collapses fix that, and they pull in opposite
- * directions:
+ * redesign. The old page rendered four consecutive single-day records for
+ * one person as four identical rows, so nobody could tell how long anybody
+ * was actually off.
  *
- *   1. ADJACENT DAYS for one person and type become one run.
- *   2. RUNS OF THE SAME SHAPE merge their people onto one row.
+ * Two rules, and both have already been got wrong once:
  *
- * Rule 2 applied first would glue different people's unrelated dates
- * together — Elliot off Wednesday and Tiago off Thursday would read as one
- * two-day booking for both of them. Neither rule is safe alone and the order
- * is not obvious from reading either one, so it is pinned here.
+ *   1. ADJACENT DAYS for one person join into a run. A gap breaks it, and a
+ *      different person never joins it — merging people onto a shared row
+ *      was the first design and the 3a revision reversed it, because a row
+ *      for four people has one Edit button and no answer to "whose booking
+ *      is this".
+ *
+ *   2. PAY TYPE DOES NOT BREAK A RUN. Thirteen days off with four of them
+ *      paid is ONE absence tagged "Holiday · 9 unpaid + 4 paid" — not three
+ *      bookings with gaps between them, which is what the first version
+ *      produced and what 3a exists to fix. Sick is NOT folded in the same
+ *      way: it is a different kind of absence, not a different way of
+ *      paying for one.
+ *
+ * Rule 2 is the exact inverse of what this file asserted a revision ago, so
+ * the cases below are written to fail loudly if anyone reinstates the old
+ * behaviour by reflex.
  *
  * There is no jest setup in this app, and a production build needs more
  * memory than a sandbox usually has. This runs in plain node in about a
  * second, in the same spirit as check-css-vars.js: the cheapest thing that
  * would actually have caught the bug.
  *
- * Sabotage-checked. Dropping the type from the run key, merging by shape
- * only, and ignoring adjacency each fail a different case below.
+ * Sabotage-checked — see the commit message for which change fails which
+ * case.
  */
 const babel = require('@babel/core');
 const fs = require('path') && require('fs');
@@ -67,7 +77,7 @@ function loadPage() {
   return module_.exports;
 }
 
-const { buildRuns } = loadPage();
+const { buildRuns, tagFor } = loadPage();
 
 const NAMES = {
   e1: 'Elliot', e2: 'Tiago', e3: 'Jamie', e4: 'Aaron', e5: 'Jithin', e6: 'Sofia',
@@ -98,21 +108,24 @@ check('four consecutive single days read as one run',
   buildRuns([
     leave('h1', 'e5', '2026-09-17'), leave('h2', 'e5', '2026-09-18'),
     leave('h3', 'e5', '2026-09-19'), leave('h4', 'e5', '2026-09-20'),
-  ], nameOf).map((r) => [r.start, r.end, r.days, r.people.join(', '), r.entries.length]),
+  ], nameOf).map((r) => [r.start, r.end, r.days, r.person, r.entries.length]),
   [['2026-09-17', '2026-09-20', 4, 'Jithin', 4]]);
 
-check('four people off the same day read as one row',
+// ONE ROW PER PERSON. Merging people onto a shared row was the 1a rule and
+// the 3a revision reversed it: a row for four people has one Edit button and
+// no answer to "whose booking is this".
+check('two people off the same days are two rows',
   buildRuns([
-    leave('a', 'e1', '2026-09-02'), leave('b', 'e2', '2026-09-02'),
-    leave('c', 'e3', '2026-09-02'), leave('d', 'e4', '2026-09-02'),
-  ], nameOf).map((r) => [r.start, r.days, r.people.join(', ')]),
-  [['2026-09-02', 1, 'Elliot, Tiago, Jamie, Aaron']]);
+    leave('a', 'e1', '2026-09-03', 'unavailable', '2026-09-04'),
+    leave('b', 'e3', '2026-09-03', 'unavailable', '2026-09-04'),
+  ], nameOf).map((r) => [r.person, r.start, r.end, r.days]),
+  [['Elliot', '2026-09-03', '2026-09-04', 2],
+   ['Jamie', '2026-09-03', '2026-09-04', 2]]);
 
-// The two collapses must not be confused with each other.
-check('different people on adjacent days stay apart',
+check('different people on adjacent days do not join',
   buildRuns([leave('a', 'e1', '2026-09-02'), leave('b', 'e2', '2026-09-03')], nameOf)
-    .map((r) => [r.start, r.end, r.people.join(', ')]),
-  [['2026-09-02', '2026-09-02', 'Elliot'], ['2026-09-03', '2026-09-03', 'Tiago']]);
+    .map((r) => [r.person, r.start, r.end]),
+  [['Elliot', '2026-09-02', '2026-09-02'], ['Tiago', '2026-09-03', '2026-09-03']]);
 
 check('a gap breaks a run',
   buildRuns([
@@ -121,19 +134,47 @@ check('a gap breaks a run',
   ], nameOf).map((r) => [r.start, r.end, r.days]),
   [['2026-09-17', '2026-09-18', 2], ['2026-09-21', '2026-09-21', 1]]);
 
-// Paid and unpaid are different things to a payroll and must stay separate,
-// even back to back for one person.
-check('paid and unpaid leave do not merge',
+// PAY TYPE DOES NOT BREAK A RUN. This assertion is the exact inverse of the
+// one it replaces — paid and unpaid used to be separate rows, and that is
+// what made a thirteen-day holiday look like three bookings.
+check('paid and unpaid days form ONE absence',
   buildRuns([
-    leave('a', 'e1', '2026-09-02', 'employee'),
-    leave('b', 'e1', '2026-09-03', 'unavailable'),
-  ], nameOf).map((r) => [r.scope, r.days]),
-  [['employee', 1], ['unavailable', 1]]);
+    leave('a', 'e5', '2026-09-08', 'unavailable'),
+    leave('b', 'e5', '2026-09-09', 'unavailable'),
+    leave('c', 'e5', '2026-09-10', 'employee'),
+    leave('d', 'e5', '2026-09-11', 'employee'),
+    leave('e', 'e5', '2026-09-12', 'unavailable'),
+  ], nameOf).map((r) => [r.start, r.end, r.days, r.unpaidDays, r.paidDays]),
+  [['2026-09-08', '2026-09-12', 5, 3, 2]]);
+
+check('a mixed run is tagged as one holiday, both counts named',
+  buildRuns([
+    leave('a', 'e5', '2026-09-08', 'unavailable'),
+    leave('b', 'e5', '2026-09-09', 'employee'),
+  ], nameOf).map((r) => tagFor(r).label),
+  ['Holiday · 1 unpaid + 1 paid']);
+
+check('an all-paid and an all-unpaid run are tagged plainly',
+  [
+    tagFor(buildRuns([leave('a', 'e1', '2026-09-08', 'employee')], nameOf)[0]).label,
+    tagFor(buildRuns([leave('b', 'e1', '2026-09-08', 'unavailable')], nameOf)[0]).label,
+  ],
+  ['Holiday · paid', 'Holiday · unpaid']);
+
+// Sick is a different KIND of absence, not a different way of paying for
+// one, so it is not folded in — "Holiday · 1 unpaid + 1 paid" would describe
+// neither half.
+check('a sick day next to a holiday stays its own row',
+  buildRuns([
+    leave('a', 'e6', '2026-09-08', 'unavailable'),
+    leave('b', 'e6', '2026-09-09', 'sick'),
+  ], nameOf).map((r) => [r.family, r.start, r.days]),
+  [['holiday', '2026-09-08', 1], ['sick', '2026-09-09', 1]]);
 
 check('a shop closure spans its range and names nobody',
   buildRuns([leave('s', null, '2026-08-31', 'shop', '2026-09-01')], nameOf)
-    .map((r) => [r.start, r.end, r.days, r.scope, r.people.length]),
-  [['2026-08-31', '2026-09-01', 2, 'shop', 0]]);
+    .map((r) => [r.start, r.end, r.days, r.family, r.person]),
+  [['2026-08-31', '2026-09-01', 2, 'shop', null]]);
 
 check('a range record and an adjacent single day join up',
   buildRuns([
@@ -141,6 +182,15 @@ check('a range record and an adjacent single day join up',
     leave('b', 'e6', '2026-07-25'),
   ], nameOf).map((r) => [r.start, r.end, r.days]),
   [['2026-07-20', '2026-07-25', 6]]);
+
+// The expansion the mixed tag promises: every day, in order, with its own
+// pay type.
+check('a run keeps its per-day detail for expanding',
+  buildRuns([
+    leave('a', 'e5', '2026-09-08', 'unavailable'),
+    leave('b', 'e5', '2026-09-09', 'employee'),
+  ], nameOf)[0].dayScopes,
+  [['2026-09-08', 'unavailable'], ['2026-09-09', 'employee']]);
 
 console.log(failures
   ? `\n  ${failures} failed\n`

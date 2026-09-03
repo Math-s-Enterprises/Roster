@@ -1,17 +1,30 @@
 /**
- * Holidays & off-days — redesigned to the 1a / 2a handoff.
+ * Holidays & off-days — built to the 3a handoff (which revises 1a/2a).
  *
- * WHAT WAS WRONG WITH THE OLD PAGE
- * --------------------------------
+ * WHAT WAS WRONG WITH THE ORIGINAL PAGE
+ * -------------------------------------
  * Every leave entry rendered as an identical row — "2026-09-02 · N/A ·
  * Holiday (unpaid) · Elliot" — so the two questions a manager actually opens
  * this page with went unanswered: who is off right now, and does the shop
  * have cover. Four consecutive single days for one person read as four
  * unrelated bookings.
  *
- * So: a "right now" band that answers today at a glance, and a table where
- * consecutive days collapse into one run. Every entry states WHEN THE PERSON
- * IS BACK, which is the piece the old list never carried.
+ * ONE ROW PER PERSON PER CONTINUOUS ABSENCE
+ * -----------------------------------------
+ * That is the whole organising idea, and it took two goes. The first version
+ * also merged people onto a shared row when their dates matched — "Wed 2 Sep
+ * · Elliot, Tiago, Jamie, Aaron" — which reads well in a mock and badly
+ * against real data: one Edit button, four bookings, no answer to whose is
+ * whose. 3a reversed it.
+ *
+ * It also folded pay type into the run. Thirteen days off with four of them
+ * paid is ONE absence tagged "Holiday · 9 unpaid + 4 paid", not three
+ * bookings with gaps — the gaps were an artefact of how we store paid days,
+ * and the manager was reading them as separate holidays. Expanding a run
+ * shows the per-day detail.
+ *
+ * Every entry states WHEN THE PERSON IS BACK, which is the piece the old
+ * list never carried.
  *
  * The `N/A` badge is gone. It was our `scope: "unavailable"` — unpaid leave —
  * rendered as an abbreviation that told the manager nothing. Where a field
@@ -21,19 +34,21 @@
  * -------------------------------------
  * `scope` carries what the handoff calls `type`:
  *
- *     shop         Shop closed        accent tag, row tinted
- *     employee     Holiday · paid     draws down entitlement
- *     unavailable  Holiday · unpaid   the old N/A
- *     sick         Sick               neutral tag
+ *     shop         Shop closed      accent tag, row tinted
+ *     employee     paid holiday     draws down entitlement
+ *     unavailable  unpaid holiday   the old N/A
+ *     sick         Sick             its own kind of absence, never folded in
  *
- * The mock only ever shows "Holiday · unpaid" because its sample data has
- * nothing else. Ours distinguishes paid from unpaid and that distinction is
- * load-bearing — there is a whole balance and paid-days flow behind it — so
- * both are shown.
+ * A booking made through the leave flow is one record PER DAY, which is what
+ * makes "delete selected days" possible. A booking made as a date range is a
+ * single record and can only be removed whole — the delete dialog says so
+ * rather than offering a control that would fail.
  *
  * TODAY is taken from the browser. The handoff asks for the server's date,
  * and there is no endpoint for it; the risk is a manager whose machine is
  * set to another day. Worth adding when there is somewhere to put it.
+ *
+ * `node check-leave-runs.js` (yarn check:runs) pins the run rules.
  */
 import React, { useEffect, useMemo, useState } from "react";
 import { api, errorMessage, DAYS, DAY_SHORT, mondayOf } from "@/lib/api";
@@ -80,14 +95,40 @@ const monthName = (iso) =>
 
 /* -------------------------------------------------------------------------
    Leave types
+
+   PAID AND UNPAID ARE ONE KIND OF ABSENCE, not two.
+   -------------------------------------------------
+   They were separate rows until the 3a revision, which is what produced the
+   thing it fixes: Jithin books thirteen days off, four of them paid, and the
+   page showed it as several bookings with gaps between them. It is one
+   absence. He is away for thirteen days and the shop needs cover for
+   thirteen days; which of them draw down his entitlement is a payroll
+   question, and the answer belongs in the tag rather than in the shape of
+   the list.
+
+   SICK IS NOT FOLDED IN. It is a different kind of absence rather than a
+   different way of paying for one, and merging it would put "Sick" and
+   "Holiday" under a single label that describes neither. A sick day next to
+   a holiday stays its own row.
 ------------------------------------------------------------------------- */
-const TYPES = {
-  shop: { label: "Shop closed", tone: "accent", who: "Whole shop closed" },
-  employee: { label: "Holiday · paid", tone: "outline" },
-  unavailable: { label: "Holiday · unpaid", tone: "outline" },
-  sick: { label: "Sick", tone: "neutral" },
-};
-const typeOf = (entry) => TYPES[entry.scope] || TYPES.unavailable;
+const HOLIDAY_SCOPES = new Set(["employee", "unavailable"]);
+const familyOf = (scope) => (HOLIDAY_SCOPES.has(scope) ? "holiday" : scope);
+const isPaid = (scope) => scope === "employee";
+
+/** The tag for a whole absence: one label, even when the pay type changes. */
+export function tagFor(run) {
+  if (run.family === "shop") return { label: "Shop closed", tone: "accent" };
+  if (run.family === "sick") return { label: "Sick", tone: "neutral" };
+  if (run.paidDays && run.unpaidDays) {
+    return {
+      label: `Holiday · ${run.unpaidDays} unpaid + ${run.paidDays} paid`,
+      tone: "neutral",
+    };
+  }
+  return run.paidDays
+    ? { label: "Holiday · paid", tone: "neutral" }
+    : { label: "Holiday · unpaid", tone: "outline" };
+}
 
 /** Every calendar date an entry covers, inclusive. */
 function datesOf(entry) {
@@ -103,16 +144,20 @@ function datesOf(entry) {
 }
 
 /**
- * Collapse entries into runs — the heart of the redesign.
+ * Collapse entries into runs — one continuous absence per person.
  *
- * Two collapses, in this order, and the order matters:
+ * A person's adjacent leave days become a single row. Nothing else merges:
+ * two people off the same days are two rows, because the manager is looking
+ * for who is missing, and a name is what they act on.
  *
- *   1. ADJACENT DAYS for the same person and type become one run. Four
- *      single-day records for Jithin become "Thu 17 – Sun 20 Sep · 4".
- *   2. RUNS THAT SHARE A SHAPE merge their people. Four people each off on
- *      the 2nd become "Wed 2 Sep · 1 · Elliot, Tiago, Jamie, Aaron".
+ * This is narrower than it was. Runs of the same shape used to merge their
+ * people onto one row — "Wed 2 Sep · Elliot, Tiago, Jamie, Aaron" — which
+ * reads well in a mock and badly against real data: the row for four people
+ * has one Edit button and no obvious answer to "whose booking is this".
  *
- * Doing 2 before 1 would glue different people's unrelated dates together.
+ * PAY TYPE DOES NOT BREAK A RUN. Thirteen days off with four of them paid is
+ * one absence, tagged "Holiday · 9 unpaid + 4 paid", not three bookings with
+ * gaps. `dayScopes` keeps the per-day detail so the run can be expanded.
  *
  * `days` counts CALENDAR days, not working days. A run across a weekend the
  * shop is closed still reads as its full length — which is what a manager
@@ -120,10 +165,11 @@ function datesOf(entry) {
  * for anything that costs money.
  */
 export function buildRuns(entries, nameOf) {
-  // 1 — adjacent days per (person, type)
   const byPerson = new Map();
   for (const entry of entries) {
-    const key = `${entry.employee_id || "shop"}|${entry.scope}`;
+    // Keyed on the FAMILY, not the scope, so paid and unpaid days of one
+    // holiday land in the same bucket and can join up.
+    const key = `${entry.employee_id || "shop"}|${familyOf(entry.scope)}`;
     if (!byPerson.has(key)) byPerson.set(key, []);
     for (const date of datesOf(entry)) {
       byPerson.get(key).push({ date, entry });
@@ -133,49 +179,51 @@ export function buildRuns(entries, nameOf) {
   const runs = [];
   for (const [key, atoms] of byPerson) {
     atoms.sort((a, b) => a.date.localeCompare(b.date));
+    const [employeeId, family] = key.split("|");
     let current = null;
+    const push = () => { if (current) runs.push(current); };
+
     for (const atom of atoms) {
-      if (current && addDays(current.end, 1) === atom.date) {
-        current.end = atom.date;
-        current.days += 1;
-        current.entries.add(atom.entry);
-      } else if (current && current.end === atom.date) {
-        current.entries.add(atom.entry);      // overlapping records, same day
-      } else {
-        if (current) runs.push(current);
-        const [employeeId, scope] = key.split("|");
+      const adjacent = current && addDays(current.end, 1) === atom.date;
+      const sameDay = current && current.end === atom.date;
+      if (!adjacent && !sameDay) {
+        push();
         current = {
-          start: atom.date, end: atom.date, days: 1, scope,
+          id: `${employeeId}|${family}|${atom.date}`,
+          start: atom.date, end: atom.date, family,
           employeeId: employeeId === "shop" ? null : employeeId,
-          entries: new Set([atom.entry]),
+          entries: new Set(), dayScopes: new Map(),
         };
       }
+      if (adjacent) current.end = atom.date;
+      current.entries.add(atom.entry);
+      // A day booked twice keeps the PAID record: it is the one that costs
+      // entitlement, and showing a paid day as unpaid understates what the
+      // employee has spent.
+      if (!current.dayScopes.has(atom.date) || isPaid(atom.entry.scope)) {
+        current.dayScopes.set(atom.date, atom.entry.scope);
+      }
     }
-    if (current) runs.push(current);
+    push();
   }
 
-  // 2 — runs of the same shape share a row
-  const byShape = new Map();
-  for (const run of runs) {
-    const key = `${run.start}|${run.end}|${run.scope}`;
-    if (!byShape.has(key)) {
-      byShape.set(key, {
-        id: key, start: run.start, end: run.end, days: run.days,
-        scope: run.scope, employeeIds: [], entries: new Set(),
-      });
-    }
-    const row = byShape.get(key);
-    if (run.employeeId) row.employeeIds.push(run.employeeId);
-    for (const entry of run.entries) row.entries.add(entry);
-  }
-
-  return [...byShape.values()]
-    .map((row) => ({
-      ...row,
-      entries: [...row.entries],
-      people: row.employeeIds.map(nameOf).filter(Boolean),
-    }))
-    .sort((a, b) => a.start.localeCompare(b.start) || a.scope.localeCompare(b.scope));
+  return runs
+    .map((run) => {
+      const scopes = [...run.dayScopes.values()];
+      return {
+        ...run,
+        person: run.employeeId ? nameOf(run.employeeId) : null,
+        entries: [...run.entries],
+        dayScopes: [...run.dayScopes.entries()],
+        days: run.dayScopes.size,
+        paidDays: scopes.filter(isPaid).length,
+        unpaidDays: scopes.filter((s) => s === "unavailable").length,
+      };
+    })
+    .sort((a, b) =>
+      a.start.localeCompare(b.start)
+      || (a.person || "").localeCompare(b.person || "")
+      || a.family.localeCompare(b.family));
 }
 
 /** Which section of the upcoming table a run belongs in. */
@@ -217,6 +265,7 @@ export default function CalendarPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [expanded, setExpanded] = useState([]);
+  const [deleting, setDeleting] = useState(null);
 
   const today = useMemo(todayIso, []);
 
@@ -246,14 +295,12 @@ export default function CalendarPage() {
     );
     return runs
       .filter((run) => run.start <= today && run.end >= today)
-      .flatMap((run) =>
-        run.employeeIds.map((id) => ({
-          employeeId: id,
-          name: nameOf(id) || "Unknown",
-          backOn: addDays(run.end, 1),
-          type: TYPES[run.scope] || TYPES.unavailable,
-        })),
-      );
+      .map((run) => ({
+        employeeId: run.employeeId,
+        name: run.person || "Unknown",
+        backOn: addDays(run.end, 1),
+        tag: tagFor(run),
+      }));
   }, [hols, nameOf, today]);
 
   const offTodayIds = useMemo(
@@ -356,11 +403,11 @@ export default function CalendarPage() {
 
   /* ---- actions ---------------------------------------------------------- */
   const exportCsv = () => {
-    const header = ["Start", "End", "Days", "Who", "Type", "Label"];
+    const header = ["Who", "Start", "End", "Days", "Paid", "Unpaid", "Type", "Label"];
     const lines = allRuns.map((run) => [
-      run.start, run.end, run.days,
-      run.scope === "shop" ? "Whole shop" : run.people.join(" / ") || "—",
-      typeOf({ scope: run.scope }).label,
+      run.family === "shop" ? "Whole shop" : run.person || "—",
+      run.start, run.end, run.days, run.paidDays, run.unpaidDays,
+      tagFor(run).label,
       run.entries[0]?.label || "",
     ]);
     const csv = [header, ...lines]
@@ -386,7 +433,6 @@ export default function CalendarPage() {
     setExpanded((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
 
-  const collapsedRuns = rows.filter((r) => r.entries.length > 1 && r.days > 1);
 
   return (
     <div className="hol-page -m-6 lg:-m-10">
@@ -408,16 +454,25 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* 2 — right now ---------------------------------------------------- */}
-      <div className="hol-band hol-rightnow grid" style={{ gridTemplateColumns: "1fr 320px" }}>
-        <div style={{ padding: "26px 32px 28px" }}>
+      {/* 2 — right now --------------------------------------------------
+          Restructured by 3a: the headline and the callout sit side by side,
+          and the person cells moved OUT into a full-width band below them.
+          The "working today" list is gone with them — with 25 staff it was a
+          21-name column answering a question the callout answers in a
+          sentence. */}
+      <div className="hol-rightnow grid" style={{
+        gridTemplateColumns: "1fr 360px",
+        alignItems: "stretch",
+        borderBottom: "1px solid var(--hairline)",
+      }}>
+        <div style={{ padding: "24px 30px 22px" }}>
           <div className="hol-overline">Right now — {fmtDay(today)} {year}</div>
 
           {offToday.length === 0 ? (
-            /* Empty state, per the handoff: the numeral band is replaced
-               rather than showing a zero, which reads as an error. */
-            <div style={{ margin: "10px 0 0" }}>
-              <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.1 }}>
+            /* The handoff's empty state: the numeral band is replaced rather
+               than showing a zero, which reads as an error. */
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 21, fontWeight: 800, lineHeight: 1.15 }}>
                 Nobody is off today — all {activeStaff.length} staff on shift
               </div>
               <div className="hol-muted" style={{ fontSize: 13, marginTop: 4 }}>
@@ -426,85 +481,64 @@ export default function CalendarPage() {
               </div>
             </div>
           ) : (
-            <>
-              <div className="flex items-end gap-4" style={{ margin: "4px 0 22px" }}>
-                <div className="hol-numeral">{offToday.length}</div>
-                <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.1, paddingBottom: 6 }}>
-                  of {activeStaff.length} staff are off today
-                  <div className="hol-muted" style={{ fontSize: 13, fontWeight: 400, lineHeight: 1.4 }}>
-                    {workingToday.length} working
-                    {shopClosedToday ? " · shop closed today"
-                      : openHours ? ` · shop open ${openHours}` : ""}
-                  </div>
+            <div className="flex items-end gap-4" style={{ marginTop: 6 }}>
+              <div className="hol-numeral">{offToday.length}</div>
+              <div style={{ fontSize: 21, fontWeight: 800, lineHeight: 1.15, paddingBottom: 4 }}>
+                of {activeStaff.length} staff are off today
+                <div className="hol-muted" style={{ fontSize: 13, fontWeight: 400, lineHeight: 1.4 }}>
+                  {workingToday.length} working
+                  {shopClosedToday ? " · shop closed today"
+                    : openHours ? ` · shop open ${openHours}` : ""}
                 </div>
               </div>
-
-              {/* 4-up, wrapping past 4. Every cell says when they are back —
-                  the piece the old list never carried. */}
-              <div className="hol-people grid" style={{
-                gridTemplateColumns: "repeat(4, 1fr)",
-                borderTop: "2px solid var(--hairline)",
-                borderLeft: "1px solid var(--hairline)",
-              }}>
-                {offToday.map((person) => (
-                  <div key={person.employeeId} style={{
-                    borderRight: "1px solid var(--hairline)",
-                    borderBottom: "1px solid var(--hairline)",
-                    padding: "14px 14px 16px",
-                  }}>
-                    <div style={{ fontSize: 17, fontWeight: 800 }}>{person.name}</div>
-                    <div className="hol-muted" style={{ fontSize: 12, margin: "2px 0 10px" }}>
-                      {person.backOn === addDays(today, 1)
-                        ? `Back tomorrow, ${fmtDay(person.backOn)}`
-                        : `Back ${fmtDay(person.backOn)}`}
-                    </div>
-                    <span className={`hol-tag hol-tag-${person.type.tone}`}>
-                      {person.type.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </>
+            </div>
           )}
         </div>
 
-        <div className="hol-surface" style={{
-          borderLeft: "2px solid var(--hairline)", padding: "26px 24px",
+        <div className="hol-surface flex items-center" style={{
+          borderLeft: "2px solid var(--hairline)", padding: "20px 24px",
         }}>
-          <div className="hol-overline" style={{ marginBottom: 12 }}>Working today</div>
-          <div style={{ borderTop: "1px solid var(--hairline)" }}>
-            {workingToday.length === 0 && (
-              <div className="hol-muted" style={{ padding: "9px 0", fontSize: 14 }}>
-                Nobody is scheduled.
-              </div>
-            )}
-            {workingToday.map((e) => (
-              <div key={e.employee_id} style={{
-                padding: "9px 0", borderBottom: "1px solid var(--hairline)", fontSize: 14,
-              }}>
-                {e.name}
-              </div>
-            ))}
-          </div>
-
-          <div style={{
-            marginTop: 18, padding: 12, border: "2px solid var(--primary)",
-            fontSize: 12, lineHeight: 1.5,
-          }}>
-            {everyoneBack && (
-              <>{fmtDay(everyoneBack)} everyone is back. </>
-            )}
-            {nextGap ? (
-              <>Next gap: <strong>{fmtDay(nextGap.start)}</strong>, when{" "}
-                {nextGap.scope === "shop" ? "the shop closes"
-                  : `${nextGap.people.join(", ")} start${nextGap.people.length === 1 ? "s" : ""} ${nextGap.days} day${nextGap.days === 1 ? "" : "s"} off`}.
-              </>
-            ) : (
-              <>No further leave is booked.</>
-            )}
+          <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+            {everyoneBack && <>{fmtDay(everyoneBack)} everyone is back.<br /></>}
+            <span className="hol-muted">
+              {nextGap ? (
+                <>Next gap: <strong style={{ color: "var(--ink)" }}>{fmtDay(nextGap.start)}</strong>,{" "}
+                  {nextGap.family === "shop" ? "when the shop closes"
+                    : `when ${nextGap.person} starts ${nextGap.days} day${nextGap.days === 1 ? "" : "s"} off`}.
+                </>
+              ) : (
+                <>No further leave is booked.</>
+              )}
+            </span>
           </div>
         </div>
       </div>
+
+      {/* The people who are off, full width. Every cell says when they are
+          back — the piece the old list never carried. */}
+      {offToday.length > 0 && (
+        <div className="hol-people grid" style={{
+          gridTemplateColumns: "repeat(4, 1fr)",
+          borderLeft: "1px solid var(--hairline)",
+        }}>
+          {offToday.map((person) => (
+            <div key={person.employeeId} style={{
+              borderRight: "1px solid var(--hairline)",
+              borderBottom: "1px solid var(--hairline)",
+              padding: "14px 16px 16px",
+            }}>
+              <div style={{ fontSize: 17, fontWeight: 800 }}>{person.name}</div>
+              <div className="hol-muted" style={{ fontSize: 12, margin: "2px 0 10px" }}>
+                {person.backOn === addDays(today, 1)
+                  ? `Back tomorrow, ${fmtDay(person.backOn)}`
+                  : `Back ${fmtDay(person.backOn)}`}
+              </div>
+              <span className={`hol-tag hol-tag-${person.tag.tone}`}>{person.tag.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="hol-band" />
 
       {/* 3 — booked leave / history --------------------------------------- */}
       <div style={{ padding: "24px 32px 32px" }}>
@@ -516,7 +550,7 @@ export default function CalendarPage() {
           <div className="flex gap-1" role="group" aria-label="Which leave to show">
             {[
               ["upcoming30", "Next 30 days"],
-              ["allUpcoming", `All upcoming (${upcomingRuns.length})`],
+              ["allUpcoming", "All upcoming"],
               ["past", "Past"],
             ].map(([key, label]) => (
               <button
@@ -541,7 +575,7 @@ export default function CalendarPage() {
           expanded={expanded}
           onToggleRun={toggleRun}
           onEdit={setEditing}
-          nameOf={nameOf}
+          onDelete={setDeleting}
           emptyMessage={
             view === "past" ? "No leave has been taken yet."
               : view === "allUpcoming" ? "No leave is booked."
@@ -549,20 +583,15 @@ export default function CalendarPage() {
           }
         />
 
-        {collapsedRuns.length > 0 && (
+        {rows.length > 0 && (
           <div className="hol-faint" style={{ marginTop: 12, fontSize: 12 }}>
-            {collapsedRuns.length === 1
-              ? `${collapsedRuns[0].entries.length} consecutive single-day entries for ${collapsedRuns[0].people.join(", ") || "the shop"} (${fmtRange(collapsedRuns[0].start, collapsedRuns[0].end)}) are shown as one run.`
-              : `${collapsedRuns.length} runs of consecutive single-day entries are shown as one row each.`}{" "}
-            <button
-              className="btn btn-ghost"
-              style={{ fontSize: 12, padding: "2px 6px" }}
-              onClick={() => setExpanded(
-                expanded.length ? [] : collapsedRuns.map((r) => r.id),
-              )}
-            >
-              {expanded.length ? "Collapse runs" : "Show individual days"}
-            </button>
+            Rows are one continuous absence per person. A change of pay type
+            mid-run shows as a mixed tag with a <strong style={{ fontWeight: 600 }}>Show days</strong> breakdown,
+            not as a new row.{" "}
+            <strong style={{ color: "var(--ink-secondary)", fontWeight: 600 }}>Delete</strong>{" "}
+            removes a booking added by mistake — it asks to confirm first, and
+            on a run booked day by day it offers the whole absence or just some
+            days.
           </div>
         )}
 
@@ -613,6 +642,13 @@ export default function CalendarPage() {
           onSaved={() => { setEditing(null); load(); }}
         />
       )}
+      {deleting && (
+        <DeleteRunDialog
+          run={deleting}
+          onClose={() => setDeleting(null)}
+          onDone={() => { setDeleting(null); load(); }}
+        />
+      )}
     </div>
   );
 }
@@ -660,8 +696,17 @@ function StatStrip({ stats, year }) {
 
 /* -------------------------------------------------------------------------
    The table
+
+   Columns are Who first: the manager is scanning for a NAME, and the 3a
+   revision puts it where the eye lands. Edit and Delete both sit on the row.
+
+   Delete was inside the edit form for one revision, on the reasoning that a
+   one-click trash icon next to eight others is easy to hit by accident. 3a
+   brings it back to the row and answers that differently — it is a labelled
+   word rather than an icon, and it always confirms. On a run made of several
+   day-records the confirm offers the whole absence or just some days.
 ------------------------------------------------------------------------- */
-function LeaveTable({ groups, expanded, onToggleRun, onEdit, nameOf, emptyMessage }) {
+function LeaveTable({ groups, expanded, onToggleRun, onEdit, onDelete, emptyMessage }) {
   if (!groups.length) {
     return (
       <div className="hol-muted" style={{
@@ -675,11 +720,11 @@ function LeaveTable({ groups, expanded, onToggleRun, onEdit, nameOf, emptyMessag
     <table className="hol-table">
       <thead>
         <tr>
-          <th style={{ width: 190 }}>Dates</th>
-          <th style={{ width: 80 }} className="hol-days-col">Days</th>
-          <th>Who</th>
-          <th style={{ width: 170 }}>Type</th>
-          <th style={{ width: 60 }}><span className="sr-only">Edit</span></th>
+          <th style={{ width: 150 }}>Who</th>
+          <th style={{ width: 200 }}>Dates</th>
+          <th style={{ width: 70 }} className="hol-days-col">Days</th>
+          <th>Type</th>
+          <th style={{ width: 170 }}><span className="sr-only">Actions</span></th>
         </tr>
       </thead>
       <tbody>
@@ -687,56 +732,77 @@ function LeaveTable({ groups, expanded, onToggleRun, onEdit, nameOf, emptyMessag
           <React.Fragment key={group.label}>
             <tr className="hol-group"><td colSpan={5}>{group.label}</td></tr>
             {group.runs.map((run) => {
-              const type = typeOf({ scope: run.scope });
+              const tag = tagFor(run);
               const isOpen = expanded.includes(run.id);
+              // Only a run stitched from several day-records can show a
+              // per-day breakdown. A single record covering a range has no
+              // per-day detail to show and cannot be split.
+              const splittable = run.entries.length > 1;
+              const mixed = run.paidDays > 0 && run.unpaidDays > 0;
               return (
                 <React.Fragment key={run.id}>
-                  <tr className={`hol-row${run.scope === "shop" ? " hol-shop-closed" : ""}`}>
-                    <td style={{ fontWeight: 600 }}>{fmtRange(run.start, run.end)}</td>
-                    <td className="hol-days-col">{run.days}</td>
-                    <td style={run.scope === "shop" ? { fontWeight: 600 } : undefined}>
-                      {run.scope === "shop"
-                        ? "Whole shop closed"
-                        : run.people.join(", ") || "—"}
+                  <tr className={`hol-row${run.family === "shop" ? " hol-shop-closed" : ""}${isOpen ? " hol-open" : ""}`}>
+                    <td style={{ fontWeight: 600 }}>
+                      {run.family === "shop" ? "Whole shop closed" : run.person || "—"}
                     </td>
-                    <td><span className={`hol-tag hol-tag-${type.tone}`}>{type.label}</span></td>
+                    <td>{fmtRange(run.start, run.end)}</td>
+                    <td className="hol-days-col">{run.days}</td>
+                    <td><span className={`hol-tag hol-tag-${tag.tone}`}>{tag.label}</span></td>
                     <td>
-                      {run.entries.length === 1 ? (
-                        <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 8px" }}
-                                onClick={() => onEdit(run.entries[0])}>
-                          Edit
+                      <div className="flex justify-end gap-1">
+                        {splittable ? (
+                          <button className="btn btn-ghost hol-action"
+                                  onClick={() => onToggleRun(run.id)}>
+                            {isOpen ? "Hide days" : "Show days"}
+                          </button>
+                        ) : (
+                          <button className="btn btn-ghost hol-action"
+                                  onClick={() => onEdit(run.entries[0])}>
+                            Edit
+                          </button>
+                        )}
+                        <button className="btn btn-ghost hol-action hol-action-quiet"
+                                onClick={() => onDelete(run)}>
+                          Delete
                         </button>
-                      ) : (
-                        /* A run made of several records cannot be edited as
-                           one — expanding it is what makes each editable. */
-                        <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 8px" }}
-                                onClick={() => onToggleRun(run.id)}>
-                          {isOpen ? "Hide" : "Days"}
-                        </button>
-                      )}
+                      </div>
                     </td>
                   </tr>
-                  {isOpen && run.entries.map((entry) => (
-                    <tr key={entry.holiday_id} className="hol-row">
-                      <td style={{ paddingLeft: 16 }} className="hol-muted">
-                        {fmtRange(entry.date, entry.end_date || entry.date)}
-                      </td>
-                      <td className="hol-days-col hol-muted">
-                        {datesOf(entry).length}
-                      </td>
-                      <td className="hol-muted">
-                        {entry.scope === "shop"
-                          ? "Whole shop closed" : nameOf(entry.employee_id) || "—"}
-                      </td>
-                      <td className="hol-muted" style={{ fontSize: 12 }}>{entry.label}</td>
-                      <td>
-                        <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 8px" }}
-                                onClick={() => onEdit(entry)}>
-                          Edit
-                        </button>
+
+                  {isOpen && (
+                    <tr className="hol-open">
+                      <td />
+                      <td colSpan={4} style={{ paddingTop: 0 }}>
+                        {/* One chip per day, paid ones filled. This is what
+                            the mixed tag is promising to explain. */}
+                        <div className="flex flex-wrap gap-1" style={{ paddingBottom: 6 }}>
+                          {run.dayScopes.map(([date, scope]) => (
+                            <button
+                              key={date}
+                              type="button"
+                              className={`hol-chip${isPaid(scope) ? " hol-chip-paid" : ""}`}
+                              onClick={() => {
+                                const entry = run.entries.find(
+                                  (e) => e.date === date && !e.end_date,
+                                );
+                                if (entry) onEdit(entry);
+                              }}
+                              title="Edit this day"
+                            >
+                              {parseIso(date).toLocaleDateString("en-GB", {
+                                weekday: "short", day: "numeric",
+                              })}{" "}
+                              {isPaid(scope) ? "paid" : scope === "sick" ? "sick" : "unpaid"}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="hol-faint" style={{ fontSize: 11, paddingBottom: 8 }}>
+                          One absence, {run.days} day{run.days === 1 ? "" : "s"}.
+                          {mixed ? " Paid days sit inside the run — they no longer split it into separate rows." : ""}
+                        </div>
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </React.Fragment>
               );
             })}
@@ -744,6 +810,103 @@ function LeaveTable({ groups, expanded, onToggleRun, onEdit, nameOf, emptyMessag
         ))}
       </tbody>
     </table>
+  );
+}
+
+/* -------------------------------------------------------------------------
+   Deleting an absence
+
+   "It asks to confirm first, and on a mixed run it offers delete the whole
+   absence or delete selected days."
+
+   A booking made through the leave flow is one record PER DAY, so selected
+   days can simply be removed. A booking made as a RANGE is one record, and
+   there is no endpoint to split it — so that case is offered whole-absence
+   deletion only, and says why rather than showing a control that would fail.
+------------------------------------------------------------------------- */
+function DeleteRunDialog({ run, onClose, onDone }) {
+  const perDay = run.entries.length > 1;
+  const [selected, setSelected] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  const entryForDay = (date) =>
+    run.entries.find((e) => e.date === date && !e.end_date);
+
+  const remove = async (entries) => {
+    setBusy(true);
+    try {
+      // Sequential rather than parallel: a partial failure should leave a
+      // comprehensible state, not a scatter of half-deleted days.
+      for (const entry of entries) {
+        await api.delete(`/holidays/${entry.holiday_id}`);
+      }
+      toast.success(entries.length === 1 ? "Removed" : `Removed ${entries.length} days`);
+      onDone();
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not remove"));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="hol-page fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+         onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="card elevated w-full max-w-md"
+           style={{ padding: 24 }}>
+        <div className="hol-kicker">Remove</div>
+        <h2 className="hol-h2" style={{ margin: "2px 0 10px" }}>
+          {run.family === "shop" ? "Whole shop closed" : run.person}
+        </h2>
+        <p className="hol-muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
+          {fmtRange(run.start, run.end)} · {run.days} day{run.days === 1 ? "" : "s"}.
+          {" "}This cannot be undone.
+        </p>
+
+        {perDay && (
+          <div style={{ marginTop: 16 }}>
+            <div className="hol-overline" style={{ marginBottom: 8 }}>
+              Or remove only some days
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {run.dayScopes.map(([date, scope]) => {
+                const on = selected.includes(date);
+                return (
+                  <button key={date} type="button"
+                          className={`hol-chip${on ? " hol-chip-paid" : ""}`}
+                          onClick={() => setSelected((prev) =>
+                            prev.includes(date) ? prev.filter((d) => d !== date) : [...prev, date])}>
+                    {parseIso(date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric" })}
+                    {" "}{isPaid(scope) ? "paid" : scope === "sick" ? "sick" : "unpaid"}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {!perDay && run.days > 1 && (
+          <p className="hol-faint" style={{ fontSize: 12, marginTop: 12 }}>
+            This absence was booked as a single date range, so it can only be
+            removed whole. To shorten it, use Edit and change the end date.
+          </p>
+        )}
+
+        <div className="flex items-center gap-2" style={{ marginTop: 22 }}>
+          <button className="btn btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <div className="ml-auto flex gap-2">
+            {perDay && selected.length > 0 && (
+              <button className="btn btn-danger" disabled={busy}
+                      onClick={() => remove(selected.map(entryForDay).filter(Boolean))}>
+                Delete {selected.length} day{selected.length === 1 ? "" : "s"}
+              </button>
+            )}
+            <button className="btn btn-danger" disabled={busy}
+                    onClick={() => remove(run.entries)}>
+              Delete whole absence
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -869,26 +1032,6 @@ function LeaveModal({ employees, entry, onClose, onSaved }) {
       onSaved();
     } catch (err) {
       toast.error(errorMessage(err, "Could not save"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /* Delete lives HERE, not as a bare trash icon on every row — the old
-     one-click delete sat next to eight others and was easy to hit by
-     accident. */
-  const remove = async () => {
-    if (!window.confirm(
-      `Remove this leave entry?\n\n${fmtRange(entry.date, entry.end_date || entry.date)}` +
-      `\n\nThis cannot be undone.`,
-    )) return;
-    setBusy(true);
-    try {
-      await api.delete(`/holidays/${entry.holiday_id}`);
-      toast.success("Removed");
-      onSaved();
-    } catch (err) {
-      toast.error(errorMessage(err, "Could not remove"));
     } finally {
       setBusy(false);
     }
@@ -1077,11 +1220,6 @@ function LeaveModal({ employees, entry, onClose, onSaved }) {
         </div>
 
         <div className="flex items-center gap-2" style={{ marginTop: 22 }}>
-          {editing && (
-            <button type="button" onClick={remove} disabled={busy} className="btn btn-danger">
-              Delete
-            </button>
-          )}
           <div className="ml-auto flex gap-2">
             <button type="button" onClick={onClose} className="btn btn-secondary">Cancel</button>
             <button

@@ -571,3 +571,37 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 @media (max-width: 640px) {
   .hol-page .hol-people { grid-template-columns: 1fr !important; }
 }
+
+/* Per-day chips inside an expanded run. A paid day is filled so the mixed
+   tag's "9 unpaid + 4 paid" can be read off the row at a glance — that is
+   the whole promise of folding pay type into one absence instead of
+   splitting it into separate rows. */
+.hol-chip {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 4px 8px;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--ink-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.hol-chip:hover { border-color: var(--hairline-strong); color: var(--ink); }
+.hol-chip-paid {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+  color: var(--ink);
+}
+
+/* An expanded run and its detail row read as one block. */
+.hol-table tr.hol-open { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.hol-table tr.hol-open:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.hol-table tr.hol-open td { border-bottom-color: transparent; }
+.hol-table tr.hol-open + tr.hol-open td { border-bottom: 1px solid var(--hairline); }
+
+/* Row actions: a labelled word, not an icon. Delete is quieter than Edit —
+   it is the rarer intent and the costlier mistake. */
+.hol-action { font-size: 12px; padding: 4px 8px; }
+.hol-action-quiet { color: color-mix(in srgb, var(--ink) 62%, transparent); }
+.hol-action-quiet:hover { color: var(--danger); }
