@@ -228,21 +228,51 @@ def weekly_hour_cap(employee: Dict[str, Any], week_start: str) -> float:
     span band, see contract_span_band — so they get a ceiling high enough
     never to be the binding constraint.
     """
+    return weekly_hour_cap_explained(employee, week_start)[0]
+
+
+def weekly_hour_cap_explained(
+    employee: Dict[str, Any], week_start: str
+) -> Tuple[float, str]:
+    """The cap, and WHICH FIELD it came from, in the manager's words.
+
+    One implementation, two questions — `weekly_hour_cap` is this without the
+    explanation. Answering them separately is the §11 trap.
+
+    The explanation exists because four different fields can set this number
+    and the Employees screen shows them all as "hours". A manager raised a
+    student's `max_weekly_hours` from 20 to 25, came back to the roster, and
+    the caution had not moved — correctly, because that week fell inside
+    their summer break and the break's own figure was the binding one.
+    Nothing on the page said so, so the only available conclusion was that
+    the app was stale. It was not; it was silent.
+
+        "Fionn is rostered 22.0h against a 20h limit"
+
+    is true and useless. The manager needs to know WHICH 20h, because that
+    is the field they have to edit.
+    """
     if is_full_time_contract(employee):
         band = contract_span_band(employee)
-        return band[1] if band else float(employee.get("max_weekly_hours") or 0)
+        if band:
+            return band[1], "their contracted hours"
+        return float(employee.get("max_weekly_hours") or 0), "their weekly limit"
 
     contract = float(employee.get("max_weekly_hours") or 0)
     if employment_type(employee) != "student":
-        return contract
+        return contract, "their weekly limit"
 
     monday = _parse_date(week_start)
     if monday and on_summer_break(employee, monday):
         summer = (employee.get("summer_break") or {}).get("max_weekly_hours")
-        return float(summer) if summer else contract
+        if summer:
+            return float(summer), "their summer-break limit"
+        return contract, "their weekly limit"
 
     term_time = employee.get("term_time_max_hours")
-    return float(term_time) if term_time else contract
+    if term_time:
+        return float(term_time), "their term-time limit"
+    return contract, "their weekly limit"
 
 
 # ---------------------------------------------------------------------------

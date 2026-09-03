@@ -101,20 +101,26 @@ async def run(email: str, who: str, week: str | None) -> None:
         if band:
             print(f"  --> contract band            : {band[0]:g}h to {band[1]:g}h")
 
-        # WHICH FIELD IS LOAD-BEARING. This is the whole point of the script.
-        if kind == "full_time_contract":
-            source = "contract_span_hours"
-            ignored = "max_weekly_hours is IGNORED for this employment type"
-        elif kind == "student":
-            source = "max_weekly_hours (or the summer-break figure in the break)"
-            ignored = ""
-        else:
-            source = "max_weekly_hours"
-            ignored = ""
-        print(f"\n  The cap comes from: {source}")
-        if ignored:
-            print(f"  {ignored}")
-            print("  If you edited max_weekly_hours and nothing moved, that is why.")
+        # WHICH FIELD IS LOAD-BEARING. This is the whole point of the script,
+        # and the first version of it GUESSED from the employment type — which
+        # was wrong for the very case it was written for. A student's cap can
+        # come from any of three fields depending on the date, so the answer
+        # is asked of the same function the roster page asks.
+        break_period = employee.get("summer_break") or {}
+        print(f"  term_time_max_hours   : {employee.get('term_time_max_hours')}")
+        print(f"  summer_break          : "
+              f"{break_period.get('start_date')} to {break_period.get('end_date')}"
+              f", {break_period.get('max_weekly_hours')}h"
+              if break_period else "  summer_break          : none")
+
+        _, source = avail.weekly_hour_cap_explained(employee, week)
+        print(f"\n  The cap that applied is {source.upper()}.")
+        stated = employee.get("max_weekly_hours")
+        if stated and abs(float(stated) - cap) > 0.01:
+            print(f"  max_weekly_hours is {float(stated):g}h and did NOT decide "
+                  f"this week.")
+            print("  Editing it will not move the caution. Edit the field named "
+                  "above.")
 
         theirs = [
             s for s in (roster.get("shifts") or [])

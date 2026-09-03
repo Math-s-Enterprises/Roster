@@ -264,11 +264,30 @@ def audit(
         worked_hours = sum(
             paid_hours(s["start"], s["end"], breaks_paid=breaks_paid) for s in theirs
         )
-        cap = avail.weekly_hour_cap(employee, week_start)
+        # NAME THE FIELD, not just the number.
+        #
+        # Four fields can set this cap — contracted hours, the weekly limit,
+        # a term-time limit, a summer-break limit — and the Employees screen
+        # calls them all "hours". "against a 20h limit" is true and useless:
+        # the manager raised the weekly limit from 20 to 25, came back, saw
+        # the same caution, and concluded the page was stale. It was not.
+        # That week fell inside the student's summer break, whose own figure
+        # was the binding one, and nothing said so.
+        cap, cap_source = avail.weekly_hour_cap_explained(employee, week_start)
         if cap and worked_hours > cap + 0.01:
+            # Only when the OTHER number differs, so an ordinary hourly
+            # employee does not get a clause explaining a distinction that
+            # does not apply to them.
+            stated = float(employee.get("max_weekly_hours") or 0)
+            aside = (
+                f" Their weekly limit of {stated:g}h does not apply this week."
+                if stated and abs(stated - cap) > 0.01
+                and cap_source != "their weekly limit"
+                else ""
+            )
             add(employee, "weekly_hours",
-                f"{name} is rostered {worked_hours:.1f}h against a {cap:.0f}h "
-                f"limit — {worked_hours - cap:.1f}h over.")
+                f"{name} is rostered {worked_hours:.1f}h against {cap_source} "
+                f"of {cap:.0f}h — {worked_hours - cap:.1f}h over.{aside}")
 
         band = avail.contract_span_band(employee)
         if band:
