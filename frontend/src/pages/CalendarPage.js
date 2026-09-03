@@ -595,7 +595,7 @@ export default function CalendarPage() {
                 data-testid={`hol-view-${key}`}
                 aria-pressed={view === key}
                 onClick={() => setView(key)}
-                className={view === key ? "btn btn-primary" : "btn btn-secondary"}
+                className="btn hol-seg-opt"
               >
                 {label}
               </button>

@@ -536,8 +536,21 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   border: 1px solid var(--hairline-strong);
   white-space: nowrap;
 }
-.hol-tag-outline { background: transparent; color: var(--ink-mute); }
-.hol-tag-neutral { background: var(--canvas-raised); color: var(--ink-mute); border-color: var(--hairline); }
+/* UNPAID is the accent outline, PAID is the quiet grey one — which is the
+   opposite of the instinct that paid leave is the "positive" state. Unpaid
+   is the one that costs the shop cover without drawing down entitlement, so
+   it is the one worth spotting in a column of forty rows. Taken from the
+   mock, where it is unmistakable. */
+.hol-tag-outline {
+  background: transparent;
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+}
+.hol-tag-neutral {
+  background: transparent;
+  color: var(--ink-mute);
+  border-color: var(--hairline-strong);
+}
 .hol-tag-accent  { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 
 /* Table. Header 11px uppercase; body cells 8px; 1px rules; hover 4%. */
@@ -612,7 +625,10 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .hol-chip-paid {
   background: color-mix(in srgb, var(--primary) 22%, transparent);
   border-color: color-mix(in srgb, var(--primary) 55%, transparent);
-  color: var(--ink);
+  /* Pale green rather than plain white: a paid day should read as green all
+     the way through, so the mixed tag's "4 paid" can be counted off the
+     chips without reading a word of them. */
+  color: color-mix(in srgb, var(--primary) 35%, #ffffff);
 }
 
 /* An expanded run and its detail row read as one block. */
@@ -621,8 +637,37 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .hol-table tr.hol-open td { border-bottom-color: transparent; }
 .hol-table tr.hol-open + tr.hol-open td { border-bottom: 1px solid var(--hairline); }
 
-/* Row actions: a labelled word, not an icon. Delete is quieter than Edit —
-   it is the rarer intent and the costlier mistake. */
-.hol-action { font-size: 12px; padding: 4px 8px; }
+/* Row actions: a labelled word, not an icon. Edit carries the accent because
+   it is the action the row is FOR; Delete stays grey until hovered, when it
+   turns red — the rarer intent and the costlier mistake. */
+.hol-action {
+  font-size: 12px;
+  padding: 4px 8px;
+  color: var(--primary);
+  font-weight: 500;
+}
+.hol-action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+}
 .hol-action-quiet { color: color-mix(in srgb, var(--ink) 62%, transparent); }
-.hol-action-quiet:hover { color: var(--danger); }
+.hol-action-quiet:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* The segmented control. The unselected options are flat — no border — so
+   the selected one is the only filled thing in the row. `btn-secondary` gave
+   all three a visible outline and the selection read as one green button
+   among three outlined ones rather than as one control. */
+.hol-seg-opt {
+  background: transparent;
+  color: var(--ink);
+  border-color: transparent;
+}
+.hol-seg-opt:hover:not(:disabled) { background: var(--canvas-soft); }
+.hol-seg-opt[aria-pressed="true"] {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.hol-seg-opt[aria-pressed="true"]:hover:not(:disabled) { background: var(--primary-hover); }
