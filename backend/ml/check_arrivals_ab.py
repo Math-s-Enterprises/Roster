@@ -15,6 +15,24 @@ on, once off — and scores both against the week the manager actually
 approved. Every week is held out of its own history, so neither model is
 ever graded on a week it learned from.
 
+WHICH WEEKS CAN BE GRADED AT ALL
+--------------------------------
+Only those with at least MIN_WEEKS_FOR_DEMAND approved weeks BEFORE them.
+`demand.py` will not learn from a week dated after the target — "a future
+week is not evidence of anything yet" — so the earliest weeks have nothing
+to read and fall back to generic block coverage.
+
+That is not a small correction. The first run of this script graded four
+such weeks, where both models produced the same half-sized roster (33 shifts
+against the manager's 74) because both were running the same fallback. They
+contributed 23% of the arrivals distance, told the comparison nothing, and
+made the solver look 148 shifts short across the history when it is about
+one shift a week short on the weeks it can actually solve.
+
+The guard was `len(history) >= 4`, which counted every OTHER week including
+the ones that had not happened yet. Holding a week out is not the same as
+only showing the model its past.
+
 THE BAR, STATED BEFORE THE MODEL WAS BUILT
 -------------------------------------------
     "arrivals difference falls substantially AND exact matches don't drop.
@@ -51,7 +69,9 @@ from typing import Dict, List, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import db                                          # noqa: E402
-from app.services.demand import build_profile               # noqa: E402
+from app.services.demand import (                           # noqa: E402
+    MIN_WEEKS_FOR_DEMAND, build_profile,
+)
 from app.services.hierarchy import sort_employees           # noqa: E402
 from app.services.learning import (                         # noqa: E402
     compute_weights, latest_per_week,
@@ -160,10 +180,33 @@ async def run(email: str, limit: int | None) -> None:
         "arrivals": defaultdict(int), "shapes": defaultdict(int)}
     graded = 0
 
+    skipped: List[str] = []
     for target in weeks:
         week = target["week_start"]
         history = [r for r in approved if r.get("week_start") != week]
-        if len(history) < 4:
+
+        # ONLY WEEKS THE SOLVER COULD ACTUALLY HAVE SOLVED.
+        #
+        # `len(history) >= 4` was the wrong guard, and it quietly wrecked the
+        # first four rows of this report. It counted every OTHER week,
+        # including the thirty that had not happened yet — but `demand.py`
+        # skips a week dated after the target ("a future week is not evidence
+        # of anything yet"), so the earliest week has nothing at all to learn
+        # from, falls below MIN_WEEKS_FOR_DEMAND and drops to generic block
+        # coverage. It produced 33 shifts against the manager's 74, and so
+        # did the other model, because both were running the same fallback.
+        #
+        # Four unsolvable weeks carried 198 of an 856-point arrivals distance
+        # — 23% of the score — and made the solver look 148 shifts short when
+        # it is about one a week short on the weeks it can actually solve.
+        # Neither model was at fault and the comparison learned nothing from
+        # them.
+        #
+        # ISO dates compare correctly as strings, which is why there is no
+        # parsing here.
+        prior = [r for r in history if (r.get("week_start") or "") < week]
+        if len(prior) < MIN_WEEKS_FOR_DEMAND:
+            skipped.append(week)
             continue
         profile = build_profile(shop, history, roles, for_week=week)
         weights = compute_weights(history)
@@ -201,7 +244,19 @@ async def run(email: str, limit: int | None) -> None:
           f"{a['arrivals']:>7}   "
           f"{s['ours']:>7}{s['exact']:>6}{s['person']:>7}{s['times']:>6}"
           f"{s['arrivals']:>7}")
-    print(f"  {graded} weeks")
+    print(f"  {graded} weeks graded")
+    if skipped:
+        print(f"\n  {len(skipped)} weeks NOT graded, and this is not a fault "
+              f"in either model:")
+        print(f"    {', '.join(skipped)}")
+        print(f"    Fewer than {MIN_WEEKS_FOR_DEMAND} approved weeks come "
+              f"BEFORE them, and `demand.py` will not")
+        print("    learn from a week that had not happened yet. There is "
+              "nothing for the")
+        print("    profile to read, so both models fall back to generic block "
+              "coverage and")
+        print("    produce the same half-sized week. Grading that measures "
+              "the fallback.")
     print(f"\n  Shifts produced, against the manager's {a['his']}:")
     print(f"    arrivals model {a['ours']}  ({a['ours'] - a['his']:+d})")
     print(f"    shape list     {s['ours']}  ({s['ours'] - a['his']:+d})")

@@ -830,3 +830,52 @@ Two lessons, and the second is the uncomfortable one:
 It is now `xfail(strict=True)`, so it fails loudly if somebody fixes
 `_close_short_hours` and forgets to remove the marker. Not fixed in the same
 change, deliberately: the A/B has to measure one thing at a time.
+
+### The cap fix worked, and then the sixth measurement error appeared
+
+After it: exact 641 → 679, arrivals distance 877 → 856. Still 23 behind the
+shape list on 2175 shifts, so arrivals stays off — the bar was applied
+without renegotiation for the second time.
+
+Adding a shifts-produced column killed two live hypotheses at once. Both
+models produce **exactly 2001 shifts, identical every week**, so "arrivals
+builds a smaller week" was wrong. And both were 174 short of the manager.
+
+I read that as a shared bug worth chasing — "four broken weeks, 148 shifts,
+a bigger prize than arrivals" — and said so before checking. It was wrong,
+and it was **the same error as the five before it: a population that could
+not answer the question.**
+
+`demand.py` line 279: `if age < 0: continue`, a week after the target is not
+evidence of anything yet. So for the earliest approved week every other week
+is in the future, the profile has nothing to read, it falls below
+`MIN_WEEKS_FOR_DEMAND` and drops to generic block coverage. Jan 26 has one
+prior week, Feb 02 two, Feb 09 three — and Feb 16, the first with four, is
+**exactly** where the output jumps from 33 shifts to 70.
+
+Nothing was broken. The solver cannot learn a shop's patterns from weeks
+that have not happened, and should not pretend to.
+
+The fault was in the A/B: the holdout guard was `len(history) >= 4`, which
+counted every OTHER week including the thirty in the future. **Holding a
+week out is not the same as only showing the model its past.** Fixed to
+count weeks strictly before the target; the four are now skipped and named,
+with the reason.
+
+What it cost: 198 of 856 arrivals distance, 23% of the score, from weeks
+where both models ran the same fallback and the comparison learned nothing.
+The verdict does not change — arrivals is still 23 exact behind — which is
+the only reassuring part.
+
+Two things to carry forward:
+
+- **A holdout has a direction.** Time-ordered data needs a past, not merely
+  a gap. Any future A/B in `ml/` should be checked for this before it is
+  believed; `check_arrivals_ab.py` had it wrong from the first line it ran.
+- **Say "I have not checked this yet".** The 148-shift claim was stated as a
+  finding and put to the shop owner as a recommendation before a single line
+  of code had been read. It took four minutes to disprove afterwards.
+
+STILL UNVERIFIED, because the sandbox lost shell access mid-change: the
+holdout fix compiles-clean and the test suite passes. Both need running
+before the next A/B is believed.
