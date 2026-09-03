@@ -109,6 +109,10 @@ function toForm(employee) {
  */
 function toPayload(form) {
   const blankToNull = (v) => (v === "" || v === undefined ? null : v);
+  // For REQUIRED numbers, where null would fail validation just as 0 does.
+  // Leaving the key out lets the model's own default stand.
+  const blankToUndefined = (v) =>
+    (v === "" || v === null || v === undefined ? undefined : Number(v));
   const availability = {
     earliest_start: blankToNull(form.availability.earliest_start),
     latest_finish: blankToNull(form.availability.latest_finish),
@@ -141,9 +145,20 @@ function toPayload(form) {
     // fail validation and block the save on an optional field.
     email: (form.email || "").trim() || null,
     role: form.role,
-    age: Number(form.age),
-    hourly_rate: Number(form.hourly_rate),
-    max_weekly_hours: Number(form.max_weekly_hours),
+    // AN EMPTY BOX IS NOT ZERO.
+    //
+    // `Number("")` is 0, and the API rejects 0 for these with "Input should
+    // be greater than 0" — a message that names no field, so clearing the
+    // weekly-hours box produced an error that looked like it came from
+    // somewhere else entirely. Every optional number below already guarded
+    // against "" and these three did not.
+    //
+    // Omitted rather than sent as 0 or null, so the documented default
+    // applies (40h) instead of the save failing on a box the manager may
+    // not even have meant to touch.
+    age: blankToUndefined(form.age),
+    hourly_rate: blankToUndefined(form.hourly_rate),
+    max_weekly_hours: blankToUndefined(form.max_weekly_hours),
     preferred_days_off: form.preferred_days_off,
     departments: form.departments || ["Shop Floor"],
     is_active: form.is_active !== false,

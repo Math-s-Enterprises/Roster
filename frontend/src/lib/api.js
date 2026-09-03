@@ -38,12 +38,63 @@ api.interceptors.response.use(
 );
 
 /** Human-readable message from an axios error, whatever shape it arrives in. */
+/**
+ * A field name the manager would recognise, from the API's field name.
+ *
+ * Spelled out where the API name and the on-screen label differ, because
+ * "max_weekly_hours: Input should be greater than 0" still leaves somebody
+ * hunting for a box called that. Anything unlisted falls back to
+ * de-underscoring, which is right often enough and never worse than the raw
+ * name.
+ */
+const FIELD_LABELS = {
+  max_weekly_hours: "Weekly hours",
+  contract_span_hours: "Contracted hours",
+  contract_span_tolerance: "Contract tolerance",
+  term_time_max_hours: "Term-time hours",
+  summer_break: "Summer break",
+  hourly_rate: "Hourly rate",
+  opening_holiday_hours: "Holiday allowance",
+  min_shift_hours: "Minimum shift length",
+  max_shift_hours: "Maximum shift length",
+  min_rest_hours: "Rest between shifts",
+  age: "Age",
+  name: "Name",
+  email: "Email",
+  role: "Role",
+};
+
+function fieldLabel(field) {
+  if (!field) return "";
+  return FIELD_LABELS[field]
+    || field.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+}
+
 export function errorMessage(error, fallback = "Something went wrong") {
   const detail = error?.response?.data?.detail;
   if (typeof detail === "string") return detail;
   // FastAPI validation errors arrive as a list of {loc, msg, type}.
+  //
+  // NAME THE FIELD. `msg` alone is "Input should be greater than 0", which
+  // is true of a form with a dozen numbers on it and useless on all of them
+  // — a manager saw exactly that, could not tell which box was wrong, and
+  // reasonably assumed the app was broken.
+  //
+  // `loc` is like ["body", "max_weekly_hours"] or ["body", "summer_break",
+  // "max_weekly_hours"], so the last string element is the field and the one
+  // before it is the section it sits in.
   if (Array.isArray(detail) && detail.length) {
-    return detail.map((d) => d.msg).filter(Boolean).join("; ") || fallback;
+    const lines = detail
+      .map((d) => {
+        const path = (d.loc || []).filter(
+          (part) => typeof part === "string" && part !== "body"
+        );
+        const label = fieldLabel(path[path.length - 1]);
+        const where = path.length > 1 ? ` (${fieldLabel(path[0])})` : "";
+        return label ? `${label}${where}: ${d.msg}` : d.msg;
+      })
+      .filter(Boolean);
+    return lines.join("; ") || fallback;
   }
   // Our own rule failures: {message, reasons[]}.
   if (detail && typeof detail === "object") {
