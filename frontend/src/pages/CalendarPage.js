@@ -226,6 +226,43 @@ export function buildRuns(entries, nameOf) {
       || a.family.localeCompare(b.family));
 }
 
+/**
+ * Which buttons a row shows.
+ *
+ * EDIT IS ALWAYS ONE OF THEM. It used to be swapped out for "Show days"
+ * whenever a run was stitched from several records — and because the booking
+ * flow writes one record PER DAY, that was every multi-day holiday. A
+ * one-day leave could be edited and a five-day one could not, which is
+ * exactly what the shop owner hit.
+ *
+ * They answer different questions and are not alternatives: "Show days"
+ * explains what the mixed tag is claiming, "Edit" changes the booking.
+ */
+export function rowActions(run) {
+  return { edit: true, expand: run.entries.length > 1 };
+}
+
+/**
+ * One record, wrapped as a run.
+ *
+ * The edit dialog takes a run, so that editing "Jithin's thirteen days" and
+ * editing "the Thursday inside it" are the same code path with a different
+ * scope. Clicking a day chip is the second one.
+ */
+function runForEntry(entry, run) {
+  return {
+    ...run,
+    id: `${run.id}|${entry.holiday_id}`,
+    entries: [entry],
+    start: entry.date,
+    end: entry.end_date || entry.date,
+    dayScopes: datesOf(entry).map((d) => [d, entry.scope]),
+    days: datesOf(entry).length,
+    paidDays: isPaid(entry.scope) ? datesOf(entry).length : 0,
+    unpaidDays: entry.scope === "unavailable" ? datesOf(entry).length : 0,
+  };
+}
+
 /** Which section of the upcoming table a run belongs in. */
 function upcomingGroup(start, today) {
   const thisWeek = mondayOf(today);
@@ -637,7 +674,7 @@ export default function CalendarPage() {
       {editing && (
         <LeaveModal
           employees={emps}
-          entry={editing}
+          run={editing}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }}
         />
@@ -734,10 +771,16 @@ function LeaveTable({ groups, expanded, onToggleRun, onEdit, onDelete, emptyMess
             {group.runs.map((run) => {
               const tag = tagFor(run);
               const isOpen = expanded.includes(run.id);
-              // Only a run stitched from several day-records can show a
-              // per-day breakdown. A single record covering a range has no
-              // per-day detail to show and cannot be split.
-              const splittable = run.entries.length > 1;
+              // EDIT IS ALWAYS PRESENT. It used to be swapped OUT for "Show
+              // days" whenever a run was stitched from several records —
+              // which is every multi-day holiday, because the booking flow
+              // writes one record per day. So a five-day absence had no way
+              // to change its dates at all, and the manager asked why a
+              // one-day leave could be edited and a longer one could not.
+              //
+              // They are not alternatives. Show days explains what the
+              // mixed tag is claiming; Edit changes the booking.
+              const actions = rowActions(run);
               const mixed = run.paidDays > 0 && run.unpaidDays > 0;
               return (
                 <React.Fragment key={run.id}>
@@ -750,14 +793,15 @@ function LeaveTable({ groups, expanded, onToggleRun, onEdit, onDelete, emptyMess
                     <td><span className={`hol-tag hol-tag-${tag.tone}`}>{tag.label}</span></td>
                     <td>
                       <div className="flex justify-end gap-1">
-                        {splittable ? (
+                        {actions.expand && (
                           <button className="btn btn-ghost hol-action"
                                   onClick={() => onToggleRun(run.id)}>
                             {isOpen ? "Hide days" : "Show days"}
                           </button>
-                        ) : (
+                        )}
+                        {actions.edit && (
                           <button className="btn btn-ghost hol-action"
-                                  onClick={() => onEdit(run.entries[0])}>
+                                  onClick={() => onEdit(run)}>
                             Edit
                           </button>
                         )}
@@ -785,9 +829,9 @@ function LeaveTable({ groups, expanded, onToggleRun, onEdit, onDelete, emptyMess
                                 const entry = run.entries.find(
                                   (e) => e.date === date && !e.end_date,
                                 );
-                                if (entry) onEdit(entry);
+                                if (entry) onEdit(runForEntry(entry, run));
                               }}
-                              title="Edit this day"
+                              title="Edit this day on its own"
                             >
                               {parseIso(date).toLocaleDateString("en-GB", {
                                 weekday: "short", day: "numeric",
@@ -919,25 +963,51 @@ function DeleteRunDialog({ run, onClose, onDone }) {
    one already-decided day, and re-running the booking flow over it would
    rewrite days the manager did not open the dialog to touch.
 ------------------------------------------------------------------------- */
-function LeaveModal({ employees, entry, onClose, onSaved }) {
-  const editing = Boolean(entry);
-  const [scope, setScope] = useState(entry?.scope || "shop");
-  const [empId, setEmpId] = useState(entry?.employee_id || "");
-  const [date, setDate] = useState(entry?.date || "");
-  const [endDate, setEndDate] = useState(entry?.end_date || "");
-  const [label, setLabel] = useState(entry?.label || "");
+function LeaveModal({ employees, run, onClose, onSaved }) {
+  const editing = Boolean(run);
+  // A run of ONE record is edited in place. A run stitched from several
+  // day-records is re-booked as a whole, because there is no "edit these
+  // eleven records" endpoint and editing only the first would silently
+  // change one day of an eleven-day holiday.
+  const single = editing && run.entries.length === 1 ? run.entries[0] : null;
+  const wholeAbsence = editing && !single;
+  // Only a HOLIDAY absence can be re-booked through /holidays/leave, which
+  // writes paid and unpaid days. Sending a multi-day SICK run through it
+  // would rewrite every one of those days as holiday — silently, and against
+  // the employee's entitlement. Those collapse into a single range record
+  // instead, keeping their own scope.
+  const rebook = wholeAbsence && run.family === "holiday";
+  const collapse = wholeAbsence && !rebook;
+
+  const [scope, setScope] = useState(
+    single?.scope || (wholeAbsence ? "leave-week" : "shop"));
+  const [empId, setEmpId] = useState(
+    single?.employee_id || run?.employeeId || "");
+  const [date, setDate] = useState(single?.date || run?.start || "");
+  const [endDate, setEndDate] = useState(
+    single?.end_date || (run && run.end !== run.start ? run.end : ""));
+  const [label, setLabel] = useState(
+    single?.label || run?.entries?.[0]?.label || "");
   const [busy, setBusy] = useState(false);
 
-  // Booking a range of employee leave: the paid-day picker, add mode only.
-  const [leaveFrom, setLeaveFrom] = useState("");
-  const [leaveTo, setLeaveTo] = useState("");
-  const [paidDates, setPaidDates] = useState([]);
+  // The paid-day picker: used when booking new leave, and when re-booking a
+  // whole absence, which is the same operation with the dates filled in.
+  const [leaveFrom, setLeaveFrom] = useState(wholeAbsence ? run.start : "");
+  const [leaveTo, setLeaveTo] = useState(wholeAbsence ? run.end : "");
+  const [paidDates, setPaidDates] = useState(
+    wholeAbsence
+      ? run.dayScopes.filter(([, sc]) => isPaid(sc)).map(([d]) => d)
+      : []);
   const [balance, setBalance] = useState(null);
 
-  const scopeOpts = editing
-    ? [["shop", "Shop closed"], ["employee", "Holiday · paid"],
-       ["unavailable", "Holiday · unpaid"], ["sick", "Sick"]]
-    : [["shop", "Shop closed"], ["leave-week", "Employee leave"], ["sick", "Sick"]];
+  // Editing a whole absence has no type switch: it IS an employee holiday,
+  // and the paid-day picker is where paid and unpaid are decided.
+  const scopeOpts = wholeAbsence
+    ? []
+    : single
+      ? [["shop", "Shop closed"], ["employee", "Holiday · paid"],
+         ["unavailable", "Holiday · unpaid"], ["sick", "Sick"]]
+      : [["shop", "Shop closed"], ["leave-week", "Employee leave"], ["sick", "Sick"]];
 
   const leaveWeeks = useMemo(() => {
     if (!leaveFrom || !leaveTo || leaveTo < leaveFrom) return [];
@@ -962,14 +1032,14 @@ function LeaveModal({ employees, entry, onClose, onSaved }) {
     ? Math.round((selected.max_weekly_hours / 5) * 100) / 100 : null;
 
   useEffect(() => {
-    if (!empId || scope !== "leave-week") { setBalance(null); return; }
+    if (!empId || (scope !== "leave-week" && !rebook)) { setBalance(null); return; }
     let cancelled = false;
     const params = hoursPerDay ? `?hours_per_day=${hoursPerDay}` : "";
     api.get(`/holiday-balance/${empId}${params}`)
       .then((r) => { if (!cancelled) setBalance(r.data); })
       .catch(() => { if (!cancelled) setBalance(null); });
     return () => { cancelled = true; };
-  }, [empId, scope, hoursPerDay]);
+  }, [empId, scope, hoursPerDay, rebook]);
 
   const maxPaidDays = balance?.max_payable_days ?? null;
   const requestedHours = hoursPerDay
@@ -1007,11 +1077,61 @@ function LeaveModal({ employees, entry, onClose, onSaved }) {
     e.preventDefault();
     setBusy(true);
     try {
-      if (editing) {
-        await api.put(`/holidays/${entry.holiday_id}`, {
+      if (single) {
+        await api.put(`/holidays/${single.holiday_id}`, {
           date, end_date: endDate || null, label,
           scope, employee_id: scope === "shop" ? null : empId,
         });
+        toast.success("Leave updated");
+      } else if (rebook) {
+        // RE-BOOK, DO NOT DELETE FIRST.
+        //
+        // `/holidays/leave` already replaces any existing leave inside the
+        // range it is given, so posting the new booking corrects the days it
+        // covers in one call. Deleting first would open a window where a
+        // failure leaves the manager with no booking at all; this way a
+        // failure leaves the original untouched.
+        //
+        // What the POST cannot know about is days the absence USED to cover
+        // and no longer does — shortening 17-20 Sep to 17-18 leaves the 19th
+        // and 20th behind — so those are removed afterwards, by id.
+        const kept = new Set(
+          (() => {
+            const out = [];
+            for (let d = leaveFrom, guard = 0; d <= leaveTo && guard < 400;
+                 d = addDays(d, 1), guard++) out.push(d);
+            return out;
+          })(),
+        );
+        const r = await api.post("/holidays/leave", {
+          employee_id: empId, start_date: leaveFrom, end_date: leaveTo,
+          paid_dates: paidDates, label: label || "Holiday",
+        });
+        const orphans = run.entries.filter(
+          (x) => !x.end_date && !kept.has(x.date),
+        );
+        for (const orphan of orphans) {
+          await api.delete(`/holidays/${orphan.holiday_id}`);
+        }
+        toast.success(
+          `${r.data.employee}: ${r.data.paid_days} paid day(s) = ${r.data.paid_hours_total}h` +
+          (r.data.unpaid_days ? `, ${r.data.unpaid_days} unpaid` : "") +
+          (orphans.length ? `, ${orphans.length} day(s) removed` : ""),
+        );
+      } else if (collapse) {
+        // Several day-records of the same kind become ONE range record: the
+        // first is stretched to the new span and the rest removed. Widened
+        // first, so a failure part-way leaves the days still covered rather
+        // than a hole in the middle of somebody's sick leave.
+        const [keep, ...rest] = run.entries;
+        await api.put(`/holidays/${keep.holiday_id}`, {
+          date, end_date: endDate || date, label,
+          scope: keep.scope,
+          employee_id: keep.scope === "shop" ? null : empId,
+        });
+        for (const extra of rest) {
+          await api.delete(`/holidays/${extra.holiday_id}`);
+        }
         toast.success("Leave updated");
       } else if (scope === "leave-week") {
         const r = await api.post("/holidays/leave", {
@@ -1050,8 +1170,16 @@ function LeaveModal({ employees, entry, onClose, onSaved }) {
           <div>
             <div className="hol-kicker">{editing ? "Edit" : "New"}</div>
             <h2 className="hol-h2" style={{ marginTop: 2 }}>
-              {editing ? "Edit leave" : "Add leave"}
+              {wholeAbsence ? run.person || "Edit leave"
+                : editing ? "Edit leave" : "Add leave"}
             </h2>
+            {wholeAbsence && (
+              <div className="hol-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                {fmtRange(run.start, run.end)} · {run.days} day
+                {run.days === 1 ? "" : "s"} · change the dates or which days
+                are paid
+              </div>
+            )}
           </div>
           <button type="button" onClick={onClose} className="btn btn-ghost" aria-label="Close">
             <X size={16} />
@@ -1059,6 +1187,7 @@ function LeaveModal({ employees, entry, onClose, onSaved }) {
         </div>
 
         <div className="space-y-4">
+          {scopeOpts.length > 0 && (
           <div>
             <label className="hol-overline">Type</label>
             <div className="flex gap-2 mt-1.5 flex-wrap">
@@ -1080,6 +1209,7 @@ function LeaveModal({ employees, entry, onClose, onSaved }) {
               </div>
             )}
           </div>
+          )}
 
           {scope !== "shop" && (
             <div>
@@ -1096,7 +1226,7 @@ function LeaveModal({ employees, entry, onClose, onSaved }) {
             </div>
           )}
 
-          {scope === "leave-week" && balance && (
+          {(scope === "leave-week" || rebook) && balance && (
             <div className="hol-surface" style={{ padding: 12, fontSize: 11 }}>
               <div className="flex justify-between">
                 <span className="hol-muted">Holiday available</span>
@@ -1114,7 +1244,7 @@ function LeaveModal({ employees, entry, onClose, onSaved }) {
             </div>
           )}
 
-          {scope === "leave-week" ? (
+          {(scope === "leave-week" || rebook) ? (
             <>
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -1224,12 +1354,13 @@ function LeaveModal({ employees, entry, onClose, onSaved }) {
             <button type="button" onClick={onClose} className="btn btn-secondary">Cancel</button>
             <button
               data-testid="btn-add-holiday"
-              disabled={busy || (scope === "leave-week" && (!empId || !allLeaveDates.length || overBalance))}
+              disabled={busy || ((scope === "leave-week" || rebook)
+                && (!empId || !allLeaveDates.length || overBalance))}
               className="btn btn-primary"
             >
               <CalendarPlus size={14} />
               {editing ? "Save changes"
-                : scope === "leave-week"
+                : (scope === "leave-week" || rebook)
                   ? (allLeaveDates.length
                       ? `Book ${allLeaveDates.length} day${allLeaveDates.length === 1 ? "" : "s"}`
                       : "Book leave")

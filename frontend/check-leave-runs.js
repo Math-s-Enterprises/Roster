@@ -77,7 +77,7 @@ function loadPage() {
   return module_.exports;
 }
 
-const { buildRuns, tagFor } = loadPage();
+const { buildRuns, tagFor, rowActions } = loadPage();
 
 const NAMES = {
   e1: 'Elliot', e2: 'Tiago', e3: 'Jamie', e4: 'Aaron', e5: 'Jithin', e6: 'Sofia',
@@ -191,6 +191,26 @@ check('a run keeps its per-day detail for expanding',
     leave('b', 'e5', '2026-09-09', 'employee'),
   ], nameOf)[0].dayScopes,
   [['2026-09-08', 'unavailable'], ['2026-09-09', 'employee']]);
+
+// The bug the shop owner reported: a one-day leave had Edit and a longer one
+// did not, because Edit was swapped out for "Show days" on any run made of
+// more than one record — which is every multi-day holiday, since the booking
+// flow writes one record per day.
+check('a multi-day absence can still be edited',
+  rowActions(buildRuns([
+    leave('a', 'e5', '2026-09-17'), leave('b', 'e5', '2026-09-18'),
+    leave('c', 'e5', '2026-09-19'),
+  ], nameOf)[0]),
+  { edit: true, expand: true });
+
+check('a one-day absence has Edit and nothing to expand',
+  rowActions(buildRuns([leave('a', 'e5', '2026-09-17')], nameOf)[0]),
+  { edit: true, expand: false });
+
+check('a range booked as one record has Edit and nothing to expand',
+  rowActions(buildRuns(
+    [leave('a', 'e5', '2026-09-17', 'unavailable', '2026-09-20')], nameOf)[0]),
+  { edit: true, expand: false });
 
 console.log(failures
   ? `\n  ${failures} failed\n`
