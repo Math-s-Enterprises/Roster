@@ -148,6 +148,30 @@ def break_minutes(span_hours: float) -> int:
     return 0
 
 
+def inactive_rule_titles(ai_rules: List[Dict[str, Any]]) -> List[str]:
+    """Enabled custom rules the solver cannot read, so they do nothing.
+
+    Silently ignoring them is how somebody writes a rule, sees it listed as
+    Enabled, and gets a roster that breaks it — so they are named instead.
+
+    A module-level function because the ROSTER PAGE needs the same answer as
+    the solver, and needs it recomputed: the manager edits a rule and comes
+    straight back to the week they are working on. Deriving it twice is the
+    §11 trap, and this one would be visible — the page saying a rule is fine
+    while the generator says it was never applied.
+
+    `locked` rules are the system ones, which are always readable and are not
+    the manager's to fix.
+    """
+    return [
+        rule.get("title") or "(untitled rule)"
+        for rule in ai_rules or []
+        if not rule.get("locked")
+        and rule.get("enabled", True)
+        and not (rule.get("compiled") and rule.get("approved", True))
+    ]
+
+
 def shift_paid_hours(shift: Dict[str, Any]) -> float:
     """Paid hours for a stored shift, whatever shape it is in.
 
@@ -589,21 +613,16 @@ class _RosterBuilder:
             self.employee_off_dates,
             self.paid_leave_dates,
         ) = self._index_holidays(holidays)
+        # Kept as given so `_report_under_contract` can hand them to
+        # `compliance.under_contract`, which takes the same raw list the
+        # roster page does — one input shape, one answer.
+        self.holidays = holidays
         self.fixed_by_employee_day = self._index_fixed_shifts(fixed_shifts)
         self.custom_constraints = [
             r["compiled"] for r in ai_rules
             if r.get("compiled") and r.get("approved", True)
         ]
-        # Rules the solver cannot read do nothing. Silently ignoring them is
-        # how somebody writes a rule, sees it listed as enabled, and gets a
-        # roster that breaks it — so they are named instead.
-        self.inactive_rules = [
-            r.get("title") or "(untitled rule)"
-            for r in ai_rules
-            if not r.get("locked")
-            and r.get("enabled", True)
-            and not (r.get("compiled") and r.get("approved", True))
-        ]
+        self.inactive_rules = inactive_rule_titles(ai_rules)
 
         start_date = datetime.strptime(week_start, "%Y-%m-%d").date()
         self.date_for_day = {
@@ -3772,45 +3791,26 @@ class _RosterBuilder:
         holiday or sickness cannot reach the band, and saying so every time
         would bury the cases where the shop simply did not roster somebody.
         """
-        holiday_span: Dict[str, float] = {}
-        for shift in self.result.shifts:
-            if shift.get("paid_holiday"):
-                # A holiday day stands in for the shift it replaced, so it
-                # counts toward the contract at a normal day's length.
-                holiday_span[shift["employee_id"]] = (
-                    holiday_span.get(shift["employee_id"], 0.0) + shift_paid_hours(shift)
-                )
+        # One implementation, called from both sides.
+        #
+        # This used to be computed here from `span_used` and `span_bands`,
+        # solver state that only exists mid-generation — which meant the
+        # roster page could only ever show the answer from whenever the week
+        # was last generated. Raise somebody's contract afterwards and the
+        # page kept saying they were fine.
+        #
+        # Imported inside the function: `compliance` imports this module, so
+        # a top-level import here would be circular. Same pattern as
+        # `hours_target`.
+        from app.services import compliance
 
-        for employee in hierarchy.display_order(self.employees, self.shop):
-            employee_id = employee["employee_id"]
-            if not avail.is_active(employee):
-                continue
-
-            band = self.span_bands.get(employee_id)
-            if not band:
-                continue  # hourly or student — capped, not targeted
-
-            if self.employee_off_dates.get(employee_id):
-                continue  # leave that week; the band is not reachable
-
-            minimum, target = band
-            rostered = (
-                self.span_used.get(employee_id, 0.0)
-                + holiday_span.get(employee_id, 0.0)
-            )
-            short = minimum - rostered
-            if short <= self._CONTRACT_TOLERANCE_HOURS:
-                continue
-
-            self.result.under_contract.append({
-                "employee_id": employee_id,
-                "name": employee.get("name", employee_id),
-                "role": employee.get("role", ""),
-                "contracted_hours": round(target, 1),
-                "minimum_hours": round(minimum, 1),
-                "rostered_hours": round(rostered, 1),
-                "short_hours": round(short, 1),
-            })
+        self.result.under_contract = compliance.under_contract(
+            self.result.shifts,
+            employees=self.employees,
+            shop=self.shop,
+            week_start=self.week_start,
+            holidays=self.holidays,
+        )
 
         if self.result.under_contract:
             worst = max(self.result.under_contract, key=lambda u: u["short_hours"])

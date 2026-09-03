@@ -27,6 +27,7 @@ from app.services.scheduler import (
     ABSOLUTE_MAX_SHIFT_HOURS,
     DAYS,
     collapse_hour_runs,
+    inactive_rule_titles,
     MAX_WORKING_DAYS,
     break_minutes,
     paid_hours,
@@ -646,12 +647,13 @@ async def audit_roster(roster_id: str, scope: ShopScope = CurrentScope):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Roster not found")
 
     employees = await scope.employees.find(limit=1000)
+    holidays = await scope.holidays.find(limit=1000)
     breaches = compliance.audit(
         roster.get("shifts") or [],
         shop=scope.shop,
         employees=employees,
         week_start=roster["week_start"],
-        holidays=await scope.holidays.find(limit=1000),
+        holidays=holidays,
     )
 
     # How this week compares to the shape the shop normally runs. Separate
@@ -664,12 +666,36 @@ async def audit_roster(roster_id: str, scope: ShopScope = CurrentScope):
         {e["employee_id"]: e.get("role", "") for e in employees},
         for_week=roster["week_start"],
     )
+    # DERIVED HERE, NOT READ OFF THE ROSTER.
+    #
+    # `under_contract` used to be whatever the solver wrote when the week was
+    # generated. Raise somebody's contracted hours afterwards and the roster
+    # page kept reporting the old figure — the manager changed the thing the
+    # panel is about and the panel did not move. §5.
+    #
+    # Same function the solver calls, so the generator and this page cannot
+    # give two different answers for one week.
+    contract_gaps = compliance.under_contract(
+        roster.get("shifts") or [],
+        employees=employees,
+        shop=scope.shop,
+        week_start=roster["week_start"],
+        holidays=holidays,
+    )
+
     return {
         "roster_id": roster_id,
         "people": compliance.group_by_employee(breaches),
         "total": len(breaches),
         "blocking": compliance.blocking(breaches),
         "can_force": bool(breaches) and not compliance.blocking(breaches),
+        "under_contract": contract_gaps,
+        # Recomputed from the rules as they stand right now, so a rule fixed
+        # (or broken) after the week was generated shows up here without
+        # regenerating and losing the manager's edits.
+        "inactive_rules": inactive_rule_titles(
+            await scope.ai_rules.find({"enabled": True}, limit=200)
+        ),
         "staffing": demand_service.compare_to_usual(
             roster.get("shifts") or [], profile,
         ),

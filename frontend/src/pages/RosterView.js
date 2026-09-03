@@ -235,8 +235,48 @@ export default function RosterView() {
       .catch(() => setAudit(null));
   }, [roster?.roster_id, roster?.shifts]);
 
+  /* RE-CHECK THE RULES, NOT THE ROSTER.
+   *
+   * The manager changes a contract, a custom rule or the opening hours in
+   * another screen and comes straight back to the week they were working on.
+   * Regenerate would answer the question and throw away every edit they have
+   * made, which is why they stopped pressing it.
+   *
+   * So this refetches the roster and the audit and touches NO shifts. The
+   * backend derives coverage, breaches, contracts and rule status on read
+   * (§5), so everything on the page is re-evaluated against the rules as
+   * they stand right now.
+   *
+   * `load()` is included because the shop and the employee list feed the
+   * grid itself — changing somebody's name or hours has to show there too.
+   */
+  const [rechecking, setRechecking] = useState(false);
+  const recheck = async () => {
+    if (!roster?.roster_id) return;
+    setRechecking(true);
+    try {
+      const [, a] = await Promise.all([
+        load(),
+        api.get(`/rosters/${roster.roster_id}/audit`),
+      ]);
+      setAudit(a.data);
+    } catch {
+      // A failed re-check must leave the page as it was rather than blanking
+      // it. The manager can press it again; nothing has been lost.
+    } finally {
+      setRechecking(false);
+    }
+  };
+
   const breachesFor = (employeeId) =>
     (audit?.people || []).find((p) => p.employee_id === employeeId);
+
+  // Live if the audit has answered, stored otherwise. `?? ` rather than `||`
+  // on purpose: an audit that returns an EMPTY list means nobody is short,
+  // and falling back to the stored list there would resurrect a warning the
+  // manager has just fixed.
+  const underContract = audit?.under_contract ?? roster?.under_contract ?? [];
+  const inactiveRules = audit?.inactive_rules ?? [];
 
   const approve = async (acknowledgeGaps = false, force = null) => {
     try {
@@ -564,6 +604,20 @@ export default function RosterView() {
                   <UserPlus size={14} /> Add extra
                 </button>
               )}
+              {roster && (
+                <button
+                  data-testid="btn-recheck"
+                  onClick={recheck}
+                  disabled={rechecking || generating}
+                  className="btn btn-secondary"
+                  title="Re-read your shop rules, contracts and opening hours and re-check this week against them. Does not move a single shift."
+                >
+                  {rechecking
+                    ? <RefreshCw size={14} className="animate-spin" />
+                    : <RefreshCw size={14} />}
+                  Re-check rules
+                </button>
+              )}
               <button
                 data-testid="btn-generate"
                 onClick={() => generate(false)}
@@ -719,13 +773,20 @@ export default function RosterView() {
             </div>
           )}
 
-          {/* Contracted hours are owed, not merely permitted. */}
-          {roster.under_contract?.length > 0 && (
+          {/* Contracted hours are owed, not merely permitted.
+
+              Read from the AUDIT, not the roster. The stored figure is
+              whatever was true when the week was generated, so raising
+              somebody's contract afterwards left this panel reporting the
+              old number — the manager changed the very thing the panel is
+              about and it did not move. Falls back to the stored list for
+              rosters generated before the audit returned this. */}
+          {underContract.length > 0 && (
             <div className="status-warn p-5 mb-6 no-print">
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle size={16} />
                 <span className="text-sm font-medium">
-                  Below contracted hours ({roster.under_contract.length})
+                  Below contracted hours ({underContract.length})
                 </span>
               </div>
               <p className="text-[13px] mb-3" style={{ color: "var(--ink-secondary)" }}>
@@ -733,7 +794,7 @@ export default function RosterView() {
                 the shop doesn't need the cover, or their availability blocked it.
               </p>
               <ul className="space-y-1.5 text-[13px]">
-                {roster.under_contract.map((u) => (
+                {underContract.map((u) => (
                   <li key={u.employee_id} className="flex items-center gap-2 flex-wrap">
                     <span style={{ color: "var(--ink)" }}>{u.name}</span>
                     <span className="font-mono">
@@ -766,6 +827,39 @@ export default function RosterView() {
                       </span>
                     )}
                     <span style={{ color: "var(--ink-mute)" }}>{u.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* A rule that cannot be read does NOTHING, and saying so is the
+              whole point of the panel. Writing a rule, seeing it listed as
+              Enabled, and getting a roster that breaks it is worse than not
+              offering the feature (§9: unparseable rules are reported, not
+              guessed at).
+
+              Live from the audit, so fixing the wording and pressing
+              Re-check clears it without regenerating. */}
+          {inactiveRules.length > 0 && (
+            <div className="status-warn p-5 mb-6 no-print">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle size={16} />
+                <span className="text-sm font-medium">
+                  {inactiveRules.length} custom rule
+                  {inactiveRules.length === 1 ? "" : "s"} not being applied
+                </span>
+              </div>
+              <p className="text-[13px] mb-3" style={{ color: "var(--ink-secondary)" }}>
+                These are switched on but could not be read, so the roster
+                does not follow them. Reword them more plainly — for example
+                "Sarah never works Sundays" — then press Re-check rules.
+              </p>
+              <ul className="space-y-1 text-[13px]">
+                {inactiveRules.map((title, idx) => (
+                  <li key={idx} className="flex gap-2">
+                    <span aria-hidden>•</span>
+                    <span style={{ color: "var(--ink)" }}>{title}</span>
                   </li>
                 ))}
               </ul>

@@ -45,6 +45,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from app.services import availability as avail
+from app.services import hierarchy
 from app.services.scheduler import (
     ABSOLUTE_MAX_SHIFT_HOURS,
     DAYS,
@@ -53,11 +54,17 @@ from app.services.scheduler import (
     MINOR_AGE,
     paid_hours,
     shift_duration_minutes,
+    shift_paid_hours,
+    shift_span_hours,
     to_minutes,
 )
 
 # Breaches that stand whatever the manager says. See the module docstring.
 HARD_FLOOR = ("minor_curfew", "double_booked")
+
+# How far below the band is close enough. Half an hour on a 42.5h contract is
+# a rounding artefact, not an unused half-day.
+CONTRACT_TOLERANCE_HOURS = 0.5
 
 
 def _is_leave(shift: Dict[str, Any]) -> bool:
@@ -334,6 +341,104 @@ def audit(
     # thing they cannot override before the things they can.
     found.sort(key=lambda b: (b["overridable"], b["name"], b["rule"]))
     return found
+
+
+def under_contract(
+    shifts: List[Dict[str, Any]],
+    *,
+    employees: List[Dict[str, Any]],
+    shop: Dict[str, Any],
+    week_start: str,
+    holidays: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """Salaried staff whose week came in under their contracted minimum.
+
+    Lives here, not in the solver, because the answer changes when the
+    MANAGER changes something rather than when the roster changes. Raise
+    somebody's contract from 39h to 42.5h and the week they are looking at
+    is suddenly short — but the solver ran yesterday, and its stored answer
+    still says everybody is fine. §5: a stored figure starts lying the moment
+    the data behind it changes.
+
+    The solver calls this too. Two implementations of "who is below their
+    band" is the §11 trap, and this is a bad one to get wrong — it would tell
+    a manager on the roster page something different from what the generator
+    told them, about the same week, with no way to tell which was right.
+
+    Only full-time contracts are checked. Their hours are OWED: the payslip is
+    the same whether they work 41 or 42.5, so a short week is money the shop
+    paid for and did not use. An hourly contract is a ceiling rather than a
+    floor, and reporting against it flagged the whole team every week.
+
+    Measured in hours ON THE FLOOR, breaks included, because that is how the
+    contract is written (§8). Comparing a 42.5h contract against paid hours
+    would show everybody permanently short by the length of their breaks.
+
+    Anyone with booked leave that week is skipped: a week broken by holiday
+    cannot reach the band, and saying so every time buries the cases where
+    the shop simply did not roster somebody.
+    """
+    off_dates = _leave_dates(holidays or [])
+
+    holiday_span: Dict[str, float] = {}
+    worked_span: Dict[str, float] = {}
+    for shift in shifts:
+        employee_id = shift.get("employee_id")
+        if not employee_id:
+            continue
+        if shift.get("paid_holiday"):
+            # A holiday day stands in for the shift it replaced, so it counts
+            # toward the contract at a normal day's length.
+            holiday_span[employee_id] = (
+                holiday_span.get(employee_id, 0.0) + shift_paid_hours(shift)
+            )
+        elif not (shift.get("unpaid_holiday") or shift.get("sick")):
+            worked_span[employee_id] = (
+                worked_span.get(employee_id, 0.0) + shift_span_hours(shift)
+            )
+
+    dates = _week_dates(week_start)
+
+    out: List[Dict[str, Any]] = []
+    for employee in hierarchy.display_order(employees, shop):
+        employee_id = employee["employee_id"]
+        if not avail.is_active(employee):
+            continue
+
+        band = avail.contract_span_band(employee)
+        if not band:
+            continue                       # hourly or student — capped, not targeted
+
+        if off_dates.get(employee_id, set()) & dates:
+            continue                       # leave that week; the band is not reachable
+
+        minimum, target = band
+        rostered = (
+            worked_span.get(employee_id, 0.0) + holiday_span.get(employee_id, 0.0)
+        )
+        short = minimum - rostered
+        if short <= CONTRACT_TOLERANCE_HOURS:
+            continue
+
+        out.append({
+            "employee_id": employee_id,
+            "name": employee.get("name", employee_id),
+            "role": employee.get("role", ""),
+            "contracted_hours": round(target, 1),
+            "minimum_hours": round(minimum, 1),
+            "rostered_hours": round(rostered, 1),
+            "short_hours": round(short, 1),
+        })
+    return out
+
+
+def _week_dates(week_start: str) -> set:
+    """The seven ISO dates of a roster week, for matching booked leave."""
+    try:
+        monday = datetime.strptime(week_start, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return set()
+    return {(monday + timedelta(days=n)).isoformat() for n in range(7)}
 
 
 def group_by_employee(breaches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
