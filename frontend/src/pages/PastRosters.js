@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, errorMessage, fmtHours, fmtMoney } from "@/lib/api";
+import { api, errorMessage, fmtHours, fmtMoney, DAY_LABELS, DAYS, dateForDay, shiftPaidHours } from "@/lib/api";
 import { toast } from "sonner";
 import { Download, Search, Calendar } from "lucide-react";
 
@@ -105,15 +105,91 @@ export default function PastRosters() {
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [versionsVisible, setVersionsVisible] = useState(VERSIONS_PAGE_SIZE);
 
+  const [emps, setEmps] = useState([]);
+
   useEffect(() => {
-    api.get("/rosters/past")
-      .then((r) => setItems(r.data || []))
+    Promise.all([
+      api.get("/rosters/past"),
+      api.get("/employees").catch(() => ({ data: [] })),
+    ])
+      .then(([r, e]) => { setItems(r.data || []); setEmps(e.data || []); })
       .catch((err) => toast.error(errorMessage(err, "Could not load the archive")))
       .finally(() => setLoading(false));
   }, []);
 
-  const notExported = () =>
-    toast("Export is not wired up yet — no endpoint exists for it.");
+  const empMap = useMemo(
+    () => Object.fromEntries(emps.map((e) => [e.employee_id, e])),
+    [emps],
+  );
+
+  /**
+   * Export runs entirely in the browser. Archived rosters arrive with
+   * their shifts attached, so there is nothing to ask the server for —
+   * and no export endpoint exists to ask.
+   */
+  const download = (name, rows) => {
+    const escape = (v) => {
+      const str = String(v ?? "");
+      return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+    const csv = rows.map((r) => r.map(escape).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  /** One roster: a row per shift, in day order. */
+  const exportRoster = (roster) => {
+    const rows = [["Employee", "Role", "Day", "Date", "Start", "End", "Hours"]];
+    [...(roster.shifts || [])]
+      .sort((a, b) => (DAYS.indexOf(a.day) - DAYS.indexOf(b.day))
+        || String(a.start || "").localeCompare(String(b.start || "")))
+      .forEach((sh) => {
+        const e = empMap[sh.employee_id] || {};
+        const label = sh.paid_holiday ? "Holiday" : sh.unpaid_holiday ? "Unpaid" : sh.sick ? "Sick" : "";
+        rows.push([
+          e.name || sh.employee_id,
+          e.role || "",
+          DAY_LABELS[sh.day] || sh.day,
+          dateForDay(roster.week_start, sh.day).toISOString().slice(0, 10),
+          sh.start || label,
+          sh.end || label,
+          shiftPaidHours(sh).toFixed(1),
+        ]);
+      });
+    if (rows.length === 1) {
+      toast.error("That roster has no shifts to export");
+      return;
+    }
+    download(`roster-${roster.week_start}-${roster.version || "v1"}.csv`, rows);
+    toast.success(`Exported ${weekTitle(roster.week_start)}`);
+  };
+
+  /** The archive: one row per approved week, matching what is on screen. */
+  const exportArchive = () => {
+    if (approved.length === 0) {
+      toast.error("Nothing to export with the current filters");
+      return;
+    }
+    const rows = [["Week starting", "Week ending", "Version", "Hours", "Wage bill", "Score", "People", "Approved"]];
+    approved.forEach((r) => {
+      rows.push([
+        r.week_start,
+        addDays(r.week_start, 6).toISOString().slice(0, 10),
+        r.version || "",
+        Number(r.total_hours || 0).toFixed(1),
+        Number(r.labor_cost || 0).toFixed(2),
+        r.compliance_score ?? "",
+        peopleIn(r),
+        r.approved_at || "",
+      ]);
+    });
+    download(`roster-archive-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+    toast.success(`Exported ${approved.length} ${approved.length === 1 ? "week" : "weeks"}`);
+  };
 
   /**
    * One filter for both tables. Query matches the ISO date, the rendered
@@ -202,7 +278,7 @@ export default function PastRosters() {
             and exportable.
           </p>
         </div>
-        <button type="button" className="par-btn" onClick={notExported}>
+        <button type="button" className="par-btn" onClick={exportArchive}>
           <Download size={15} strokeWidth={1.6} /> Export archive
         </button>
       </header>
@@ -232,9 +308,21 @@ export default function PastRosters() {
           )}
           <span className="par-range" title={rangeLabel()}>
             <Calendar size={14} color="#8c8c8c" strokeWidth={1.6} aria-hidden="true" />
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Range from" />
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* unsupported */ } }}
+              aria-label="Range from"
+            />
             <span className="par-range-arrow" aria-hidden="true">→</span>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="Range to" />
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* unsupported */ } }}
+              aria-label="Range to"
+            />
           </span>
           {hasRange && (
             <button
@@ -331,7 +419,7 @@ export default function PastRosters() {
                   <div className="par-acts" role="cell">
                     <Link
                       className="par-act par-act-1"
-                      to={`/roster?week=${r.week_start}`}
+                      to={`/roster?week=${r.week_start}&roster=${r.roster_id}`}
                       aria-label={`Open roster for ${title}`}
                     >
                       Open
@@ -339,7 +427,7 @@ export default function PastRosters() {
                     <button
                       type="button"
                       className="par-act par-act-2"
-                      onClick={notExported}
+                      onClick={() => exportRoster(r)}
                       aria-label={`Export roster for ${title}`}
                     >
                       Export
@@ -408,7 +496,7 @@ export default function PastRosters() {
                   <div className="par-acts" role="cell">
                     <Link
                       className="par-act par-act-1"
-                      to={`/roster?week=${r.week_start}`}
+                      to={`/roster?week=${r.week_start}&roster=${r.roster_id}`}
                       aria-label={`Open ${r.version || "version"} for ${title}`}
                     >
                       Open
