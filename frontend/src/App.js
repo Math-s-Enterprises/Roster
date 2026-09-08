@@ -90,6 +90,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="onboarding" element={<Onboarding />} />
             <Route path="employees" element={<Employees />} />
+            <Route path="employees/:employeeId" element={<Employees />} />
             <Route path="calendar" element={<CalendarPage />} />
             <Route path="fixed-shifts" element={<FixedShifts />} />
             <Route path="rules" element={<AIRules />} />
