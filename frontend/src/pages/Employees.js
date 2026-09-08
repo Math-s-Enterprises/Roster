@@ -1,19 +1,95 @@
-import React, { useEffect, useState } from "react";
-import { api, errorMessage, fmtMoney, roleClass, CURRENCY, DAY_SHORT, DAYS } from "@/lib/api";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { api, errorMessage, fmtMoney, CURRENCY, DAY_SHORT, DAY_LABELS, DAYS, shiftHours } from "@/lib/api";
 import { toast } from "sonner";
 import ContactImportPanel from "@/components/ContactImportPanel";
-import {
-  Plus, Pencil, Trash2, AlertTriangle, X, ChevronDown, ChevronRight,
-  GraduationCap, Sun, Clock, UserX, Scale, Briefcase,
-} from "lucide-react";
+import { Plus, Search, ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Sun } from "lucide-react";
 
 /**
- * An employee record has grown well beyond name-and-rate, so the form is
- * split into a always-visible core and three collapsible sections. The
- * sections are collapsed by default because most staff need none of them —
- * showing every field to everyone would bury the four that always matter.
+ * Employees — split view (handoff: Employees option B).
+ *
+ * Master/detail: the team on the left in reading order, one person's record
+ * on the right. Selection lives in the URL (/employees/:employeeId) so the
+ * pane is deep-linkable and back/forward work. Styling is the handoff's
+ * palette, scoped to .esp-* in index.css.
+ *
+ * WHERE THIS DEPARTS FROM THE HANDOFF, AND WHY
+ *
+ * 1. Edit opens the existing full modal rather than turning the pane into
+ *    five inline fields. The handoff edits role, rate, max hours, age and
+ *    off days; the record also carries employment type, contract span and
+ *    tolerance, availability windows, term-time caps, summer break, opening
+ *    holiday and the active flag. Inline editing as drawn would leave
+ *    fifteen fields with nowhere to go.
+ *
+ * 2. A shift carries no `source` field, so "fixed template" versus
+ *    "AI-filled" is derived: a shift whose day, start and end match one of
+ *    that person's fixed-shift templates is shown as fixed, anything else
+ *    as solver-placed. That is the only signal available, and it can read
+ *    wrong if a template was edited after the roster was generated — the
+ *    caption says as much rather than implying certainty.
+ *
+ * 3. Leave is a fourth week-strip state. The handoff has fixed / AI / off,
+ *    but a shift can be paid holiday, unpaid holiday or sick, and drawing
+ *    those as a plain "Off" day would hide a booked absence.
+ *
+ * 4. The eyebrow reads "READING ORDER n OF N", not "SENIORITY n — FILLED
+ *    FIRST". The list follows shop.employee_order, which the backend keeps
+ *    deliberately separate from the ladder that decides who gets hours
+ *    first. Printing "filled first" over it would be false.
+ *
+ * 5. BOOKED LEAVE shows the selected week only. Leave is stored as shifts
+ *    on a roster, not as its own record, so anything further ahead would
+ *    mean scanning every roster in the shop.
+ *
+ * 6. HISTORY is composed from the holiday balance — hours worked, accrued,
+ *    taken, and any manual adjustments — because no narrative history is
+ *    recorded anywhere.
  */
 
+const SORTS = [
+  { key: "seniority", label: "Seniority" },
+  { key: "managers", label: "Managers" },
+  { key: "students", label: "Students" },
+];
+
+const PAGE_SIZE = 12;
+const LOW_HOLIDAY_HOURS = 20;
+
+/** Monday of the current week, as YYYY-MM-DD. */
+function thisMonday() {
+  const d = new Date();
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+}
+
+const fmtHours = (n) => `${Number.isInteger(n) ? n : Number(n).toFixed(1)}h`;
+const edge = (t) => (typeof t === "string" && t.endsWith(":00") ? t.slice(0, 2) : t || "");
+
+/** Paid holiday, unpaid holiday or sick — present but not working. */
+const isLeave = (shift) => Boolean(shift.paid_holiday || shift.unpaid_holiday || shift.sick);
+
+const leaveWord = (shift) =>
+  shift.sick ? "Sick" : shift.unpaid_holiday ? "Unpaid" : "Holiday";
+
+/** Tags for the identity block, at most four. */
+function tagsFor(employee, balance, overBy) {
+  const tags = [];
+  if (employee.is_active === false) tags.push({ tone: "neutral", text: "Inactive" });
+  if (overBy > 0) tags.push({ tone: "warn", text: `${fmtHours(overBy)} over max` });
+  const left = balance?.available_hours;
+  if (typeof left === "number" && left < LOW_HOLIDAY_HOURS) {
+    tags.push({ tone: "warn", text: `${fmtHours(left)} holiday left` });
+  }
+  if (employee.age < 16) tags.push({ tone: "accent", text: "Under 16 · curfew" });
+  if (employee.employment_type === "student" || (!employee.employment_type && employee.is_student)) {
+    tags.push({ tone: "accent", text: "Student" });
+  }
+  if (employee.employment_type === "full_time_contract") {
+    tags.push({ tone: "accent", text: `${employee.contract_span_hours || 42.5}h contract` });
+  }
+  return tags.slice(0, 4);
+}
 const emptyAvailability = {
   earliest_start: "",
   latest_finish: "",
@@ -194,33 +270,157 @@ function availabilitySummary(employee) {
   return parts.length ? parts.join(" · ") : null;
 }
 
+
+
 export default function Employees() {
+  const { employeeId } = useParams();
+  const navigate = useNavigate();
+
   const [emps, setEmps] = useState([]);
-  const [shop, setShop] = useState(null);
+  const [supervisory, setSupervisory] = useState([]);
   const [balances, setBalances] = useState({});
+  const [fixed, setFixed] = useState([]);
+  const [roster, setRoster] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("seniority");
+  const [visible, setVisible] = useState(PAGE_SIZE);
+  const [drag, setDrag] = useState(null);
+  const [over, setOver] = useState(null);
+
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [adjusting, setAdjusting] = useState(null);
+  const listRef = useRef(null);
 
-  const load = async () => {
-    const [e, s, b] = await Promise.all([
-      api.get("/employees"),
-      api.get("/shop"),
-      api.get("/holiday-balance").catch(() => ({ data: [] })),
-    ]);
-    setEmps(e.data);
-    setShop(s.data);
-    const map = {};
-    (b.data || []).forEach((x) => { map[x.employee_id] = x; });
-    setBalances(map);
-  };
-  useEffect(() => { load(); }, []);
+  const load = useCallback(async () => {
+    try {
+      const [e, b, h, f, r] = await Promise.all([
+        api.get("/employees"),
+        api.get("/holiday-balance").catch(() => ({ data: [] })),
+        api.get("/shop/hierarchy").catch(() => ({ data: {} })),
+        api.get("/fixed-shifts").catch(() => ({ data: [] })),
+        api.get("/rosters").catch(() => ({ data: [] })),
+      ]);
+      setEmps(e.data || []);
+      setSupervisory(h.data?.supervisory || []);
+      setFixed(f.data || []);
+      const map = {};
+      (b.data || []).forEach((x) => { map[x.employee_id] = x; });
+      setBalances(map);
+      const week = thisMonday();
+      setRoster((r.data || []).find((x) => x.week_start === week) || null);
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not load the team"));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
-  const setAvail = (patch) =>
-    setForm((f) => ({ ...f, availability: { ...f.availability, ...patch } }));
-  const setSummer = (patch) =>
-    setForm((f) => ({ ...f, summer_break: { ...f.summer_break, ...patch } }));
+  const setAvail = (patch) => setForm((f) => ({ ...f, availability: { ...f.availability, ...patch } }));
+  const setSummer = (patch) => setForm((f) => ({ ...f, summer_break: { ...f.summer_break, ...patch } }));
+
+  const isManager = useCallback((e) => supervisory.includes(e.role), [supervisory]);
+
+  /** Reading-order position, captured before any sort or filter. */
+  const positions = useMemo(() => {
+    const m = {};
+    emps.forEach((e, i) => { m[e.employee_id] = i + 1; });
+    return m;
+  }, [emps]);
+
+  /** This week's shifts per person, from the roster covering today. */
+  const weekShifts = useMemo(() => {
+    const m = {};
+    (roster?.shifts || []).forEach((s) => {
+      (m[s.employee_id] = m[s.employee_id] || []).push(s);
+    });
+    return m;
+  }, [roster]);
+
+  /**
+   * Fixed-template lookup: "empId|day|start|end" for every pinned template.
+   * A roster shift matching one of these came from the template rather than
+   * the solver — the only way to tell them apart, since shifts record no
+   * source of their own.
+   */
+  const fixedKeys = useMemo(() => {
+    const set = new Set();
+    fixed.forEach((t) => {
+      (t.days || []).forEach((d) => set.add(`${t.employee_id}|${d}|${t.start}|${t.end}`));
+    });
+    return set;
+  }, [fixed]);
+
+  const hoursThisWeek = useCallback(
+    (id) => (weekShifts[id] || [])
+      .filter((s) => !isLeave(s) && s.start && s.end)
+      .reduce((sum, s) => sum + shiftHours(s.start, s.end), 0),
+    [weekShifts],
+  );
+
+  const overByFor = useCallback(
+    (e) => {
+      if (!roster) return 0;
+      const max = Number(e.max_weekly_hours) || 0;
+      return max ? Math.max(0, hoursThisWeek(e.employee_id) - max) : 0;
+    },
+    [roster, hoursThisWeek],
+  );
+
+  // --- list ---------------------------------------------------------
+
+  const filtered = useMemo(() => {
+    let list = emps;
+    const q = query.trim().toLowerCase();
+    if (q) list = list.filter((e) =>
+      e.name.toLowerCase().includes(q) || (e.role || "").toLowerCase().includes(q));
+    if (sort === "managers") list = list.filter(isManager);
+    if (sort === "students") list = list.filter(
+      (e) => e.employment_type === "student" || (!e.employment_type && e.is_student));
+    return list;
+  }, [emps, query, sort, isManager]);
+
+  const groups = useMemo(() => {
+    if (sort !== "seniority") return [{ key: "all", label: null, list: filtered }];
+    return [
+      { key: "managers", label: "Managers", list: filtered.filter(isManager) },
+      { key: "team", label: "Team", list: filtered.filter((e) => !isManager(e)) },
+    ].filter((g) => g.list.length > 0);
+  }, [filtered, sort, isManager]);
+
+  const flat = useMemo(() => groups.flatMap((g) => g.list), [groups]);
+  const selected = useMemo(
+    () => emps.find((e) => e.employee_id === employeeId) || null,
+    [emps, employeeId],
+  );
+
+  // Land on somebody rather than an empty pane, and recover if the person
+  // in the URL has been deleted or filtered away.
+  useEffect(() => {
+    if (loading || flat.length === 0) return;
+    if (!employeeId || !emps.some((e) => e.employee_id === employeeId)) {
+      navigate(`/employees/${flat[0].employee_id}`, { replace: true });
+    }
+  }, [loading, employeeId, emps, flat, navigate]);
+
+  const select = (id) => navigate(`/employees/${id}`);
+
+  /** Up and down move the selection, as specified. */
+  const onListKey = (e) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const i = flat.findIndex((x) => x.employee_id === employeeId);
+    const next = e.key === "ArrowDown"
+      ? Math.min(flat.length - 1, i + 1)
+      : Math.max(0, i - 1);
+    if (flat[next]) select(flat[next].employee_id);
+  };
+
+  // --- mutations ----------------------------------------------------
 
   const submit = async (e) => {
     e.preventDefault();
@@ -230,8 +430,9 @@ export default function Employees() {
         await api.put(`/employees/${form.employee_id}`, payload);
         toast.success("Employee updated");
       } else {
-        await api.post("/employees", payload);
+        const created = await api.post("/employees", payload);
         toast.success("Employee added");
+        if (created?.data?.employee_id) navigate(`/employees/${created.data.employee_id}`);
       }
       setModal(null); setForm(emptyForm); load();
     } catch (err) {
@@ -239,148 +440,386 @@ export default function Employees() {
     }
   };
 
-  const del = async (id) => {
+  const del = async (employee) => {
     if (!window.confirm(
-      "Remove this employee?\n\nIf they have left, consider switching them to " +
-      "Inactive instead — that keeps their past rosters readable."
+      `Remove ${employee.name}? Past rosters are kept.\n\n` +
+      "If they have left, switching them to Inactive in Edit is usually better — " +
+      "it keeps their history readable and stops them being rostered."
     )) return;
+    const i = flat.findIndex((x) => x.employee_id === employee.employee_id);
+    const next = flat[i + 1] || flat[i - 1] || null;
     try {
-      await api.delete(`/employees/${id}`);
+      await api.delete(`/employees/${employee.employee_id}`);
       toast.success("Removed");
+      if (next) navigate(`/employees/${next.employee_id}`, { replace: true });
+      else navigate("/employees", { replace: true });
       load();
     } catch (err) {
       toast.error(errorMessage(err));
     }
   };
 
-  return (
-    <div className="max-w-7xl">
-      <div className="flex items-end justify-between mb-8 flex-wrap gap-4">
-        <div>
-          <div className="text-xs text-white/40 uppercase tracking-widest mb-2">Team</div>
-          <h1 className="text-4xl font-light">Employees</h1>
-          <p className="text-xs text-white/40 mt-2">
-            Listed in seniority order — the same order the roster fills hours.
+  /** Drag writes shop.employee_order — reading order, not the ladder. */
+  const canDrag = sort === "seniority" && !query.trim();
+
+  const drop = async (targetId) => {
+    if (!canDrag || !drag || drag === targetId) { setDrag(null); setOver(null); return; }
+    const ids = emps.map((e) => e.employee_id);
+    const from = ids.indexOf(drag);
+    const to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) { setDrag(null); setOver(null); return; }
+    const next = [...emps];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    const previous = emps;
+    setEmps(next); setDrag(null); setOver(null);
+    try {
+      await api.put("/shop", { employee_order: next.map((e) => e.employee_id) });
+      toast.success("Reading order saved");
+    } catch (err) {
+      setEmps(previous);
+      toast.error(errorMessage(err, "Could not save the order"));
+    }
+  };
+
+  // --- detail pane --------------------------------------------------
+
+  const detail = () => {
+    if (!selected) return <div className="esp-empty">Nobody selected.</div>;
+
+    const balance = balances[selected.employee_id];
+    const worked = hoursThisWeek(selected.employee_id);
+    const max = Number(selected.max_weekly_hours) || 0;
+    const overBy = overByFor(selected);
+    const left = balance?.available_hours;
+    const tags = tagsFor(selected, balance, overBy);
+    const mine = weekShifts[selected.employee_id] || [];
+    const byDay = {};
+    mine.forEach((s) => { byDay[s.day] = s; });
+    const leaveDays = mine.filter(isLeave);
+
+    return (
+      <>
+        <div className="esp-ident">
+          <div style={{ minWidth: 0 }}>
+            <div className="esp-ident-label">
+              READING ORDER {positions[selected.employee_id]} OF {emps.length}
+            </div>
+            <h2 className="esp-name">{selected.name}</h2>
+            {tags.length > 0 && (
+              <div className="esp-tags">
+                {tags.map((t) => (
+                  <span key={t.text} className="esp-tag" data-tone={t.tone}>{t.text}</span>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="esp-ident-acts">
+            <button
+              type="button"
+              data-testid={`btn-edit-${selected.employee_id}`}
+              className="esp-act esp-act-1"
+              onClick={() => { setForm(toForm(selected)); setModal("edit"); }}
+            >
+              Edit
+            </button>
+            {balance && (
+              <button type="button" className="esp-act esp-act-2"
+                onClick={() => setAdjusting({ employee: selected, balance })}>
+                Adjust holiday
+              </button>
+            )}
+            <button type="button" className="esp-act esp-act-2" onClick={() => del(selected)}>
+              Delete
+            </button>
+          </div>
+        </div>
+
+        <div className="esp-stats">
+          <div className="esp-stat">
+            <div className="esp-stat-label">Hourly rate</div>
+            <div className="esp-stat-value">{fmtMoney(selected.hourly_rate, { decimals: 2 })}</div>
+          </div>
+          <div className="esp-stat">
+            <div className="esp-stat-label">Max per week</div>
+            <div className="esp-stat-value">{max ? `${max}h` : "—"}</div>
+          </div>
+          <div className="esp-stat">
+            <div className="esp-stat-label">This week</div>
+            <div className="esp-stat-value" data-tone={!roster ? "none" : overBy > 0 ? "warn" : "on"}>
+              {roster ? fmtHours(worked) : "—"}
+            </div>
+          </div>
+          <div className="esp-stat">
+            <div className="esp-stat-label">Holiday left</div>
+            <div
+              className="esp-stat-value"
+              data-tone={typeof left !== "number" ? "none" : left < LOW_HOLIDAY_HOURS ? "warn" : undefined}
+            >
+              {typeof left === "number" ? fmtHours(left) : "—"}
+            </div>
+          </div>
+        </div>
+
+        <div className="esp-band">
+          <div className="esp-label">Week at a glance</div>
+          {roster ? (
+            <>
+              <div className="esp-week" role="table" aria-label={`${selected.name}'s week`}>
+                {DAYS.map((day) => {
+                  const s = byDay[day];
+                  const leave = s && isLeave(s);
+                  const key = s && !leave
+                    ? `${selected.employee_id}|${day}|${s.start}|${s.end}`
+                    : null;
+                  const kind = !s ? "off" : leave ? "leave" : fixedKeys.has(key) ? "fixed" : "ai";
+                  const label = !s
+                    ? `${DAY_LABELS[day]}, off`
+                    : leave
+                      ? `${DAY_LABELS[day]}, ${leaveWord(s).toLowerCase()}`
+                      : `${DAY_LABELS[day]}, ${s.start} to ${s.end}, ${kind === "fixed" ? "fixed" : "solver-placed"}`;
+                  return (
+                    <div key={day} role="cell">
+                      <div className="esp-day-label">{DAY_SHORT[day]}</div>
+                      <div className="esp-block" data-kind={kind} aria-label={label} title={label}>
+                        {!s ? (
+                          <span className="esp-block-off">Off</span>
+                        ) : leave ? (
+                          <span className="esp-block-off">{leaveWord(s)}</span>
+                        ) : (
+                          <>
+                            <span className="esp-block-time">{edge(s.start)}–{edge(s.end)}</span>
+                            <span className="esp-block-hours">{fmtHours(shiftHours(s.start, s.end))}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="esp-caption">
+                Bright green came from a fixed template, darker green was placed by the solver, an outline
+                is a day off and a bordered block is booked leave. Fixed is matched on day and times, so a
+                template edited after this roster was generated may read as solver-placed.
+              </p>
+            </>
+          ) : (
+            <p className="esp-caption">
+              No roster exists for the week of {thisMonday()}, so there is nothing to show yet. Generate one
+              from the Roster page and this strip fills in.
+            </p>
+          )}
+        </div>
+
+        <div className="esp-band esp-twoup">
+          <div>
+            <div className="esp-label">Guaranteed off days</div>
+            <div className="esp-chips">
+              {DAYS.map((d) => (
+                <span
+                  key={d}
+                  className="esp-chip"
+                  data-on={Boolean(selected.preferred_days_off?.includes(d))}
+                >
+                  {DAY_SHORT[d]}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="esp-label">Booked leave this week</div>
+            {leaveDays.length > 0 ? (
+              leaveDays.map((s) => (
+                <div key={s.day} className="esp-leave">
+                  {DAY_LABELS[s.day]} — {leaveWord(s)}
+                </div>
+              ))
+            ) : (
+              <div className="esp-leave-none">
+                {roster ? "None booked this week." : "No roster for this week yet."}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="esp-band">
+          <div className="esp-label">History</div>
+          <p className="esp-history">
+            {balance ? (
+              <>
+                {selected.name} has worked <strong>{fmtHours(balance.hours_worked || 0)}</strong> on record,
+                accruing <strong>{fmtHours(balance.accrued_hours || 0)}</strong> of holiday.{" "}
+                <strong>{fmtHours(balance.used_hours || 0)}</strong> has been taken, leaving{" "}
+                <strong>{fmtHours(balance.available_hours || 0)}</strong> available
+                {balance.opening_hours ? <> on top of an opening balance of {fmtHours(balance.opening_hours)}</> : null}.
+                {balance.adjustments?.length > 0 && (
+                  <> {balance.adjustments.length} manual adjustment
+                    {balance.adjustments.length === 1 ? " has" : "s have"} been made by hand.</>
+                )}
+              </>
+            ) : (
+              <>No holiday record for {selected.name} yet.</>
+            )}
           </p>
         </div>
-        <button
-          data-testid="btn-add-employee"
-          onClick={() => { setForm(emptyForm); setModal("new"); }}
-          className="neon-btn px-5 py-2.5 rounded-full text-sm flex items-center gap-2"
-        >
-          <Plus size={14} /> Add employee
-        </button>
+      </>
+    );
+  };
+
+  const listItem = (e) => {
+    const overBy = overByFor(e);
+    const mark = overBy > 0
+      ? { kind: "over", text: `+${fmtHours(overBy)}` }
+      : e.age < 16
+        ? { kind: "minor", text: "U16" }
+        : { kind: "pos", text: positions[e.employee_id] };
+    return (
+      <button
+        type="button"
+        key={e.employee_id}
+        role="option"
+        aria-selected={e.employee_id === employeeId}
+        className="esp-item"
+        data-testid={`employee-card-${e.employee_id}`}
+        data-dragging={drag === e.employee_id}
+        data-dropbefore={over === e.employee_id && drag !== e.employee_id}
+        draggable={canDrag}
+        onDragStart={() => canDrag && setDrag(e.employee_id)}
+        onDragOver={(ev) => { if (canDrag && drag) { ev.preventDefault(); setOver(e.employee_id); } }}
+        onDragLeave={() => setOver((o) => (o === e.employee_id ? null : o))}
+        onDrop={(ev) => { ev.preventDefault(); drop(e.employee_id); }}
+        onDragEnd={() => { setDrag(null); setOver(null); }}
+        onClick={() => select(e.employee_id)}
+      >
+        <span className="esp-item-main">
+          <span className="esp-item-name">{e.name}</span>
+          <span className="esp-item-sub">
+            {e.role}{e.max_weekly_hours ? ` · ${e.max_weekly_hours}h` : ""}
+          </span>
+        </span>
+        <span className="esp-mark" data-kind={mark.kind}>{mark.text}</span>
+      </button>
+    );
+  };
+
+  const shownCount = Math.min(visible, filtered.length);
+
+  return (
+    <div className="esp-page">
+      <header className="esp-head">
+        <div>
+          <div className="esp-eyebrow">TEAM</div>
+          <h1 className="esp-h1">Employees</h1>
+          <p className="esp-sub">
+            Pick a person on the left — everything about them opens beside it.
+          </p>
+        </div>
+        <div className="esp-actions">
+          <button
+            type="button"
+            className="esp-btn esp-btn-2"
+            onClick={() => toast("Export is not wired up yet — no endpoint exists for it.")}
+          >
+            Export
+          </button>
+          <button
+            type="button"
+            data-testid="btn-add-employee"
+            className="esp-btn esp-btn-1"
+            onClick={() => { setForm(emptyForm); setModal("new"); }}
+          >
+            <Plus size={15} strokeWidth={2} /> Add employee
+          </button>
+        </div>
+      </header>
+
+      {emps.length > 0 && (
+        <div style={{ padding: "0 28px 20px" }}>
+          <ContactImportPanel
+            missingCount={emps.filter((e) => e.is_active !== false && !(e.email || "").trim()).length}
+            total={emps.filter((e) => e.is_active !== false).length}
+            onDone={load}
+          />
+        </div>
+      )}
+
+      <div className="esp-split">
+        <div className="esp-left" data-hidden={Boolean(employeeId)}>
+          <div className="esp-search">
+            <Search size={14} color="#8c8c8c" strokeWidth={1.8} aria-hidden="true" />
+            <input
+              value={query}
+              onChange={(ev) => setQuery(ev.target.value)}
+              placeholder={`Search ${emps.length} ${emps.length === 1 ? "person" : "people"}`}
+              aria-label="Search people"
+            />
+          </div>
+
+          <div className="esp-pills" role="group" aria-label="Sort and filter">
+            {SORTS.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                className="esp-pill"
+                aria-pressed={sort === s.key}
+                onClick={() => setSort(s.key)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+
+          <div role="listbox" aria-label="People" tabIndex={0} ref={listRef} onKeyDown={onListKey}>
+            {loading ? (
+              <div className="esp-empty">Loading…</div>
+            ) : filtered.length === 0 ? (
+              <div className="esp-empty">
+                {emps.length === 0 ? "No employees yet." : "Nobody matches that."}
+              </div>
+            ) : (
+              groups.map((g) => {
+                const slice = g.list.slice(0, visible);
+                if (slice.length === 0) return null;
+                return (
+                  <div key={g.key}>
+                    {g.label && (
+                      <div className="esp-grouphead">{g.label} ({g.list.length})</div>
+                    )}
+                    {slice.map(listItem)}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {filtered.length > shownCount && (
+            <div className="esp-listfoot">
+              <button type="button" className="esp-link" onClick={() => setVisible(emps.length)}>
+                Show all {filtered.length}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="esp-right" data-hidden={!employeeId}>
+          {employeeId && (
+            <div className="esp-back">
+              <button type="button" className="esp-link" onClick={() => navigate("/employees")}>
+                <ArrowLeft size={13} style={{ display: "inline", verticalAlign: "-2px" }} /> All people
+              </button>
+            </div>
+          )}
+          {loading ? <div className="esp-empty">Loading…</div> : detail()}
+        </div>
       </div>
 
-      {/* Only shown once there is somebody to match against — on an empty
-          shop it would be an upload with nothing to attach to. */}
-      {emps.length > 0 && (
-        <ContactImportPanel
-          missingCount={emps.filter(
-            (e) => e.is_active !== false && !(e.email || "").trim()
-          ).length}
-          total={emps.filter((e) => e.is_active !== false).length}
-          onDone={load}
-        />
-      )}
-
-      {emps.length === 0 ? (
-        <div className="glass rounded-3xl p-12 text-center text-white/50">
-          No employees yet. Add your first team member to start scheduling.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {emps.map((e) => {
-            const inactive = e.is_active === false;
-            const window = availabilitySummary(e);
-            const balance = balances[e.employee_id];
-            return (
-              <div
-                key={e.employee_id}
-                data-testid={`employee-card-${e.employee_id}`}
-                className={`glass rounded-2xl p-6 relative ${inactive ? "opacity-50" : ""}`}
-              >
-                <div className="min-w-0">
-                  <div className="font-medium truncate">{e.name}</div>
-                  <div className="text-[11px] truncate" style={{ color: "var(--ink-mute-2)" }}>
-                    {e.email || "No email — cannot be sent their roster"}
-                  </div>
-                  <div className="mt-2 flex items-center gap-2 flex-wrap">
-                    <span className={`text-[11px] px-2 py-0.5 rounded-md ${roleClass(e.role)}`}>{e.role}</span>
-                    {inactive && <Tag tone="slate" icon={UserX}>Inactive</Tag>}
-                    {(e.employment_type === "full_time_contract") && (
-                      <Tag tone="violet" icon={Briefcase}>
-                        {(e.contract_span_hours || 42.5)}h contract
-                      </Tag>
-                    )}
-                    {(e.employment_type === "student" || (!e.employment_type && e.is_student)) && (
-                      <Tag tone="violet" icon={GraduationCap}>Student</Tag>
-                    )}
-                    {e.age < 16 && <Tag tone="amber" icon={AlertTriangle}>Under 16</Tag>}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3 mt-4 text-xs">
-                  <Stat label="Age" value={e.age} />
-                  <Stat label="Rate" value={fmtMoney(e.hourly_rate, { decimals: 2 })} />
-                  <Stat label="Max" value={`${e.max_weekly_hours}h`} />
-                </div>
-
-                {balance && (
-                  <div className="mt-3 glass-solid rounded-lg px-3 py-2 flex items-center justify-between text-xs">
-                    <span className="text-white/50">Holiday available</span>
-                    <span className="flex items-center gap-2">
-                      <span className="font-mono text-cyan-400">
-                        {balance.available_hours}h
-                      </span>
-                      <button
-                        type="button"
-                        title="Adjust balance"
-                        onClick={() => setAdjusting({ employee: e, balance })}
-                        className="text-white/40 hover:text-white"
-                      >
-                        <Scale size={12} />
-                      </button>
-                    </span>
-                  </div>
-                )}
-
-                {window && (
-                  <div className="mt-3 text-[11px] text-white/50 flex items-start gap-1.5">
-                    <Clock size={11} className="mt-0.5 shrink-0" />
-                    <span className="text-white/70">{window}</span>
-                  </div>
-                )}
-
-                {e.preferred_days_off?.length > 0 && (
-                  <div className="mt-2 text-[11px] text-white/50">
-                    Off: <span className="text-white/70 font-mono">
-                      {e.preferred_days_off.map((d) => DAY_SHORT[d]).join(", ")}
-                    </span>
-                  </div>
-                )}
-
-                <div className="flex gap-2 mt-4">
-                  <button
-                    data-testid={`btn-edit-${e.employee_id}`}
-                    onClick={() => { setForm(toForm(e)); setModal("edit"); }}
-                    className="flex-1 px-3 py-2 rounded-lg glass-solid text-xs flex items-center justify-center gap-1"
-                  >
-                    <Pencil size={12} /> Edit
-                  </button>
-                  <button
-                    onClick={() => del(e.employee_id)}
-                    className="px-3 py-2 rounded-lg text-red-400 hover:bg-red-500/10 text-xs"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
+      <p className="esp-note">
+        The list follows the shop's <strong>reading order</strong> — how the sheet is laid out. Dragging a
+        person changes that order only; <strong>who gets hours first follows the job ladder</strong> and is
+        set in shop settings. Amber marks something to act on: over max hours this week, or a holiday
+        balance running low. <strong>Delete keeps past rosters</strong>; for someone who has left, Inactive
+        in Edit is usually the better switch.
+      </p>
       {modal && (
         <Modal onClose={() => setModal(null)}>
           <form onSubmit={submit} className="space-y-4">
@@ -791,25 +1230,6 @@ const Field = ({ label, children }) => (
     <div className="text-[11px] text-white/50 mb-1">{label}</div>
     {children}
   </label>
-);
-
-const Stat = ({ label, value }) => (
-  <div className="glass-solid rounded-lg px-3 py-2">
-    <div className="text-[10px] text-white/40 uppercase tracking-wider">{label}</div>
-    <div className="font-mono text-white">{value}</div>
-  </div>
-);
-
-const TONES = {
-  amber: "bg-amber-500/10 border-amber-500/30 text-amber-400",
-  violet: "bg-violet-500/10 border-violet-500/30 text-violet-300",
-  slate: "bg-white/5 border-white/20 text-white/50",
-};
-
-const Tag = ({ tone, icon: Icon, children }) => (
-  <span className={`text-[10px] px-2 py-0.5 rounded-md border flex items-center gap-1 ${TONES[tone]}`}>
-    {Icon && <Icon size={10} />} {children}
-  </span>
 );
 
 /** A collapsible block of optional settings. */

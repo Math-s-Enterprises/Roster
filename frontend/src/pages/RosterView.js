@@ -1,13 +1,46 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { api, errorMessage, refusalReasons, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, roleAccent, shiftHours, shiftPaidHours, dateForDay, fmtDayDate } from "@/lib/api";
+import { api, errorMessage, refusalReasons, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, shiftHours, shiftPaidHours, dateForDay, fmtDayDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import RosterPrintSheet from "@/components/RosterPrintSheet";
 import { Link } from "react-router-dom";
-import { Crown } from "lucide-react";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import jsPDF from "jspdf";
-import { Wand2, Send, Check, FileDown, Printer, AlertTriangle, RefreshCw, Mail, X, Sparkles, HelpCircle, UserX, UserPlus, ChevronUp, ChevronDown, Pin, Unlock, TrendingDown } from "lucide-react";
+import { Calendar, Wand2, Send, Check, Printer, AlertTriangle, RefreshCw, X, UserX, UserPlus, ChevronUp, ChevronDown, Pin, Unlock } from "lucide-react";
+
+/** "Mon 7 – Sun 13 Sept" — the week itself, which is the page's title. */
+function weekRangeLabel(weekStart) {
+  const from = new Date(`${weekStart}T00:00:00`);
+  const to = new Date(from);
+  to.setDate(to.getDate() + 6);
+  const day = (d) => d.toLocaleDateString(undefined, { weekday: "short", day: "numeric" });
+  const month = (d) => d.toLocaleDateString(undefined, { month: "short" });
+  return from.getMonth() === to.getMonth()
+    ? `${day(from)} – ${day(to)} ${month(to)}`
+    : `${day(from)} ${month(from)} – ${day(to)} ${month(to)}`;
+}
+
+function fmtApproved(iso) {
+  if (!iso) return "already approved";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "already approved";
+  return d.toLocaleString(undefined, {
+    weekday: "short", day: "numeric", month: "short",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+/**
+ * Unsocial hours get their own fill. Derived rather than stored: no shift
+ * carries a flag for this, and the threshold is the same one a manager
+ * would use reading the grid — starts before 07:00 or finishes after 22:00,
+ * including anything that runs past midnight.
+ */
+function isUnsocial(shift) {
+  if (!shift?.start || !shift?.end) return false;
+  if (shift.end < shift.start) return true;
+  return shift.start < "07:00" || shift.end > "22:00";
+}
 
 export default function RosterView() {
   const { user } = useAuth();
@@ -50,6 +83,14 @@ export default function RosterView() {
   const attempts = Number(String(roster?.version || "v1.0")
     .replace(/^v\d+\./, "")) + 1 || 1;
   const [undoSick, setUndoSick] = useState(null);
+
+  // Shell state for the tabbed layout. The tab survives a week change
+  // on purpose: a manager checking "against the usual" across three
+  // weeks should not have to reselect it every time.
+  const [tab, setTab] = useState("attention");
+  const [visiblePeople, setVisiblePeople] = useState(8);
+  const [pinnedOnly, setPinnedOnly] = useState(false);
+  const [highlight, setHighlight] = useState(null);
 
   const load = async () => {
     const [e, r, s] = await Promise.all([api.get("/employees"), api.get("/rosters"), api.get("/shop")]);
@@ -519,75 +560,419 @@ export default function RosterView() {
     );
   }
 
-  return (
-    <div className="max-w-full">
-      <div className="flex flex-wrap items-end justify-between gap-4 mb-8 no-print">
-        <div>
-          <div className="eyebrow mb-2">Weekly roster</div>
-          <h1 className="display">
-            Week of <span className="font-mono">{week}</span>
-          </h1>
-          {roster && (
-            <div className="mt-2 flex items-center gap-2 text-[13px]" style={{ color: "var(--ink-mute)" }}>
-              <span className="font-mono">{roster.version}</span>
-              {roster.approved && (
-                <span className="pill"><Check size={11} /> Approved</span>
-              )}
+  // ---- findings, grouped the way the tab strip reads them ----------
+  //
+  // Every one of these comes from something already computed on this page:
+  // the roster document, or the live audit. Nothing here is invented, and
+  // nothing that used to be shown has been dropped — the panels below are
+  // the same lists the stacked version had, reached by tab instead of by
+  // scrolling past all of them.
+  const critical = roster?.critical_issues || [];
+  const confirmations = roster?.confirmations || [];
+  const editWarnings = roster?.edit_warnings || [];
+  const advisories = roster?.issues || [];
+  const staffing = audit?.staffing || [];
+  const unrostered = roster?.unrostered || [];
+  const weekVersions = rosters.filter((r) => r.week_start === week);
+
+  // Needs attention is everything that wants a decision before approval:
+  // uncovered hours, unfamiliar shifts, people owed contracted hours, and
+  // rules that could not be read. Ordered worst first.
+  const attention = [
+    ...critical.map((text, i) => ({
+      key: `crit-${i}`,
+      severity: "bad",
+      title: "Nobody in the shop",
+      body: String(text).replace(/^CRITICAL:\s*/, ""),
+      span: true,
+    })),
+    ...underContract.map((u) => ({
+      key: `uc-${u.employee_id}`,
+      severity: "warn",
+      title: u.name,
+      delta: `${u.short_hours}h short`,
+      body: `${u.rostered_hours}h against a ${u.contracted_hours}h contract — they are owed the difference.`,
+      employeeId: u.employee_id,
+    })),
+    ...confirmations.map((c, i) => ({
+      key: `conf-${i}`,
+      severity: "warn",
+      title: `${empMap[c.employee_id]?.name || "Someone"} · ${DAY_SHORT[c.day]}`,
+      delta: "please confirm",
+      body: `${c.start}–${c.end} — ${c.message}`,
+      employeeId: c.employee_id,
+    })),
+    ...inactiveRules.map((title, i) => ({
+      key: `rule-${i}`,
+      severity: "warn",
+      title: String(title),
+      delta: "not applied",
+      body: "Switched on but could not be read, so the roster does not follow it. Reword it plainly, then Re-check rules.",
+      rule: true,
+      span: true,
+    })),
+  ];
+
+  const TABS = [
+    { key: "attention", label: "Needs attention", count: attention.length, sev: "warn" },
+    { key: "edits", label: "From your edits", count: editWarnings.length, sev: "warn" },
+    { key: "advisories", label: "Advisories", count: advisories.length + unrostered.length },
+    { key: "usual", label: "Against the usual", count: staffing.length, low: true },
+    { key: "versions", label: "Versions", count: weekVersions.length, low: true },
+    { key: "share", label: "Share" },
+  ];
+
+  /** Which fill a shift gets. Colour never carries this alone — the meta
+   *  line under the time says "fixed", "pinned", "extra" or "night" too. */
+  const cellKind = (s) => {
+    if (!s) return "empty";
+    if (s.paid_holiday || s.unpaid_holiday || s.sick) return "leave";
+    if (s.fixed) return "template";
+    if (isUnsocial(s)) return "unsocial";
+    return "ai";
+  };
+
+  const cellMeta = (s) => {
+    const bits = [];
+    if (s.extra) bits.push("extra");
+    else if (s.pinned) bits.push("pinned");
+    if (s.fixed) bits.push("fixed");
+    else if (isUnsocial(s)) bits.push("night");
+    return bits.join(" · ");
+  };
+
+  const leaveLabel = (s) =>
+    s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "Unpaid" : "Sick";
+
+  /** The click behaviour is unchanged from the previous layout — an
+   *  approved week only accepts a sick report, everything else asks you
+   *  to reopen it first. */
+  const onCell = (s, employee, day, isLeaveCell) => {
+    if (roster.approved) {
+      if (weekHasEnded) {
+        toast.error("This week has been worked and can no longer be changed");
+      } else if (s?.sick) {
+        setUndoSick({ ...s, employee_name: employee.name });
+      } else if (s && !isLeaveCell && s.start) {
+        setSickShift({ ...s, employee_name: employee.name });
+      } else {
+        setConfirmUnapprove(true);
+      }
+      return;
+    }
+    setEditShift(s || {
+      shift_id: `new_${Date.now()}`,
+      employee_id: employee.employee_id,
+      day,
+      start: "09:00",
+      end: "17:00",
+    });
+  };
+
+  const cellTitle = (s, isLeaveCell, confirm) =>
+    roster.approved
+      ? (s?.sick ? "Marked sick — click to undo"
+        : s && !isLeaveCell && s.start ? "Approved — click to report sick and arrange cover"
+          : "Approved — unapprove the week to edit it")
+      : isLeaveCell ? "Booked leave — change it on the Holidays page"
+        : s?.pinned ? "Pinned — kept when you rebalance"
+          : confirm ? "Unfamiliar shift — please confirm" : undefined;
+
+  // "Pinned only" narrows to the people who actually have a fixed or
+  // pinned shift this week — the ones whose week is already decided.
+  const gridPeople = pinnedOnly
+    ? gridEmployees.filter((e) =>
+        (roster?.shifts || []).some((s) => s.employee_id === e.employee_id && (s.pinned || s.fixed)))
+    : gridEmployees;
+  const shownPeople = gridPeople.slice(0, visiblePeople);
+
+  const hoursFor = (id) => (roster?.shifts || [])
+    .filter((s) => s.employee_id === id)
+    .reduce((a, s) => a + shiftPaidHours(s), 0);
+
+  const headcount = (day) =>
+    (shiftsByDay[day] || []).filter((s) => s.start && !s.paid_holiday && !s.unpaid_holiday && !s.sick).length;
+
+  const panel = () => {
+    if (tab === "share") {
+      return (
+        <div className="wr-panel">
+          <div className="wr-panel-head">
+            <div>
+              <div className="wr-panel-label">SHARE THIS WEEK</div>
+              <p className="wr-panel-say">
+                Email reaches everyone with an address on file and reports who could not be
+                reached. PDF, CSV and Print export the grid exactly as it stands.
+              </p>
+            </div>
+          </div>
+          <div className="wr-panel-acts">
+            <button type="button" data-testid="btn-dispatch" className="wr-link" onClick={() => setDispatchOpen(true)}>Email team</button>
+            <button type="button" className="wr-link" onClick={exportPDF}>PDF</button>
+            <button type="button" className="wr-link" onClick={exportCSV}>CSV</button>
+            <button type="button" data-testid="btn-print" className="wr-link" onClick={() => setPrintOpen(true)}>Print</button>
+          </div>
+        </div>
+      );
+    }
+
+    if (tab === "versions") {
+      return (
+        <div className="wr-panel">
+          <div className="wr-panel-head">
+            <div>
+              <div className="wr-panel-label">VERSIONS THIS WEEK</div>
+              <p className="wr-panel-say">
+                Every run of this week. Selecting one loads it here; the approved version is
+                the one staff are working from.
+              </p>
+            </div>
+          </div>
+          <div className="wr-pills">
+            {weekVersions.map((r) => (
+              <button
+                key={r.roster_id}
+                type="button"
+                className="wr-vpill"
+                data-active={r.roster_id === roster.roster_id}
+                onClick={() => setRoster(r)}
+              >
+                {r.version}{r.approved ? " · approved" : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (tab === "usual") {
+      return (
+        <div className="wr-panel">
+          <div className="wr-panel-head">
+            <div>
+              <div className="wr-panel-label">AGAINST THE USUAL</div>
+              <p className="wr-panel-say">
+                Compared with the last {audit?.learned_from_weeks ?? 0} weeks this shop has worked,
+                recent weeks counting for more.
+                {audit?.seasonal_weeks > 0
+                  ? " The same week last year is included."
+                  : " There is under a year of history, so nothing here knows about Christmas yet."}
+                {" "}Nothing here blocks approval — if you have decided to run leaner, keep rostering
+                it this way and the shop's usual will follow within a few months.
+              </p>
+            </div>
+          </div>
+          {staffing.length === 0 ? (
+            <div className="wr-panel-empty">Nothing to look at here — this week runs like the shop usually does.</div>
+          ) : (
+            <div className="wr-items">
+              {staffing.map((note, i) => (
+                <div key={i} className="wr-item" data-span={i === staffing.length - 1 && staffing.length % 2 === 1}>
+                  <div className="wr-item-body" style={{ marginTop: 0 }}>{note.message}</div>
+                </div>
+              ))}
             </div>
           )}
         </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          {shop?.multi_department && user?.pro && (
-            <select
-              data-testid="dept-switch"
-              value={department || ""}
-              onChange={(e) => setDepartment(e.target.value || null)}
-              className="px-3 py-2 text-sm"
-            >
-              <option value="">All departments</option>
-              {(shop.departments || []).map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
+      );
+    }
+
+    if (tab === "advisories") {
+      const items = [
+        ...advisories.map((text, i) => ({ key: `adv-${i}`, body: String(text) })),
+        ...unrostered.map((u) => ({
+          key: `un-${u.employee_id}`,
+          title: u.name,
+          delta: "not rostered",
+          body: u.reason,
+        })),
+      ];
+      return (
+        <div className="wr-panel">
+          <div className="wr-panel-head">
+            <div>
+              <div className="wr-panel-label">ADVISORIES</div>
+              <p className="wr-panel-say">
+                What the generator did while building the week, and anyone it could not use.
+                Background information — none of it blocks approval.
+              </p>
+            </div>
+          </div>
+          {items.length === 0 ? (
+            <div className="wr-panel-empty">Nothing to look at here.</div>
+          ) : (
+            <div className="wr-items">
+              {items.map((it, i) => (
+                <div key={it.key} className="wr-item" data-span={i === items.length - 1 && items.length % 2 === 1}>
+                  {it.title && (
+                    <div className="wr-item-title">{it.title} · <em>{it.delta}</em></div>
+                  )}
+                  <div className="wr-item-body" style={it.title ? undefined : { marginTop: 0 }}>{it.body}</div>
+                </div>
+              ))}
+            </div>
           )}
-          <input
-            data-testid="week-picker"
-            type="date"
-            value={week}
-            onChange={(e) => setWeek(mondayOf(e.target.value))}
-            className="px-3 py-2 font-mono text-sm"
-          />
-          {/* An approved week is closed. Rebalance and Regenerate both build a
-              a new draft, and approving that draft would leave two approved
-              rosters on one week — which the scheduler reads as two weeks that
-              were both worked. Reopening is the way back in, and it is offered
-              here rather than hiding the buttons with no explanation. */}
+        </div>
+      );
+    }
+
+    if (tab === "edits") {
+      return (
+        <div className="wr-panel">
+          <div className="wr-panel-head">
+            <div>
+              <div className="wr-panel-label" data-sev="warn">FROM YOUR EDITS</div>
+              <p className="wr-panel-say">
+                These were allowed because they are your call, but they are not what the
+                generator would have produced.
+              </p>
+            </div>
+          </div>
+          {editWarnings.length === 0 ? (
+            <div className="wr-panel-empty">Nothing to look at here — you have not edited this week.</div>
+          ) : (
+            <div className="wr-items">
+              {editWarnings.map((w, i) => (
+                <div key={i} className="wr-item" data-span={i === editWarnings.length - 1 && editWarnings.length % 2 === 1}>
+                  <div className="wr-item-body" style={{ marginTop: 0 }}>{w}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Needs attention
+    const blocking = critical.length > 0;
+    return (
+      <div className="wr-panel">
+        <div className="wr-panel-head">
+          <div>
+            <div className="wr-panel-label" data-sev={blocking ? "bad" : "warn"}>NEEDS ATTENTION</div>
+            <p className="wr-panel-say">
+              {attention.length === 0
+                ? "Nothing needs a decision — this week is ready to approve."
+                : blocking
+                  ? `${critical.length} of these leave nobody in the shop. Add staff, extend someone's hours, or adjust leave before approving.`
+                  : `Nothing here blocks approval — ${underContract.length} ${underContract.length === 1 ? "person is" : "people are"} owed hours${inactiveRules.length ? `, ${inactiveRules.length} ${inactiveRules.length === 1 ? "rule" : "rules"} could not be read` : ""}.`}
+            </p>
+          </div>
+          <div className="wr-panel-acts">
+            <button
+              type="button"
+              data-testid="btn-recheck"
+              className="wr-link"
+              disabled={rechecking || generating || !roster}
+              onClick={recheck}
+            >
+              {rechecking ? "Re-checking…" : "Re-check rules"}
+            </button>
+          </div>
+        </div>
+        {attention.length === 0 ? (
+          <div className="wr-panel-empty">Nothing to look at here.</div>
+        ) : (
+          <div className="wr-items">
+            {attention.map((it, i) => (
+              <div
+                key={it.key}
+                className="wr-item"
+                data-span={it.span || (i === attention.length - 1 && attention.length % 2 === 1)}
+              >
+                <div className="wr-item-title">
+                  {it.title}{it.delta && <> · <em>{it.delta}</em></>}
+                </div>
+                <div className="wr-item-body">{it.body}</div>
+                {it.employeeId && (
+                  <button type="button" className="wr-item-link" onClick={() => {
+                      setHighlight(it.employeeId);
+                      setVisiblePeople(gridEmployees.length);
+                      requestAnimationFrame(() => document
+                        .querySelector(`[data-testid="cell-${it.employeeId}-mon"]`)
+                        ?.scrollIntoView({ behavior: "smooth", block: "center" }));
+                    }}>
+                    Show in the grid
+                  </button>
+                )}
+                {it.rule && (
+                  <Link className="wr-item-link" to="/rules">Open the rule editor</Link>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="wr-page">
+      <header className="wr-head">
+        <div>
+          <div className="wr-eyebrow">WEEKLY ROSTER</div>
+          <h1 className="wr-h1">{weekRangeLabel(week)}</h1>
+          {roster && (
+            <div className="wr-status">
+              <span className="wr-tag" data-tone={roster.approved ? "approved" : "draft"}>
+                {roster.approved ? "Approved" : "Draft"} · {roster.version}
+              </span>
+              <span className="wr-signed">
+                {roster.approved
+                  ? `Signed off ${fmtApproved(roster.approved_at)}`
+                  : attempts >= 3 && pinnedCount === 0
+                    ? `Draft ${attempts} of this week — edit a shift and rebalance rather than regenerating`
+                    : "Not approved yet"}
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="wr-headacts">
+          {shop?.multi_department && user?.pro && (
+            <span className="wr-picker">
+              <select
+                data-testid="dept-switch"
+                value={department || ""}
+                onChange={(e) => setDepartment(e.target.value || null)}
+                aria-label="Department"
+              >
+                <option value="">All departments</option>
+                {(shop.departments || []).map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </span>
+          )}
+          <span className="wr-picker">
+            <Calendar size={14} color="#8c8c8c" strokeWidth={1.6} aria-hidden="true" />
+            <input
+              data-testid="week-picker"
+              type="date"
+              value={week}
+              onChange={(e) => setWeek(mondayOf(e.target.value))}
+              aria-label="Week"
+            />
+          </span>
+
           {roster?.approved ? (
             <button
               data-testid="btn-unapprove"
               onClick={() => setConfirmUnapprove(true)}
               disabled={weekHasEnded}
-              className="btn btn-secondary"
-              title={
-                weekHasEnded
-                  ? "This week has been worked and can no longer be reopened"
-                  : "Reopen this roster for editing"
-              }
+              className="wr-btn wr-btn-2"
+              title={weekHasEnded
+                ? "This week has been worked and can no longer be reopened"
+                : "Reopen this roster for editing"}
             >
               <Unlock size={14} /> Unapprove to edit
             </button>
           ) : (
             <>
-              {/* Rebalance is the primary action once anything is pinned.
-                  Editing the tenth of a roster that is wrong keeps the other
-                  nine tenths AND tells the scheduler something; regenerating
-                  throws away both the attempt and the reason it was wrong.
-                  The cheap action should be the one that improves the
-                  product, so it gets the filled button. */}
               {pinnedCount > 0 && (
                 <button
                   data-testid="btn-rebalance"
                   onClick={() => generate(true)}
                   disabled={generating || overLimit}
-                  className="btn btn-primary"
+                  className="wr-btn wr-btn-1"
                   title={`Re-solve the week, keeping your ${pinnedCount} pinned shift(s)`}
                 >
                   {generating ? <RefreshCw size={14} className="animate-spin" /> : <Pin size={14} />}
@@ -598,31 +983,17 @@ export default function RosterView() {
                 <button
                   data-testid="btn-extra"
                   onClick={() => setExtraOpen(true)}
-                  className="btn btn-secondary"
+                  className="wr-btn wr-btn-2"
                   title="Roster somebody on top of the normal cover — a delivery, a renovation, an unusually busy day"
                 >
                   <UserPlus size={14} /> Add extra
-                </button>
-              )}
-              {roster && (
-                <button
-                  data-testid="btn-recheck"
-                  onClick={recheck}
-                  disabled={rechecking || generating}
-                  className="btn btn-secondary"
-                  title="Re-read your shop rules, contracts and opening hours and re-check this week against them. Does not move a single shift."
-                >
-                  {rechecking
-                    ? <RefreshCw size={14} className="animate-spin" />
-                    : <RefreshCw size={14} />}
-                  Re-check rules
                 </button>
               )}
               <button
                 data-testid="btn-generate"
                 onClick={() => generate(false)}
                 disabled={generating || overLimit}
-                className={pinnedCount > 0 ? "btn btn-secondary" : "btn btn-primary"}
+                className={pinnedCount > 0 ? "wr-btn wr-btn-2" : "wr-btn wr-btn-1"}
                 title={pinnedCount > 0 ? "Start over, discarding your pinned shifts" : undefined}
               >
                 {generating ? <RefreshCw size={14} className="animate-spin" /> : <Wand2 size={14} />}
@@ -631,369 +1002,127 @@ export default function RosterView() {
             </>
           )}
         </div>
-      </div>
+      </header>
 
       {overLimit && (
-        <div className="card p-5 mb-6 flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <Crown size={18} style={{ color: "var(--ink-mute)" }} />
-            <div>
-              <div className="text-sm font-medium">Free plan limit reached ({freeLimit} rosters)</div>
-              <div className="text-[13px]" style={{ color: "var(--ink-mute)" }}>
-                Upgrade to Pro for unlimited generations, AI learning and multi-department.
+        <div className="wr-panel" style={{ borderTop: "1px solid #262626" }}>
+          <div className="wr-panel-label" data-sev="warn">FREE PLAN LIMIT REACHED ({freeLimit} ROSTERS)</div>
+          <p className="wr-panel-say">
+            Upgrade to Pro for unlimited generations, AI learning and multi-department.{" "}
+            <Link className="wr-link" to="/pricing">Upgrade</Link>
+          </p>
+        </div>
+      )}
+
+      {!roster ? (
+        <div className="wr-empty">
+          No roster for this week yet — press {pinnedCount > 0 ? "Rebalance" : "Generate"} to build one.
+        </div>
+      ) : (
+        <>
+          <div className="wr-stats">
+            <div className="wr-stat">
+              <div className="wr-stat-label">Coverage</div>
+              <div
+                className="wr-stat-value"
+                data-tone={roster.compliance_score >= 90 ? "good" : roster.compliance_score >= 70 ? "warn" : "bad"}
+              >
+                {roster.compliance_score}<span className="wr-stat-suffix">/100</span>
               </div>
             </div>
+            <div className="wr-stat">
+              <div className="wr-stat-label">Weekly hours</div>
+              <div className="wr-stat-value">{fmtHours(roster.total_hours)}</div>
+            </div>
+            <div className="wr-stat">
+              <div className="wr-stat-label">Labour cost</div>
+              <div className="wr-stat-value">{fmtMoney(roster.labor_cost)}</div>
+            </div>
+            <div className="wr-stat">
+              <div className="wr-stat-label">Utilisation</div>
+              <div className="wr-stat-value">{roster.utilization}%</div>
+            </div>
           </div>
-          <Link to="/pricing" className="btn btn-secondary">Upgrade</Link>
-        </div>
-      )}
 
-      {/* Said once, at the third draft of one week, and only while nothing is
-          pinned — with pins there is already a Rebalance button doing the
-          right thing and this would be nagging.
-
-          Deliberately not "regenerating is pointless". It is not: it offers a
-          different arrangement of the shifts nobody has a settled claim on.
-          But it starts from the same inputs, so it cannot fix a roster that
-          is wrong for a reason the scheduler does not know yet — and editing
-          is what tells it. */}
-      {roster && !roster.approved && attempts >= 3 && pinnedCount === 0 && (
-        <div className="card p-4 mb-6 no-print flex items-start gap-3">
-          <Sparkles size={15} className="mt-0.5 shrink-0" style={{ color: "var(--primary)" }} />
-          <div className="text-[13px]" style={{ color: "var(--ink-secondary)" }}>
-            <span style={{ color: "var(--ink)" }}>
-              This is draft {attempts} of the same week.
-            </span>{" "}
-            If a shift keeps coming out wrong, change that shift and press
-            Rebalance — the rest of the week is kept, and the scheduler learns
-            what you changed. Regenerating gives you a different arrangement,
-            but it starts from the same information.
+          <div className="wr-tabs">
+            <div className="wr-tabs-row" role="tablist" aria-label="What to look at">
+              {TABS.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === t.key}
+                  className="wr-tab"
+                  data-low={Boolean(t.low)}
+                  onClick={() => setTab(t.key)}
+                >
+                  {t.label}
+                  {t.count !== undefined && (
+                    <> <span className="wr-tab-count" data-sev={t.count > 0 ? t.sev : undefined}>({t.count})</span></>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
 
-      {roster && (
-        <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-px mb-6 no-print card overflow-hidden"
-               style={{ background: "var(--hairline)" }}>
-            <Metric label="Coverage" value={roster.compliance_score} suffix="/100"
-                    tone={roster.compliance_score >= 90 ? "good"
-                          : roster.compliance_score >= 70 ? "warn" : "bad"} />
-            <Metric label="Weekly hours" value={fmtHours(roster.total_hours)} />
-            <Metric label="Labour cost" value={fmtMoney(roster.labor_cost)} />
-            <Metric label="Utilisation" value={`${roster.utilization}%`} />
-          </div>
+          {panel()}
 
           {roster.ai_summary && (
-            <div className="card-soft p-4 mb-6 flex items-start gap-2.5 no-print">
-              <Sparkles size={15} className="mt-0.5 shrink-0" style={{ color: "var(--ink-mute-2)" }} />
-              <div className="text-[13px]" style={{ color: "var(--ink-secondary)" }}>
-                {roster.ai_summary}
-              </div>
+            <div className="wr-panel" style={{ paddingTop: 0 }}>
+              <p className="wr-panel-say" style={{ marginTop: 0 }}>{roster.ai_summary}</p>
             </div>
           )}
 
-          {/* Critical issues mean the shop would be left unattended — a broken
-              guarantee, not a planning nicety. Kept visually distinct from and
-              above the advisory list so it cannot be skimmed past, and shown in
-              print output too, since that is what gets pinned to the wall. */}
-          {roster.critical_issues?.length > 0 && (
-            <div className="status-danger p-5 mb-6">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle size={16} />
-                <span className="text-sm font-medium">
-                  Uncovered shifts ({roster.critical_issues.length})
-                </span>
+          <div className="wr-gridwrap" id="roster-print">
+            <div className="wr-gridhead">
+              <h2 className="wr-h2">
+                The week <span>({gridEmployees.length} {gridEmployees.length === 1 ? "person" : "people"})</span>
+              </h2>
+              <div className="wr-panel-acts">
+                {customOrder && (
+                  <button type="button" data-testid="btn-reset-order" className="wr-link" onClick={resetOrder}>
+                    Reset order
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="wr-link wr-link-mute"
+                  aria-pressed={pinnedOnly}
+                  onClick={() => setPinnedOnly((v) => !v)}
+                >
+                  {pinnedOnly ? "Showing pinned only" : "Pinned only"}
+                </button>
               </div>
-              <p className="text-[13px] mb-3" style={{ color: "var(--ink-secondary)" }}>
-                No employee can legally cover the times below. Nobody would be in the
-                shop. Add staff, extend someone's weekly hours, or adjust leave.
-              </p>
-              <ul className="space-y-1.5 text-[13px]">
-                {roster.critical_issues.map((issue, idx) => (
-                  <li key={idx} className="flex gap-2">
-                    <span aria-hidden>•</span>
-                    <span>{issue.replace(/^CRITICAL:\s*/, "")}</span>
-                  </li>
-                ))}
-              </ul>
             </div>
-          )}
 
-          {/* Shifts that are legal but unlike anything the person has worked
-              before. Separate from advisories because each one is a decision
-              the manager has to actually make, not background information. */}
-          {roster.confirmations?.length > 0 && (
-            <div className="status-warn p-5 mb-6 no-print">
-              <div className="flex items-center gap-2 mb-2">
-                <HelpCircle size={16} />
-                <span className="text-sm font-medium">
-                  Please confirm ({roster.confirmations.length})
-                </span>
-              </div>
-              <p className="text-[13px] mb-3" style={{ color: "var(--ink-secondary)" }}>
-                These assignments are allowed, but are unlike anything the
-                person has worked before. Check they are happy with them.
-              </p>
-              <ul className="space-y-1.5 text-[13px]">
-                {roster.confirmations.map((c, idx) => (
-                  <li key={idx} className="flex items-start gap-2">
-                    <span className="font-mono shrink-0 w-9">{DAY_SHORT[c.day]}</span>
-                    <span style={{ color: "var(--ink-secondary)" }}>
-                      <span className="font-mono">{c.start}–{c.end}</span>
-                      {" — "}{c.message}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Consequences of hand edits. Kept on the roster rather than
-              only in a toast, so they survive a reload. */}
-          {roster.edit_warnings?.length > 0 && (
-            <div className="status-warn p-5 mb-6 no-print">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle size={16} />
-                <span className="text-sm font-medium">
-                  From your edits ({roster.edit_warnings.length})
-                </span>
-              </div>
-              <p className="text-[13px] mb-3" style={{ color: "var(--ink-secondary)" }}>
-                These were allowed because they are your call, but they are
-                not what the generator would have produced.
-              </p>
-              <ul className="space-y-1.5 text-[13px]">
-                {roster.edit_warnings.map((w, idx) => (
-                  <li key={idx} className="flex gap-2">
-                    <span aria-hidden>•</span><span>{w}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Contracted hours are owed, not merely permitted.
-
-              Read from the AUDIT, not the roster. The stored figure is
-              whatever was true when the week was generated, so raising
-              somebody's contract afterwards left this panel reporting the
-              old number — the manager changed the very thing the panel is
-              about and it did not move. Falls back to the stored list for
-              rosters generated before the audit returned this. */}
-          {underContract.length > 0 && (
-            <div className="status-warn p-5 mb-6 no-print">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle size={16} />
-                <span className="text-sm font-medium">
-                  Below contracted hours ({underContract.length})
-                </span>
-              </div>
-              <p className="text-[13px] mb-3" style={{ color: "var(--ink-secondary)" }}>
-                These people are owed more hours than the week gives them. Either
-                the shop doesn't need the cover, or their availability blocked it.
-              </p>
-              <ul className="space-y-1.5 text-[13px]">
-                {underContract.map((u) => (
-                  <li key={u.employee_id} className="flex items-center gap-2 flex-wrap">
-                    <span style={{ color: "var(--ink)" }}>{u.name}</span>
-                    <span className="font-mono">
-                      {u.rostered_hours}h of {u.contracted_hours}h
-                    </span>
-                    <span className="pill pill-warn">{u.short_hours}h short</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Nobody is silently left off a roster — anyone who got no shifts
-              is listed here with the reason they were passed over. */}
-          {roster.unrostered?.length > 0 && (
-            <div className="card p-5 mb-6 no-print">
-              <div className="flex items-center gap-2 mb-3">
-                <UserX size={16} style={{ color: "var(--ink-mute)" }} />
-                <span className="text-sm font-medium">
-                  Not rostered this week ({roster.unrostered.length})
-                </span>
-              </div>
-              <ul className="space-y-2">
-                {roster.unrostered.map((u) => (
-                  <li key={u.employee_id} className="flex items-center gap-2 text-[13px] flex-wrap">
-                    <span className="shrink-0">{u.name}</span>
-                    {u.role && (
-                      <span className={`text-[11px] px-1.5 py-0.5 rounded shrink-0 ${roleClass(u.role)}`}>
-                        {u.role}
-                      </span>
-                    )}
-                    <span style={{ color: "var(--ink-mute)" }}>{u.reason}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* A rule that cannot be read does NOTHING, and saying so is the
-              whole point of the panel. Writing a rule, seeing it listed as
-              Enabled, and getting a roster that breaks it is worse than not
-              offering the feature (§9: unparseable rules are reported, not
-              guessed at).
-
-              Live from the audit, so fixing the wording and pressing
-              Re-check clears it without regenerating. */}
-          {inactiveRules.length > 0 && (
-            <div className="status-warn p-5 mb-6 no-print">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle size={16} />
-                <span className="text-sm font-medium">
-                  {inactiveRules.length} custom rule
-                  {inactiveRules.length === 1 ? "" : "s"} not being applied
-                </span>
-              </div>
-              <p className="text-[13px] mb-3" style={{ color: "var(--ink-secondary)" }}>
-                These are switched on but could not be read, so the roster
-                does not follow them. Reword them more plainly — for example
-                "Sarah never works Sundays" — then press Re-check rules.
-              </p>
-              <ul className="space-y-1 text-[13px]">
-                {inactiveRules.map((title, idx) => (
-                  <li key={idx} className="flex gap-2">
-                    <span aria-hidden>•</span>
-                    <span style={{ color: "var(--ink)" }}>{title}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Two panels side by side, and the split is the point.
-              Advisories are what the SOLVER did — stretched a shift, moved a
-              finish. "Against the usual" is what THIS WEEK looks like next to
-              every other week the shop has run. One is a note about the
-              build; the other is a fact about the business, and reading them
-              as the same thing is how a deliberate change gets mistaken for
-              a mistake. */}
-          <div className="grid gap-6 md:grid-cols-2 no-print">
-          {roster.issues?.length > 0 && (
-            <div className="card p-5 mb-6 no-print">
-              <div className="flex items-center gap-2 mb-3">
-                <AlertTriangle size={16} style={{ color: "var(--ink-mute)" }} />
-                <span className="text-sm font-medium">
-                  Advisories ({roster.issues.length})
-                </span>
-              </div>
-              <ul className="space-y-1 text-[13px]" style={{ color: "var(--ink-mute)" }}>
-                {roster.issues.map((issue, idx) => (
-                  <li key={idx} className="flex gap-2">
-                    <span aria-hidden>•</span><span>{issue}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {audit?.staffing?.length > 0 && (
-            <div className="card p-5 mb-6 no-print">
-              <div className="flex items-center gap-2 mb-1">
-                <TrendingDown size={16} style={{ color: "var(--ink-mute)" }} />
-                <span className="text-sm font-medium">
-                  Against the usual ({audit.staffing.length})
-                </span>
-              </div>
-              <p className="text-[11px] mb-3" style={{ color: "var(--ink-mute-2)" }}>
-                Compared with the last {audit.learned_from_weeks} weeks this
-                shop has worked, recent weeks counting for more.
-                {audit.seasonal_weeks > 0
-                  ? " The same week last year is included."
-                  : " There is under a year of history, so nothing here knows about Christmas yet."}
-              </p>
-              <ul className="space-y-1 text-[13px]" style={{ color: "var(--ink-mute)" }}>
-                {audit.staffing.map((note, idx) => (
-                  <li key={idx} className="flex gap-2">
-                    <span aria-hidden>•</span><span>{note.message}</span>
-                  </li>
-                ))}
-              </ul>
-              {/* Says outright that this is not a rule, because a panel of
-                  red-adjacent sentences reads like one. */}
-              <p className="text-[11px] mt-3" style={{ color: "var(--ink-mute-2)" }}>
-                Nothing here blocks approval. If you have decided to run
-                leaner, keep rostering it this way and the shop's usual will
-                follow within a few months.
-              </p>
-            </div>
-          )}
-          </div>
-
-          {/* Weekly grid */}
-          {/* Sits on the page colour so the filled cells inside lift off it.
-              On a dark canvas, elevation is a lighter surface — a drop shadow
-              against near-black is invisible. */}
-          <div className="p-4 overflow-x-auto scroll-thin mb-6 rounded-xl" id="roster-print"
-               style={{ background: "var(--canvas)", border: "1px solid var(--hairline)" }}>
-            <div className="print-header hidden print:block mb-4">
-              <h2 className="text-2xl font-medium">{shop?.name} — Weekly Roster {roster.version}</h2>
-              <p className="text-sm" style={{ color: "var(--ink-mute)" }}>
-                Week of {roster.week_start}{roster.department ? ` · ${roster.department}` : ""}
-              </p>
-            </div>
-            <div className="min-w-[1000px]">
-              <div className="grid grid-cols-8 gap-2 mb-2 pb-2 border-b"
-                   style={{ borderColor: "var(--hairline)" }}>
-                <div className="flex items-baseline gap-2 py-2 pl-2">
-                  <span className="eyebrow">Employee</span>
-                  {customOrder && (
-                    <button
-                      type="button"
-                      onClick={resetOrder}
-                      data-testid="btn-reset-order"
-                      title="Back to seniority order"
-                      className="text-[11px] no-print hover:underline"
-                      style={{ color: "var(--ink-mute-2)" }}
-                    >
-                      reset
-                    </button>
-                  )}
-                </div>
+            {/* Wide: person × day matrix */}
+            <div className="wr-grid" role="grid" aria-label="Weekly roster">
+              <div className="wr-row wr-colhead" role="row">
+                <div className="wr-colhead-label" role="columnheader">Employee</div>
                 {DAYS.map((d) => {
                   const dt = dateForDay(week, d);
                   const dayGaps = gapsByDay[d] || [];
                   return (
-                    <div
-                      key={d}
-                      className="text-center py-1.5 rounded-md"
-                      style={dayGaps.length ? {
-                        background: "var(--danger-soft)",
-                        border: "1px solid var(--danger-hairline)",
-                      } : undefined}
-                    >
-                      <div className="text-[13px] font-medium">{DAY_SHORT[d]}</div>
-                      <div className="text-[11px] font-mono mt-0.5" style={{ color: "var(--ink-mute-2)" }}>
-                        {fmtDayDate(dt)}
-                      </div>
+                    <div key={d} className="wr-dayhead" role="columnheader">
+                      <div className="wr-dayname" data-weekend={d === "sat" || d === "sun"}>{DAY_SHORT[d]}</div>
+                      <div className="wr-daydate">{fmtDayDate(dt)}</div>
                       {dayGaps.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => setSuggesting({ day: d, gaps: dayGaps })}
                           data-testid={`gap-${d}`}
-                          className="mt-1 text-[10px] no-print hover:underline"
-                          style={{ color: "var(--danger)" }}
+                          className="wr-daylink wr-daylink-gap"
+                          onClick={() => setSuggesting({ day: d, gaps: dayGaps })}
                         >
                           {dayGaps.length}h unfilled
                         </button>
                       )}
-                      {/* Re-solve just this day. Lives on the day header
-                          because the day is already the subject there — and
-                          it is hidden on an approved week, where nothing may
-                          change without unapproving first. */}
-                      {roster && !roster.approved && (
+                      {!roster.approved && (
                         <button
                           type="button"
                           data-testid={`rebalance-${d}`}
                           disabled={generating}
+                          className="wr-daylink wr-daylink-mute"
                           onClick={() => generate(true, d)}
-                          className="mt-1 text-[10px] no-print hover:underline block mx-auto disabled:opacity-40"
-                          style={{ color: "var(--ink-mute-2)" }}
                           title={`Re-solve ${DAY_LABELS[d]} only — every other day stays exactly as it is`}
                         >
                           rebalance day
@@ -1003,79 +1132,46 @@ export default function RosterView() {
                   );
                 })}
               </div>
-              {gridEmployees.map((e, rowIndex) => {
-                // Paid hours, so a week of booked holiday reads as the hours
-                // they are paid rather than as zero.
-                const empHours = (roster.shifts || [])
-                  .filter((s) => s.employee_id === e.employee_id)
-                  .reduce((a, s) => a + shiftPaidHours(s), 0);
+
+              {shownPeople.map((e, rowIndex) => {
+                const empHours = hoursFor(e.employee_id);
                 const trouble = breachesFor(e.employee_id);
+                const max = Number(e.max_weekly_hours) || 0;
+                const over = max > 0 && empHours > max;
                 return (
-                  <div key={e.employee_id} className="grid grid-cols-8 gap-2 mb-1.5 items-stretch group">
-                    <div className="flex items-center gap-1 px-2.5 py-2 rounded-md"
-                         style={{
-                           background: trouble
-                             ? "var(--danger-soft)" : "var(--canvas-soft)",
-                           border: trouble
-                             ? "1px solid var(--danger-hairline)" : "1px solid transparent",
-                         }}>
-                      <div className="min-w-0 flex-1">
-                        {/* A highlighted name is a question, so it has to be
-                            answerable in one click — the manager wants to know
-                            WHAT is wrong with this person, not that something
-                            is. */}
+                  <div
+                    className="wr-row wr-personrow"
+                    role="row"
+                    key={e.employee_id}
+                    data-highlight={highlight === e.employee_id}
+                  >
+                    <div className="wr-namecell" role="rowheader">
+                      <div style={{ minWidth: 0, flex: 1 }}>
                         {trouble ? (
                           <button
                             type="button"
                             data-testid={`breach-${e.employee_id}`}
+                            className="wr-name"
+                            data-trouble="true"
                             onClick={() => setBreachFor(trouble)}
-                            className="text-[13px] truncate leading-tight text-left w-full"
-                            style={{ color: "var(--danger)" }}
                             title="Click to see which rules this breaks"
                           >
                             {e.name}
-                            <AlertTriangle size={10} className="inline ml-1 mb-0.5" />
                           </button>
                         ) : (
-                          <div className="text-[13px] truncate leading-tight">{e.name}</div>
+                          <div className="wr-name">{e.name}</div>
                         )}
-                        {/* The badge must not wrap.
-                            "Customer Service Manager" broke onto two lines and
-                            made that one row visibly taller than every other,
-                            so the grid stopped lining up — the whole point of
-                            a grid. Shop role names are free text (CLAUDE.md
-                            §9 keeps a title the shop does not have verbatim),
-                            so any length is possible and truncating is the
-                            only stable answer. `min-w-0` is what lets it
-                            actually shrink inside a flex row; without it the
-                            badge refuses to go below its content width and
-                            truncate never fires. The full name is in the
-                            tooltip. */}
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap truncate min-w-0 ${roleClass(e.role)}`}
-                            title={e.role}
-                          >
-                            {e.role}
-                          </span>
-                          <span className="text-[11px] font-mono shrink-0" style={{ color: "var(--ink-mute)" }}>
-                            {empHours.toFixed(1)}h
-                          </span>
+                        <div className="wr-namesub" data-over={over} title={e.role}>
+                          {e.role} · {over ? `${empHours.toFixed(1)}h of ${max}h` : `${empHours.toFixed(1)}h`}
                         </div>
                       </div>
-                      {/* Arrows rather than row dragging: the grid already
-                          uses drag to move shifts between cells, and two
-                          drag gestures on one surface is a coin toss. */}
-                      <div className="flex flex-col shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity no-print">
+                      <div className="wr-nudge">
                         <button
                           type="button"
                           data-testid={`move-up-${e.employee_id}`}
                           aria-label={`Move ${e.name} up`}
-                          title="Move up"
                           disabled={rowIndex === 0}
                           onClick={() => moveEmployee(e.employee_id, -1)}
-                          className="p-0.5 rounded disabled:opacity-20"
-                          style={{ color: "var(--ink-mute)" }}
                         >
                           <ChevronUp size={13} />
                         </button>
@@ -1083,138 +1179,58 @@ export default function RosterView() {
                           type="button"
                           data-testid={`move-down-${e.employee_id}`}
                           aria-label={`Move ${e.name} down`}
-                          title="Move down"
-                          disabled={rowIndex === gridEmployees.length - 1}
+                          disabled={rowIndex === shownPeople.length - 1}
                           onClick={() => moveEmployee(e.employee_id, 1)}
-                          className="p-0.5 rounded disabled:opacity-20"
-                          style={{ color: "var(--ink-mute)" }}
                         >
                           <ChevronDown size={13} />
                         </button>
                       </div>
                     </div>
+
                     {DAYS.map((d) => {
-                      const s = shiftsByDay[d].find((x) => x.employee_id === e.employee_id);
-                      const dur = s ? shiftHours(s.start, s.end) : 0;
+                      const s = (shiftsByDay[d] || []).find((x) => x.employee_id === e.employee_id);
+                      const isLeaveCell = !!s && (s.paid_holiday || s.unpaid_holiday || s.sick);
                       const confirm = s && needsConfirming.has(`${e.employee_id}|${d}`);
-                      // Booked leave is not draggable. Moving it would shift
-                      // the roster cell without moving the holiday record it
-                      // came from, leaving the two disagreeing about which
-                      // day the person is actually off.
-                      const isLeave = !!s && (s.paid_holiday || s.unpaid_holiday || s.sick);
+                      const kind = cellKind(s);
+                      const meta = s && !isLeaveCell ? cellMeta(s) : "";
+                      const dur = s && !isLeaveCell ? shiftHours(s.start, s.end) : 0;
+                      const name = s
+                        ? isLeaveCell
+                          ? `${e.name}, ${DAY_LABELS[d]}, ${leaveLabel(s).toLowerCase()}`
+                          : `${e.name}, ${DAY_LABELS[d]}, ${s.start} to ${s.end}${s.fixed ? ", from a fixed template" : ""}${s.pinned ? ", pinned" : ""}`
+                        : `${e.name}, ${DAY_LABELS[d]}, open slot`;
                       return (
                         <button
                           key={d}
+                          role="gridcell"
                           data-testid={`cell-${e.employee_id}-${d}`}
-                          draggable={!!s && !isLeave}
-                          onDragStart={() => s && !isLeave && setDragging(s)}
-                          onDragOver={(ev) => { if (dragging && !isLeave) ev.preventDefault(); }}
-                          onDrop={(ev) => { ev.preventDefault(); if (dragging && !isLeave) moveShift(dragging, e.employee_id, d); setDragging(null); }}
+                          className="wr-cell"
+                          data-kind={kind}
+                          data-confirm={Boolean(confirm)}
+                          aria-label={name}
+                          title={cellTitle(s, isLeaveCell, confirm)}
+                          draggable={!!s && !isLeaveCell}
+                          onDragStart={() => s && !isLeaveCell && setDragging(s)}
+                          onDragOver={(ev) => { if (dragging && !isLeaveCell) ev.preventDefault(); }}
+                          onDrop={(ev) => {
+                            ev.preventDefault();
+                            if (dragging && !isLeaveCell) moveShift(dragging, e.employee_id, d);
+                            setDragging(null);
+                          }}
                           onDragEnd={() => setDragging(null)}
-                          onClick={() => {
-                            // The edit dialog would open and then the save
-                            // would fail with a 409. Saying so up front, and
-                            // offering the way through, beats letting them
-                            // retype a shift for nothing.
-                            if (roster.approved) {
-                              if (weekHasEnded) {
-                                toast.error("This week has been worked and can no longer be changed");
-                              } else if (s?.sick) {
-                                setUndoSick({ ...s, employee_name: e.name });
-                              } else if (s && !isLeave && s.start) {
-                                // Somebody calling in is the one change an
-                                // approved week has to accept: reopening the
-                                // whole week to record one absence would
-                                // take it out of learning and let it be
-                                // regenerated underneath the manager.
-                                setSickShift({ ...s, employee_name: e.name });
-                              } else {
-                                setConfirmUnapprove(true);
-                              }
-                              return;
-                            }
-                            setEditShift(s || { shift_id: `new_${Date.now()}`, employee_id: e.employee_id, day: d, start: "09:00", end: "17:00" });
-                          }}
-                          title={
-                            roster.approved ? (s?.sick
-                              ? "Marked sick — click to undo"
-                              : s && !isLeave && s.start
-                                ? "Approved — click to report sick and arrange cover"
-                                : "Approved — unapprove the week to edit it")
-                              : isLeave ? "Booked leave — change it on the Holidays page"
-                                : s?.pinned ? "Pinned — kept when you rebalance"
-                                  : confirm ? "Unfamiliar shift — please confirm" : undefined
-                          }
-                          className="min-h-[56px] rounded-md text-xs text-left"
-                          style={{
-                            // Flat, hairline-bordered cells. A filled colour
-                            // block per cell would put ~200 saturated
-                            // rectangles on screen and make the times harder
-                            // to read, so the role lives in a 3px accent bar
-                            // and the cell stays white.
-                            background: s ? "var(--canvas-soft)" : "transparent",
-                            border: s
-                              ? `1px solid ${confirm ? "var(--warn-hairline)" : "var(--hairline)"}`
-                              : "1px dashed var(--hairline)",
-                            borderLeft: s
-                              ? `3px solid ${isLeave ? "var(--hairline-strong)" : roleAccent(e.role)}`
-                              : undefined,
-                            boxShadow: confirm ? "inset 0 0 0 1px var(--warn-hairline)" : undefined,
-                            cursor: !s ? "pointer" : isLeave ? "default" : "grab",
-                            color: "var(--ink)",
-                          }}
+                          onClick={() => onCell(s, e, d, isLeaveCell)}
                         >
-                          {s ? (
-                            <div className="px-2 py-1.5">
-                              <div className="flex items-start justify-between gap-1">
-                                {s.paid_holiday ? (
-                                  <span className="pill">Holiday</span>
-                                ) : s.unpaid_holiday ? (
-                                  <span className="pill">Unpaid</span>
-                                ) : s.sick ? (
-                                  <span className="pill pill-warn">Sick</span>
-                                ) : (
-                                  <span className="font-mono text-[12px] leading-tight">
-                                    {s.start}–{s.end}
-                                  </span>
-                                )}
-                                {/* Extra outranks the pin as a label: every
-                                    extra shift is pinned too, and "pinned" is
-                                    the less interesting of the two facts. */}
-                                {s.extra ? (
-                                  <UserPlus size={10} className="shrink-0 mt-0.5"
-                                            style={{ color: "var(--primary)" }} />
-                                ) : s.pinned ? (
-                                  <Pin size={10} className="shrink-0 mt-0.5"
-                                       style={{ color: "var(--ink-mute)" }} />
-                                ) : null}
-                                {confirm && (
-                                  <HelpCircle size={11} className="shrink-0 mt-0.5"
-                                              style={{ color: "var(--warn)" }} />
-                                )}
-                              </div>
-                              {!s.paid_holiday && !s.unpaid_holiday && !s.sick && (
-                                <div className="font-mono text-[11px] mt-0.5"
-                                     style={{ color: "var(--ink-mute)" }}>
-                                  {dur.toFixed(1)}h
-                                </div>
-                              )}
-                              {s.extra && (
-                                <div className="text-[10px] mt-1 truncate"
-                                     style={{ color: "var(--primary)" }}
-                                     title={s.extra_reason || "Extra cover"}>
-                                  Extra{s.extra_reason ? ` · ${s.extra_reason}` : ""}
-                                </div>
-                              )}
-                              {s.fixed && (
-                                <div className="text-[10px] mt-1" style={{ color: "var(--ink-mute-2)" }}>
-                                  Fixed
-                                </div>
-                              )}
-                            </div>
+                          {!s ? (
+                            <span aria-hidden="true">+</span>
+                          ) : isLeaveCell ? (
+                            <span className="wr-cell-leave">{leaveLabel(s)}</span>
                           ) : (
-                            <div className="h-full flex items-center justify-center"
-                                 style={{ color: "var(--ink-faint)" }}>+</div>
+                            <>
+                              <span className="wr-cell-time">{s.start}–{s.end}</span>
+                              <span className="wr-cell-meta">
+                                {dur.toFixed(1)}h{meta ? ` · ${meta}` : ""}
+                              </span>
+                            </>
                           )}
                         </button>
                       );
@@ -1222,73 +1238,122 @@ export default function RosterView() {
                   </div>
                 );
               })}
+
+              <div className="wr-row wr-totals" role="row">
+                <div className="wr-totals-label" role="rowheader">On each day</div>
+                {DAYS.map((d) => (
+                  <div
+                    key={d}
+                    className="wr-total"
+                    role="gridcell"
+                    data-short={(gapsByDay[d] || []).length > 0}
+                    aria-label={`${DAY_LABELS[d]}: ${headcount(d)} on`}
+                  >
+                    {headcount(d)}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Narrow: a person × 7-day matrix is unusable at phone width, so
+                the same data is read a day at a time. */}
+            <div className="wr-daylist">
+              {DAYS.map((d) => {
+                const lines = shownPeople
+                  .map((e) => ({ e, s: (shiftsByDay[d] || []).find((x) => x.employee_id === e.employee_id) }))
+                  .filter((x) => x.s);
+                return (
+                  <div key={d} className="wr-dayblock">
+                    <div className="wr-dayblock-head">
+                      {DAY_LABELS[d]} <span>{fmtDayDate(dateForDay(week, d))} · {headcount(d)} on</span>
+                    </div>
+                    {lines.length === 0 ? (
+                      <div className="wr-namesub">Nobody rostered.</div>
+                    ) : lines.map(({ e, s }) => {
+                      const isLeaveCell = s.paid_holiday || s.unpaid_holiday || s.sick;
+                      return (
+                        <button
+                          key={e.employee_id}
+                          type="button"
+                          className="wr-dayline"
+                          onClick={() => onCell(s, e, d, isLeaveCell)}
+                        >
+                          <span className="wr-dayline-name">{e.name}</span>
+                          <span className="wr-dayline-time" data-kind={cellKind(s)}>
+                            {isLeaveCell ? leaveLabel(s) : `${s.start}–${s.end}`}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="wr-gridfoot">
+              <span>
+                Showing {shownPeople.length} of {gridPeople.length}{" "}
+                {gridPeople.length === 1 ? "person" : "people"} · dashed cells are open slots you can fill
+              </span>
+              {gridPeople.length > shownPeople.length && (
+                <button type="button" className="wr-link" onClick={() => setVisiblePeople(gridPeople.length)}>
+                  Show all {gridPeople.length}
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Approve is the primary action once a roster exists, so it takes
-              the emerald and Generate above it is the only other candidate —
-              they are never both un-run at the same time. */}
-          <div className="flex flex-wrap gap-2 no-print">
-            {!roster.approved ? (
-              <button data-testid="btn-approve" onClick={() => approve(false)} className="btn btn-primary">
+          <div className="wr-share">
+            {roster.approved ? (
+              <span className="wr-tag">Approved</span>
+            ) : (
+              <button data-testid="btn-approve" className="wr-btn wr-btn-1" onClick={() => approve(false)}>
                 <Check size={14} /> Approve
               </button>
-            ) : (
-              <div className="btn btn-secondary" style={{ cursor: "default" }}>
-                <Check size={14} /> Approved
-              </div>
             )}
-            {/* Repeated next to Approve as well as in the header, because this
-                is where a manager looks when they want to change something and
-                find the grid will not let them. */}
             {roster.approved && !weekHasEnded && (
               <button
+                type="button"
                 data-testid="btn-unapprove-inline"
+                className="wr-link wr-link-mute"
                 onClick={() => setConfirmUnapprove(true)}
-                className="btn btn-ghost"
               >
-                <Unlock size={14} /> Unapprove to edit
+                Unapprove to edit
               </button>
             )}
-            <button data-testid="btn-dispatch" onClick={() => setDispatchOpen(true)} className="btn btn-secondary">
-              <Mail size={14} /> Email team
-            </button>
-            <button onClick={exportPDF} className="btn btn-secondary"><FileDown size={14} /> PDF</button>
-            <button onClick={exportCSV} className="btn btn-secondary"><FileDown size={14} /> CSV</button>
-            <button
-              data-testid="btn-print"
-              onClick={() => setPrintOpen(true)}
-              className="btn btn-secondary"
-            >
-              <Printer size={14} /> Print
-            </button>
+            <button type="button" className="wr-link" onClick={() => setDispatchOpen(true)}>Email team</button>
+            <button type="button" className="wr-link" onClick={exportPDF}>PDF</button>
+            <button type="button" className="wr-link" onClick={exportCSV}>CSV</button>
+            <button type="button" className="wr-link" onClick={() => setPrintOpen(true)}>Print</button>
           </div>
 
-          {/* Version history */}
-          {rosters.filter((r) => r.week_start === week).length > 1 && (
-            <div className="mt-8 card p-5 no-print">
-              <div className="text-sm font-medium mb-3">Versions this week</div>
-              <div className="flex flex-wrap gap-2">
-                {rosters.filter((r) => r.week_start === week).map((r) => {
-                  const active = r.roster_id === roster.roster_id;
-                  return (
-                    <button
-                      key={r.roster_id}
-                      onClick={() => setRoster(r)}
-                      className="px-2.5 py-1 rounded-md text-xs font-mono"
-                      style={{
-                        background: active ? "var(--ink)" : "var(--canvas)",
-                        color: active ? "var(--canvas)" : "var(--ink-mute)",
-                        border: `1px solid ${active ? "var(--ink)" : "var(--hairline)"}`,
-                      }}
-                    >
-                      {r.version}
-                    </button>
-                  );
-                })}
+          {weekVersions.length > 1 && (
+            <div className="wr-versions">
+              <div className="wr-versions-label">VERSIONS THIS WEEK</div>
+              <div className="wr-pills">
+                {weekVersions.map((r) => (
+                  <button
+                    key={r.roster_id}
+                    type="button"
+                    className="wr-vpill"
+                    data-active={r.roster_id === roster.roster_id}
+                    onClick={() => setRoster(r)}
+                  >
+                    {r.version}{r.approved ? " · approved" : ""}
+                  </button>
+                ))}
               </div>
             </div>
           )}
+
+          <p className="wr-note">
+            <strong>An approved week is read-only</strong> — reopening it starts a new draft and stops
+            the week counting towards what the scheduler has learned. The one exception is somebody
+            calling in sick, which an approved week accepts directly. <strong>Bright green came from a
+            fixed template</strong>, mid green was placed by the solver, dark green is unsocial hours,
+            and a bordered cell is booked leave — the label under each time says which, so the colour is
+            never doing the work alone. <strong>Dashed cells are open slots</strong>: click one to fill it.
+          </p>
         </>
       )}
 
@@ -1780,31 +1845,6 @@ function Modal({ children, onClose }) {
           <X size={16} />
         </button>
         {children}
-      </div>
-    </div>
-  );
-}
-
-const METRIC_TONES = {
-  good: "var(--ink)",
-  warn: "var(--warn)",
-  bad: "var(--danger)",
-};
-
-function Metric({ label, value, suffix, tone }) {
-  return (
-    <div className="p-4" style={{ background: "var(--canvas-soft)" }}>
-      <div className="eyebrow">{label}</div>
-      <div className="mt-1.5 flex items-baseline gap-1">
-        <div
-          className="text-[28px] font-mono leading-none"
-          style={{ color: METRIC_TONES[tone] || "var(--ink)" }}
-        >
-          {value}
-        </div>
-        {suffix && (
-          <div className="text-xs" style={{ color: "var(--ink-mute-2)" }}>{suffix}</div>
-        )}
       </div>
     </div>
   );
