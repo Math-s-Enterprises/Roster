@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api, errorMessage, refusalReasons, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, shiftHours, shiftPaidHours, dateForDay, fmtDayDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import RosterPrintSheet from "@/components/RosterPrintSheet";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import jsPDF from "jspdf";
@@ -44,7 +44,29 @@ function isUnsocial(shift) {
 
 export default function RosterView() {
   const { user } = useAuth();
-  const [week, setWeek] = useState(mondayOf());
+  // Past Rosters links here as /roster?week=YYYY-MM-DD. That parameter was
+  // never read, so opening an archived week always landed on the current
+  // one. mondayOf normalises whatever date arrives to its Monday, so a link
+  // pointing at any day of the week resolves to the right roster.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const weekParam = searchParams.get("week");
+  const rosterParam = searchParams.get("roster");
+  const [week, setWeek] = useState(() => mondayOf(weekParam || undefined));
+
+  // Handles arriving at a different week without the component remounting.
+  useEffect(() => {
+    if (!weekParam) return;
+    const monday = mondayOf(weekParam);
+    setWeek((current) => (current === monday ? current : monday));
+  }, [weekParam]);
+
+  /** Keep the URL honest so the week can be linked to and navigated back. */
+  const chooseWeek = (value) => {
+    const monday = mondayOf(value);
+    setWeek(monday);
+    // Drop any pinned version — it belongs to the week being left.
+    setSearchParams({ week: monday }, { replace: true });
+  };
   const [roster, setRoster] = useState(null);
   const [emps, setEmps] = useState([]);
   const [shop, setShop] = useState(null);
@@ -95,7 +117,13 @@ export default function RosterView() {
   const load = async () => {
     const [e, r, s] = await Promise.all([api.get("/employees"), api.get("/rosters"), api.get("/shop")]);
     setEmps(e.data); setRosters(r.data); setShop(s.data);
-    const found = r.data.find((x) => x.week_start === week && (x.department || null) === (department || null));
+    // An explicit ?roster= wins over the week lookup. Past Rosters links a
+    // specific version, and matching on week alone would open whichever
+    // roster for that week came back first — usually the approved one,
+    // which is precisely not the version that was clicked.
+    const byId = rosterParam && r.data.find((x) => x.roster_id === rosterParam);
+    const found = byId
+      || r.data.find((x) => x.week_start === week && (x.department || null) === (department || null));
     setRoster(found || null);
   };
   useEffect(() => { load(); }, [week, department]);
@@ -614,12 +642,10 @@ export default function RosterView() {
   ];
 
   const TABS = [
-    { key: "attention", label: "Needs attention", count: attention.length, sev: "warn" },
-    { key: "edits", label: "From your edits", count: editWarnings.length, sev: "warn" },
+    { key: "attention", label: "Needs attention", count: attention.length },
+    { key: "edits", label: "From your edits", count: editWarnings.length },
     { key: "advisories", label: "Advisories", count: advisories.length + unrostered.length },
-    { key: "usual", label: "Against the usual", count: staffing.length, low: true },
-    { key: "versions", label: "Versions", count: weekVersions.length, low: true },
-    { key: "share", label: "Share" },
+    { key: "usual", label: "Against the usual", count: staffing.length },
   ];
 
   /** Which fill a shift gets. Colour never carries this alone — the meta
@@ -694,73 +720,11 @@ export default function RosterView() {
     (shiftsByDay[day] || []).filter((s) => s.start && !s.paid_holiday && !s.unpaid_holiday && !s.sick).length;
 
   const panel = () => {
-    if (tab === "share") {
-      return (
-        <div className="wr-panel">
-          <div className="wr-panel-head">
-            <div>
-              <div className="wr-panel-label">SHARE THIS WEEK</div>
-              <p className="wr-panel-say">
-                Email reaches everyone with an address on file and reports who could not be
-                reached. PDF, CSV and Print export the grid exactly as it stands.
-              </p>
-            </div>
-          </div>
-          <div className="wr-panel-acts">
-            <button type="button" data-testid="btn-dispatch" className="wr-link" onClick={() => setDispatchOpen(true)}>Email team</button>
-            <button type="button" className="wr-link" onClick={exportPDF}>PDF</button>
-            <button type="button" className="wr-link" onClick={exportCSV}>CSV</button>
-            <button type="button" data-testid="btn-print" className="wr-link" onClick={() => setPrintOpen(true)}>Print</button>
-          </div>
-        </div>
-      );
-    }
-
-    if (tab === "versions") {
-      return (
-        <div className="wr-panel">
-          <div className="wr-panel-head">
-            <div>
-              <div className="wr-panel-label">VERSIONS THIS WEEK</div>
-              <p className="wr-panel-say">
-                Every run of this week. Selecting one loads it here; the approved version is
-                the one staff are working from.
-              </p>
-            </div>
-          </div>
-          <div className="wr-pills">
-            {weekVersions.map((r) => (
-              <button
-                key={r.roster_id}
-                type="button"
-                className="wr-vpill"
-                data-active={r.roster_id === roster.roster_id}
-                onClick={() => setRoster(r)}
-              >
-                {r.version}{r.approved ? " · approved" : ""}
-              </button>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
     if (tab === "usual") {
       return (
-        <div className="wr-panel">
+        <div className="wr-panel no-print">
           <div className="wr-panel-head">
-            <div>
-              <div className="wr-panel-label">AGAINST THE USUAL</div>
-              <p className="wr-panel-say">
-                Compared with the last {audit?.learned_from_weeks ?? 0} weeks this shop has worked,
-                recent weeks counting for more.
-                {audit?.seasonal_weeks > 0
-                  ? " The same week last year is included."
-                  : " There is under a year of history, so nothing here knows about Christmas yet."}
-                {" "}Nothing here blocks approval — if you have decided to run leaner, keep rostering
-                it this way and the shop's usual will follow within a few months.
-              </p>
-            </div>
+            <div className="wr-panel-label">AGAINST THE USUAL</div>
           </div>
           {staffing.length === 0 ? (
             <div className="wr-panel-empty">Nothing to look at here — this week runs like the shop usually does.</div>
@@ -773,6 +737,15 @@ export default function RosterView() {
               ))}
             </div>
           )}
+          <p className="wr-panel-say">
+            Compared with the last {audit?.learned_from_weeks ?? 0} weeks this shop has worked,
+            recent weeks counting for more.
+            {audit?.seasonal_weeks > 0
+              ? " The same week last year is included."
+              : " There is under a year of history, so nothing here knows about Christmas yet."}
+            {" "}Nothing here blocks approval — if you have decided to run leaner, keep rostering
+            it this way and the shop's usual will follow within a few months.
+          </p>
         </div>
       );
     }
@@ -788,15 +761,9 @@ export default function RosterView() {
         })),
       ];
       return (
-        <div className="wr-panel">
+        <div className="wr-panel no-print">
           <div className="wr-panel-head">
-            <div>
-              <div className="wr-panel-label">ADVISORIES</div>
-              <p className="wr-panel-say">
-                What the generator did while building the week, and anyone it could not use.
-                Background information — none of it blocks approval.
-              </p>
-            </div>
+            <div className="wr-panel-label">ADVISORIES</div>
           </div>
           {items.length === 0 ? (
             <div className="wr-panel-empty">Nothing to look at here.</div>
@@ -812,21 +779,19 @@ export default function RosterView() {
               ))}
             </div>
           )}
+          <p className="wr-panel-say">
+            What the generator did while building the week, and anyone it could not use.
+            Background information — none of it blocks approval.
+          </p>
         </div>
       );
     }
 
     if (tab === "edits") {
       return (
-        <div className="wr-panel">
+        <div className="wr-panel no-print">
           <div className="wr-panel-head">
-            <div>
-              <div className="wr-panel-label" data-sev="warn">FROM YOUR EDITS</div>
-              <p className="wr-panel-say">
-                These were allowed because they are your call, but they are not what the
-                generator would have produced.
-              </p>
-            </div>
+            <div className="wr-panel-label">FROM YOUR EDITS</div>
           </div>
           {editWarnings.length === 0 ? (
             <div className="wr-panel-empty">Nothing to look at here — you have not edited this week.</div>
@@ -839,6 +804,10 @@ export default function RosterView() {
               ))}
             </div>
           )}
+          <p className="wr-panel-say">
+            These were allowed because they are your call, but they are not what the
+            generator would have produced.
+          </p>
         </div>
       );
     }
@@ -846,18 +815,9 @@ export default function RosterView() {
     // Needs attention
     const blocking = critical.length > 0;
     return (
-      <div className="wr-panel">
+      <div className="wr-panel no-print">
         <div className="wr-panel-head">
-          <div>
-            <div className="wr-panel-label" data-sev={blocking ? "bad" : "warn"}>NEEDS ATTENTION</div>
-            <p className="wr-panel-say">
-              {attention.length === 0
-                ? "Nothing needs a decision — this week is ready to approve."
-                : blocking
-                  ? `${critical.length} of these leave nobody in the shop. Add staff, extend someone's hours, or adjust leave before approving.`
-                  : `Nothing here blocks approval — ${underContract.length} ${underContract.length === 1 ? "person is" : "people are"} owed hours${inactiveRules.length ? `, ${inactiveRules.length} ${inactiveRules.length === 1 ? "rule" : "rules"} could not be read` : ""}.`}
-            </p>
-          </div>
+          <div className="wr-panel-label">NEEDS ATTENTION</div>
           <div className="wr-panel-acts">
             <button
               type="button"
@@ -902,13 +862,20 @@ export default function RosterView() {
             ))}
           </div>
         )}
+        <p className="wr-panel-say">
+          {attention.length === 0
+            ? "Nothing needs a decision — this week is ready to approve."
+            : blocking
+              ? `${critical.length} of these leave nobody in the shop. Add staff, extend someone's hours, or adjust leave before approving.`
+              : `Nothing here blocks approval — ${underContract.length} ${underContract.length === 1 ? "person is" : "people are"} owed hours${inactiveRules.length ? `, ${inactiveRules.length} ${inactiveRules.length === 1 ? "rule" : "rules"} could not be read` : ""}.`}
+        </p>
       </div>
     );
   };
 
   return (
     <div className="wr-page">
-      <header className="wr-head">
+      <header className="wr-head no-print">
         <div>
           <div className="wr-eyebrow">WEEKLY ROSTER</div>
           <h1 className="wr-h1">{weekRangeLabel(week)}</h1>
@@ -942,16 +909,22 @@ export default function RosterView() {
               </select>
             </span>
           )}
-          <span className="wr-picker">
+          <label
+            className="wr-picker"
+            onClick={(e) => {
+              const input = e.currentTarget.querySelector("input");
+              try { input?.showPicker?.(); } catch { /* not supported here */ }
+            }}
+          >
             <Calendar size={14} color="#8c8c8c" strokeWidth={1.6} aria-hidden="true" />
             <input
               data-testid="week-picker"
               type="date"
               value={week}
-              onChange={(e) => setWeek(mondayOf(e.target.value))}
+              onChange={(e) => chooseWeek(e.target.value)}
               aria-label="Week"
             />
-          </span>
+          </label>
 
           {roster?.approved ? (
             <button
@@ -1005,8 +978,8 @@ export default function RosterView() {
       </header>
 
       {overLimit && (
-        <div className="wr-panel" style={{ borderTop: "1px solid #262626" }}>
-          <div className="wr-panel-label" data-sev="warn">FREE PLAN LIMIT REACHED ({freeLimit} ROSTERS)</div>
+        <div className="wr-panel no-print" style={{ borderTop: "1px solid #262626" }}>
+          <div className="wr-panel-label">FREE PLAN LIMIT REACHED ({freeLimit} ROSTERS)</div>
           <p className="wr-panel-say">
             Upgrade to Pro for unlimited generations, AI learning and multi-department.{" "}
             <Link className="wr-link" to="/pricing">Upgrade</Link>
@@ -1015,12 +988,12 @@ export default function RosterView() {
       )}
 
       {!roster ? (
-        <div className="wr-empty">
+        <div className="wr-empty no-print">
           No roster for this week yet — press {pinnedCount > 0 ? "Rebalance" : "Generate"} to build one.
         </div>
       ) : (
         <>
-          <div className="wr-stats">
+          <div className="wr-stats no-print">
             <div className="wr-stat">
               <div className="wr-stat-label">Coverage</div>
               <div
@@ -1044,7 +1017,7 @@ export default function RosterView() {
             </div>
           </div>
 
-          <div className="wr-tabs">
+          <div className="wr-tabs no-print">
             <div className="wr-tabs-row" role="tablist" aria-label="What to look at">
               {TABS.map((t) => (
                 <button
@@ -1053,12 +1026,11 @@ export default function RosterView() {
                   role="tab"
                   aria-selected={tab === t.key}
                   className="wr-tab"
-                  data-low={Boolean(t.low)}
                   onClick={() => setTab(t.key)}
                 >
                   {t.label}
                   {t.count !== undefined && (
-                    <> <span className="wr-tab-count" data-sev={t.count > 0 ? t.sev : undefined}>({t.count})</span></>
+                    <> <span className="wr-tab-count">({t.count})</span></>
                   )}
                 </button>
               ))}
@@ -1068,7 +1040,7 @@ export default function RosterView() {
           {panel()}
 
           {roster.ai_summary && (
-            <div className="wr-panel" style={{ paddingTop: 0 }}>
+            <div className="wr-panel no-print" style={{ paddingTop: 0 }}>
               <p className="wr-panel-say" style={{ marginTop: 0 }}>{roster.ai_summary}</p>
             </div>
           )}
@@ -1104,7 +1076,7 @@ export default function RosterView() {
                   const dayGaps = gapsByDay[d] || [];
                   return (
                     <div key={d} className="wr-dayhead" role="columnheader">
-                      <div className="wr-dayname" data-weekend={d === "sat" || d === "sun"}>{DAY_SHORT[d]}</div>
+                      <div className="wr-dayname">{DAY_SHORT[d]}</div>
                       <div className="wr-daydate">{fmtDayDate(dt)}</div>
                       {dayGaps.length > 0 && (
                         <button
@@ -1303,7 +1275,7 @@ export default function RosterView() {
             </div>
           </div>
 
-          <div className="wr-share">
+          <div className="wr-share no-print">
             {roster.approved ? (
               <span className="wr-tag">Approved</span>
             ) : (
@@ -1328,7 +1300,7 @@ export default function RosterView() {
           </div>
 
           {weekVersions.length > 1 && (
-            <div className="wr-versions">
+            <div className="wr-versions no-print">
               <div className="wr-versions-label">VERSIONS THIS WEEK</div>
               <div className="wr-pills">
                 {weekVersions.map((r) => (
@@ -1337,7 +1309,10 @@ export default function RosterView() {
                     type="button"
                     className="wr-vpill"
                     data-active={r.roster_id === roster.roster_id}
-                    onClick={() => setRoster(r)}
+                    onClick={() => {
+                      setRoster(r);
+                      setSearchParams({ week, roster: r.roster_id }, { replace: true });
+                    }}
                   >
                     {r.version}{r.approved ? " · approved" : ""}
                   </button>
@@ -1346,7 +1321,7 @@ export default function RosterView() {
             </div>
           )}
 
-          <p className="wr-note">
+          <p className="wr-note no-print">
             <strong>An approved week is read-only</strong> — reopening it starts a new draft and stops
             the week counting towards what the scheduler has learned. The one exception is somebody
             calling in sick, which an approved week accepts directly. <strong>Bright green came from a

@@ -36,7 +36,6 @@ const ACCENTS = [
 const accentFor = (index) => ACCENTS[index % ACCENTS.length];
 
 const DAY_INITIALS = { mon: "M", tue: "T", wed: "W", thu: "T", fri: "F", sat: "S", sun: "S" };
-const WEEKEND = new Set(["sat", "sun"]);
 
 /** "06:00" reads as "06"; "06:30" keeps its minutes. Saves width in a 54px cell. */
 const edge = (time) => (typeof time === "string" && time.endsWith(":00") ? time.slice(0, 2) : time || "");
@@ -158,18 +157,96 @@ export default function FixedShifts() {
     document.getElementById("fx-start")?.focus();
   };
 
+  /**
+   * Pinning replaces whatever already covers those days for that person,
+   * rather than stacking a second template on top of the first.
+   *
+   * The API has POST and DELETE and no update, so a replacement is
+   * composed: create the new template, rebuild any partly-overlapped one
+   * from the days it keeps, then delete the original. Creating before
+   * deleting is deliberate — if a later call fails the person ends up with
+   * a duplicate, which is visible and fixable, rather than a hole in their
+   * week that nobody notices.
+   */
   const pin = async () => {
     if (!canPin || saving) return;
     setSaving(true);
+
+    const clashes = items.filter(
+      (t) => t.employee_id === empId && (t.days || []).some((d) => days.includes(d)),
+    );
+
     try {
       await api.post("/fixed-shifts", { employee_id: empId, days, start, end });
-      toast.success(`Pinned ${empName(empId)} to ${listDays(days)}`);
+
+      for (const t of clashes) {
+        const kept = (t.days || []).filter((d) => !days.includes(d));
+        if (kept.length > 0) {
+          await api.post("/fixed-shifts", {
+            employee_id: t.employee_id,
+            days: kept,
+            start: t.start,
+            end: t.end,
+          });
+        }
+        await api.delete(`/fixed-shifts/${t.fixed_id}`);
+      }
+
+      const replaced = clashes.reduce(
+        (n, t) => n + (t.days || []).filter((d) => days.includes(d)).length, 0,
+      );
+      toast.success(
+        replaced > 0
+          ? `Pinned ${empName(empId)} to ${listDays(days)} — replaced ${replaced} existing ${replaced === 1 ? "day" : "days"}`
+          : `Pinned ${empName(empId)} to ${listDays(days)}`,
+      );
       resetDraft();
       await load();
     } catch (error) {
       toast.error(errorMessage(error, "Could not pin that shift"));
+      await load();
     } finally {
       setSaving(false);
+    }
+  };
+
+  /**
+   * Remove one day from a template without touching the rest of it.
+   *
+   * A Monday-to-Friday pin is a single record, so dropping just Wednesday
+   * means rebuilding it from the four days that remain. Same create-first
+   * ordering, for the same reason.
+   */
+  const removeDay = async (id, day) => {
+    const template = items.find((t) => t.fixed_id === id);
+    if (!template) return;
+    const kept = (template.days || []).filter((d) => d !== day);
+
+    if (kept.length === 0) {
+      if (!window.confirm(
+        `${DAY_LABELS[day]} is the only day on this template — removing it clears the pinned shift entirely. Continue?`
+      )) return;
+    }
+
+    try {
+      if (kept.length > 0) {
+        await api.post("/fixed-shifts", {
+          employee_id: template.employee_id,
+          days: kept,
+          start: template.start,
+          end: template.end,
+        });
+      }
+      await api.delete(`/fixed-shifts/${id}`);
+      toast.success(
+        kept.length > 0
+          ? `Removed ${DAY_LABELS[day]}`
+          : "Pinned shift removed",
+      );
+      await load();
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not remove that day"));
+      await load();
     }
   };
 
@@ -249,9 +326,24 @@ export default function FixedShifts() {
         </div>
 
         <div className="fx-field fx-time">
-          <input id="fx-start" type="time" step="900" aria-label="Start time" value={start} onChange={(e) => setStart(e.target.value)} />
+          <input
+            id="fx-start"
+            type="time"
+            step="900"
+            aria-label="Start time"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+            onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* unsupported */ } }}
+          />
           <span className="fx-time-arrow" aria-hidden="true">→</span>
-          <input type="time" step="900" aria-label="End time" value={end} onChange={(e) => setEnd(e.target.value)} />
+          <input
+            type="time"
+            step="900"
+            aria-label="End time"
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+            onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* unsupported */ } }}
+          />
         </div>
 
         <div className="fx-spacer" />
@@ -291,7 +383,7 @@ export default function FixedShifts() {
             <div className="fx-row fx-row-head" role="row">
               <div className="fx-colhead" role="columnheader">EMPLOYEE</div>
               {DAYS.map((day) => (
-                <div key={day} className="fx-dayhead" role="columnheader" data-weekend={WEEKEND.has(day)}>
+                <div key={day} className="fx-dayhead" role="columnheader">
                   {DAY_SHORT[day]}
                 </div>
               ))}
@@ -350,7 +442,8 @@ export default function FixedShifts() {
                           type="button"
                           className="fx-cell-del"
                           aria-label={`Remove ${employee.name}'s ${DAY_LABELS[day]} shift`}
-                          onClick={() => remove(block.id)}
+                          title={`Remove ${DAY_LABELS[day]} only`}
+                          onClick={() => removeDay(block.id, day)}
                         >
                           <X size={12} color={accent.text} />
                         </button>

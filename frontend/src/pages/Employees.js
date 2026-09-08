@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, errorMessage, fmtMoney, CURRENCY, DAY_SHORT, DAY_LABELS, DAYS, shiftHours } from "@/lib/api";
 import { toast } from "sonner";
 import ContactImportPanel from "@/components/ContactImportPanel";
-import { Plus, Search, ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Sun } from "lucide-react";
+import { Plus, Search, ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Sun, X, AlertTriangle } from "lucide-react";
 
 /**
  * Employees — split view (handoff: Employees option B).
@@ -278,6 +278,7 @@ export default function Employees() {
 
   const [emps, setEmps] = useState([]);
   const [supervisory, setSupervisory] = useState([]);
+  const [shop, setShop] = useState(null);
   const [balances, setBalances] = useState({});
   const [fixed, setFixed] = useState([]);
   const [roster, setRoster] = useState(null);
@@ -296,15 +297,17 @@ export default function Employees() {
 
   const load = useCallback(async () => {
     try {
-      const [e, b, h, f, r] = await Promise.all([
+      const [e, b, h, f, r, sh] = await Promise.all([
         api.get("/employees"),
         api.get("/holiday-balance").catch(() => ({ data: [] })),
         api.get("/shop/hierarchy").catch(() => ({ data: {} })),
         api.get("/fixed-shifts").catch(() => ({ data: [] })),
         api.get("/rosters").catch(() => ({ data: [] })),
+        api.get("/shop").catch(() => ({ data: null })),
       ]);
       setEmps(e.data || []);
       setSupervisory(h.data?.supervisory || []);
+      setShop(sh.data || null);
       setFixed(f.data || []);
       const map = {};
       (b.data || []).forEach((x) => { map[x.employee_id] = x; });
@@ -480,6 +483,57 @@ export default function Employees() {
       setEmps(previous);
       toast.error(errorMessage(err, "Could not save the order"));
     }
+  };
+
+  /**
+   * Export the team as CSV, built in the browser. Exports what is on
+   * screen: the search and the Managers/Students filter both apply, so
+   * "export the students" is just filter-then-export.
+   */
+  const exportTeam = () => {
+    const list = filtered.length ? filtered : emps;
+    if (list.length === 0) {
+      toast.error("Nobody to export");
+      return;
+    }
+
+    const escape = (v) => {
+      const str = String(v ?? "");
+      return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+
+    const rows = [[
+      "Name", "Role", "Manager", "Status", "Hourly rate", "Max weekly hours",
+      "Age", "Employment type", "Guaranteed days off",
+      "Hours this week", "Holiday hours left",
+    ]];
+
+    list.forEach((e) => {
+      const balance = balances[e.employee_id];
+      const left = balance?.available_hours;
+      rows.push([
+        e.name,
+        e.role || "",
+        isManager(e) ? "Yes" : "No",
+        e.is_active === false ? "Inactive" : "Active",
+        Number(e.hourly_rate || 0).toFixed(2),
+        e.max_weekly_hours ?? "",
+        e.age ?? "",
+        e.employment_type || (e.is_student ? "student" : ""),
+        (e.preferred_days_off || []).map((d) => DAY_LABELS[d]).join(" / "),
+        roster ? hoursThisWeek(e.employee_id).toFixed(1) : "",
+        typeof left === "number" ? left.toFixed(1) : "",
+      ]);
+    });
+
+    const csv = rows.map((r) => r.map(escape).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `employees-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${list.length} ${list.length === 1 ? "person" : "people"}`);
   };
 
   // --- detail pane --------------------------------------------------
@@ -718,7 +772,7 @@ export default function Employees() {
           <button
             type="button"
             className="esp-btn esp-btn-2"
-            onClick={() => toast("Export is not wired up yet — no endpoint exists for it.")}
+            onClick={exportTeam}
           >
             Export
           </button>
