@@ -121,6 +121,8 @@ def uncovered_hours(
     shifts: List[Dict[str, Any]],
     *,
     shop: Dict[str, Any],
+    week_start: Optional[str] = None,
+    history_rosters: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Open hours with nobody in the shop, computed from the shifts NOW.
 
@@ -143,7 +145,7 @@ def uncovered_hours(
     agrees with the solver about what "covered" means rather than inventing a
     second answer.
     """
-    from app.services.scheduler import _RosterBuilder
+    from app.services.scheduler import _RosterBuilder, previous_week_roster
 
     open_24h = bool((shop or {}).get("open_24h"))
     by_day = {h.get("day"): h for h in (shop or {}).get("hours") or []}
@@ -161,9 +163,17 @@ def uncovered_hours(
         return sorted({(m // 60) % 24 for m in range(start, end, 60)})
 
     on_duty: Dict[tuple, int] = {}
+    previous = previous_week_roster(week_start, history_rosters)
+    if previous is not None:
+        for shift in _worked(previous.get("shifts") or []):
+            if shift.get("day") != "sun":
+                continue
+            for pair in _RosterBuilder.hours_covered("sun", shift["start"], shift["end"]):
+                if pair[0] == "mon":
+                    on_duty[pair] = on_duty.get(pair, 0) + 1
     for shift in _worked(shifts):
         for pair in _RosterBuilder.hours_covered(
-            shift["day"], shift["start"], shift["end"], wrap_week=True,
+            shift["day"], shift["start"], shift["end"], wrap_week=previous is None,
         ):
             on_duty[pair] = on_duty.get(pair, 0) + 1
 

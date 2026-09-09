@@ -360,7 +360,8 @@ async def get_roster(roster_id: str, scope: ShopScope = CurrentScope):
     # for turns a page load into an edit, and `updated_at` would then move
     # every time somebody looked at the week.
     uncovered = compliance.uncovered_hours(
-        roster.get("shifts") or [], shop=scope.shop)
+        roster.get("shifts") or [], shop=scope.shop,
+        week_start=roster.get("week_start"), history_rosters=await _approved_rosters(scope))
     roster = dict(roster)
     roster["gaps"] = [
         {**gap, "required": 1, "actual": 0, "severity": "uncovered"}
@@ -521,7 +522,8 @@ async def update_roster(
         if not (s.get("unpaid_holiday") or s.get("sick") or s.get("paid_holiday"))
     )
 
-    uncovered = compliance.uncovered_hours(shifts, shop=scope.shop)
+    uncovered = compliance.uncovered_hours(
+        shifts, shop=scope.shop, week_start=existing.get("week_start"), history_rosters=approved)
 
     await scope.rosters.update_one({"roster_id": roster_id}, {
         "shifts": shifts,
@@ -805,7 +807,9 @@ async def approve_roster(
     # still insisting the shop was unattended.
     #
     # §5, and the audit immediately above was already doing it correctly.
-    empty = compliance.uncovered_hours(roster.get("shifts") or [], shop=scope.shop)
+    empty = compliance.uncovered_hours(
+        roster.get("shifts") or [], shop=scope.shop,
+        week_start=roster.get("week_start"), history_rosters=await _approved_rosters(scope))
     if empty and not acknowledge_gaps:
         windows = ", ".join(f"{g['day']} {g['window']}" for g in empty[:4])
         more = f" and {len(empty) - 4} more" if len(empty) > 4 else ""
