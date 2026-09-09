@@ -445,6 +445,22 @@ def _matching_custom_rule(
 # ---------------------------------------------------------------------------
 # Solver
 # ---------------------------------------------------------------------------
+def previous_week_roster(week_start, history):
+    """Choose the actual previous approved week, including an empty one.
+
+    An empty previous week is evidence of no carry-in, not permission to
+    borrow coverage from the following Sunday. Missing history retains the
+    repeating-rota fallback used for a new shop.
+    """
+    try:
+        previous = (datetime.strptime(week_start, "%Y-%m-%d").date() - timedelta(days=7)).isoformat()
+    except (TypeError, ValueError):
+        return None
+    matches = [r for r in history or [] if r.get("week_start") == previous
+               and r.get("approved") is not False]
+    return max(matches, key=lambda r: str(r.get("created_at", "")), default=None)
+
+
 class _RosterBuilder:
     """Mutable state for one solve. Kept in a class so the helper methods
     don't need to thread a dozen parameters through every call."""
@@ -714,7 +730,7 @@ class _RosterBuilder:
         # Without one — a brand-new shop, or a week generated out of order —
         # fall back to treating the rota as repeating, so the first week does
         # not report a phantom gap before opening on Monday.
-        self.wrap_week = self.carried_in == 0
+        self.wrap_week = previous_week_roster(self.week_start, history_rosters) is None
 
     def _seed_carry_in(self, history: List[Dict[str, Any]]) -> int:
         """Credit Monday's small hours to last Sunday's night shift.
@@ -723,17 +739,8 @@ class _RosterBuilder:
         Only Sunday shifts can spill past the week boundary, and only paid
         working shifts count — somebody on holiday covers nothing.
         """
-        try:
-            previous_week = (
-                datetime.strptime(self.week_start, "%Y-%m-%d").date() - timedelta(days=7)
-            ).isoformat()
-        except ValueError:
-            return 0
-
-        previous = next(
-            (r for r in history if r.get("week_start") == previous_week), None
-        )
-        if not previous:
+        previous = previous_week_roster(self.week_start, history)
+        if previous is None:
             return 0
 
         seeded = 0
@@ -3820,6 +3827,12 @@ class _RosterBuilder:
                 f"They are paid the same either way, so those hours are unused."
             )
 
+    def _has_leave_this_week(self, employee_id: str) -> bool:
+        # Holiday records include past and future bookings. Only dates in
+        # this solve can reduce the contract we are trying to staff.
+        return bool(set(self.employee_off_dates.get(employee_id, ()))
+                    .intersection(self.date_for_day.values()))
+
     def _top_up_contracts(self, trading: List[Tuple[str, str, int, int]]) -> None:
         """Give salaried staff extra shifts until they reach their minimum.
 
@@ -3840,7 +3853,7 @@ class _RosterBuilder:
             band = self.span_bands.get(employee_id)
             if not band or not avail.is_active(employee):
                 continue
-            if self.employee_off_dates.get(employee_id):
+            if self._has_leave_this_week(employee_id):
                 continue  # a week broken by leave cannot reach the band
 
             minimum = band[0]
@@ -4389,7 +4402,7 @@ class _RosterBuilder:
             band = self.span_bands.get(employee_id)
             if not band or not avail.is_active(employee):
                 continue
-            if self.employee_off_dates.get(employee_id):
+            if self._has_leave_this_week(employee_id):
                 continue  # a week broken by leave cannot reach the band
 
             minimum, maximum = band
