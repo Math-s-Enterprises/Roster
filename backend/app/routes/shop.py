@@ -329,7 +329,47 @@ async def book_leave(payload: LeaveRequest, scope: ShopScope = CurrentScope):
     # warned about: the alternative is finding out at payroll, after the
     # person has been told they are off.
     approved = [r async for r in scope.rosters.stream({"approved": True})]
-    balance = holiday_balance.compute_balance(employee, approved, shop=scope.shop)
+    bookings = [h async for h in scope.holidays.stream()]
+
+    # Edit sends the exact records it is replacing. Release those reservations
+    # for the capacity check, otherwise somebody with a fully-used balance
+    # cannot move or shorten an existing booking. Every id is still checked
+    # inside this shop and against this employee before anything is deleted.
+    replace_ids = set(payload.replace_holiday_ids)
+    replacement_rows = [
+        holiday for holiday in bookings
+        if holiday.get("holiday_id") in replace_ids
+    ]
+    found_ids = {holiday.get("holiday_id") for holiday in replacement_rows}
+    if found_ids != replace_ids:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "One or more leave entries being replaced no longer exist. Refresh and try again.",
+        )
+    if any(
+        holiday.get("employee_id") != payload.employee_id
+        or holiday.get("scope") not in ("employee", "unavailable")
+        for holiday in replacement_rows
+    ):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Only this employee's existing holiday entries can be replaced.",
+        )
+
+    # The endpoint has always replaced existing per-day leave inside the new
+    # range. Its old paid rows must likewise be released during validation.
+    in_range_ids = {
+        holiday.get("holiday_id") for holiday in bookings
+        if holiday.get("employee_id") == payload.employee_id
+        and holiday.get("date") in date_set
+        and holiday.get("scope") in ("employee", "unavailable")
+        and holiday.get("holiday_id")
+    }
+    excluded_ids = replace_ids | in_range_ids
+    balance = holiday_balance.compute_balance(
+        employee, approved, shop=scope.shop, holidays=bookings,
+        excluded_holiday_ids=excluded_ids,
+    )
     requested_hours = hours * len(paid_dates)
     verdict = holiday_balance.check_can_book(balance, requested_hours)
     if not verdict["allowed"]:
@@ -343,8 +383,16 @@ async def book_leave(payload: LeaveRequest, scope: ShopScope = CurrentScope):
             f"unpaid, or adjust their balance.",
         )
 
-    # Replace any existing leave in this range, so re-booking corrects rather
-    # than duplicates.
+    # Replace the records named by Edit, including old dates outside the new
+    # range, then replace any existing leave inside the new range. Keeping the
+    # whole change in this endpoint avoids a successful rebooking leaving
+    # orphaned reserved hours if the browser closes before separate deletes.
+    if replace_ids:
+        await scope.holidays.delete_many({
+            "holiday_id": {"$in": sorted(replace_ids)},
+            "employee_id": payload.employee_id,
+            "scope": {"$in": ["employee", "unavailable"]},
+        })
     await scope.holidays.delete_many({
         "employee_id": payload.employee_id,
         "date": {"$in": all_dates},
@@ -373,6 +421,7 @@ async def book_leave(payload: LeaveRequest, scope: ShopScope = CurrentScope):
         "unpaid_days": span_days - len(paid_dates),
         "paid_hours_total": round(hours * len(paid_dates), 2),
         "hours_per_day": hours,
+        "replaced_entries": len(replacement_rows),
     }
 
 

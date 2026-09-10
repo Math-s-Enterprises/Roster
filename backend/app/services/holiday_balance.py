@@ -1,11 +1,12 @@
 """Holiday entitlement: what someone has earned, used, and has left.
 
-The balance has four inputs, and all four are needed to get it right:
+The balance has five inputs, and all five are needed to get it right:
 
     opening    what they carried in from whatever system the shop used
                before — set once during import, never recalculated
     accrued    earned from hours actually worked, at the statutory rate
     used       paid holiday taken, read from approved rosters
+    booked     paid holiday reserved for dates not yet on an approved roster
     adjustments manual corrections, each with a reason and a timestamp
 
 Booking more paid holiday than someone has is blocked rather than warned
@@ -15,8 +16,8 @@ person has already been told they are off and paid.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Set
 
 from app.services.scheduler import shift_paid_hours
 
@@ -38,11 +39,51 @@ def _is_countable(shift: Dict[str, Any]) -> bool:
     return not (shift.get("sick") or shift.get("unpaid_holiday"))
 
 
+DAY_INDEX = {
+    day: index for index, day in enumerate(
+        ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+    )
+}
+
+
+def _dates(record: Dict[str, Any]) -> List[str]:
+    """Every valid date covered by a booking, inclusive."""
+    try:
+        start = date.fromisoformat(record["date"])
+        end = date.fromisoformat(record.get("end_date") or record["date"])
+    except (KeyError, TypeError, ValueError):
+        return []
+    if end < start:
+        return []
+    return [
+        (start + timedelta(days=offset)).isoformat()
+        for offset in range((end - start).days + 1)
+    ]
+
+
+def _roster_date(roster: Dict[str, Any], shift: Dict[str, Any]) -> Optional[str]:
+    """Calendar date represented by a roster's weekday row."""
+    try:
+        monday = date.fromisoformat(roster["week_start"])
+        offset = DAY_INDEX[shift["day"]]
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (monday + timedelta(days=offset)).isoformat()
+
+
+def _normal_paid_day(employee: Dict[str, Any]) -> float:
+    """Fallback for legacy paid bookings which predate hours_per_day."""
+    contract = float(employee.get("max_weekly_hours") or 0.0)
+    return round(contract / 5, 2) if contract else 8.0
+
+
 def compute_balance(
     employee: Dict[str, Any],
     approved_rosters: List[Dict[str, Any]],
     *,
     shop: Optional[Dict[str, Any]] = None,
+    holidays: Optional[List[Dict[str, Any]]] = None,
+    excluded_holiday_ids: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """Full breakdown for one employee.
 
@@ -50,24 +91,58 @@ def compute_balance(
     the working — an employee querying their balance wants to see where it
     came from, not be told to trust it.
     """
+    from app.services.learning import latest_per_week
+
     employee_id = employee["employee_id"]
     worked = used = 0.0
+    used_dates: Set[str] = set()
 
-    for roster in approved_rosters:
+    # Old data can contain two approved records for one week. Holiday pay was
+    # only taken once in reality, so use the same one-week-one-vote rule as
+    # every other learner/report instead of charging it twice.
+    for roster in latest_per_week([
+        roster for roster in approved_rosters if roster.get("approved", True)
+    ]):
         for shift in roster.get("shifts", []):
             if shift.get("employee_id") != employee_id or not _is_countable(shift):
                 continue
             hours = shift_paid_hours(shift)
             if shift.get("paid_holiday"):
                 used += hours
+                on = _roster_date(roster, shift)
+                if on:
+                    used_dates.add(on)
             else:
                 worked += hours
+
+    # A booking reserves entitlement immediately. Previously it was invisible
+    # until its roster was approved, so a second booking could spend the same
+    # hours again. Once an approved roster contains the paid-holiday row, its
+    # date moves from booked to used and is deliberately not subtracted twice.
+    excluded = excluded_holiday_ids or set()
+    booked_by_date: Dict[str, float] = {}
+    for holiday in holidays or []:
+        if (
+            holiday.get("scope") != "employee"
+            or holiday.get("employee_id") != employee_id
+            or holiday.get("holiday_id") in excluded
+        ):
+            continue
+        hours = float(holiday.get("hours_per_day") or _normal_paid_day(employee))
+        for on in _dates(holiday):
+            if on in used_dates:
+                continue
+            # Overlapping legacy records still represent one paid day. Use
+            # the larger stated value deterministically rather than charging
+            # twice or depending on database result order.
+            booked_by_date[on] = max(booked_by_date.get(on, 0.0), hours)
+    booked = sum(booked_by_date.values())
 
     opening = float(employee.get("opening_holiday_hours") or 0.0)
     adjustments = employee.get("holiday_adjustments") or []
     adjusted = sum(float(a.get("hours", 0)) for a in adjustments)
     accrued = worked * accrual_rate(shop)
-    available = opening + accrued + adjusted - used
+    available = opening + accrued + adjusted - used - booked
 
     return {
         "employee_id": employee_id,
@@ -78,6 +153,8 @@ def compute_balance(
         "accrued_hours": round(accrued, 2),
         "adjustment_hours": round(adjusted, 2),
         "used_hours": round(used, 1),
+        "booked_hours": round(booked, 1),
+        "booked_dates": sorted(booked_by_date),
         "available_hours": round(available, 2),
         "adjustments": adjustments,
     }

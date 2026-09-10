@@ -2208,6 +2208,94 @@ class TestLeave:
         paid = [h for h in holidays if h["scope"] == "employee"]
         assert {h["date"] for h in paid} == {"2026-08-12"}
 
+    def test_each_booking_immediately_reduces_what_the_next_can_spend(self, client):
+        """Two future bookings must not spend the same entitlement."""
+        token = register(client)
+        employee_id = self._employee(
+            client, token, hours=40, holiday_hours=16,
+        )
+
+        def book(on):
+            return client.post("/api/holidays/leave", json={
+                "employee_id": employee_id,
+                "start_date": on, "end_date": on, "paid_dates": [on],
+            }, headers=auth(token))
+
+        assert book("2026-08-10").status_code == 201
+        after_first = client.get(
+            f"/api/holiday-balance/{employee_id}", headers=auth(token),
+        ).json()
+        assert after_first["booked_hours"] == pytest.approx(8)
+        assert after_first["available_hours"] == pytest.approx(8)
+
+        assert book("2026-08-11").status_code == 201
+        after_second = client.get(
+            f"/api/holiday-balance/{employee_id}", headers=auth(token),
+        ).json()
+        assert after_second["booked_hours"] == pytest.approx(16)
+        assert after_second["available_hours"] == pytest.approx(0)
+
+        refused = book("2026-08-12")
+        assert refused.status_code == 400
+        assert "0h of holiday available" in refused.json()["detail"]
+
+    def test_deleting_a_future_booking_releases_its_hours(self, client):
+        token = register(client)
+        employee_id = self._employee(
+            client, token, hours=40, holiday_hours=8,
+        )
+        client.post("/api/holidays/leave", json={
+            "employee_id": employee_id,
+            "start_date": "2026-08-10", "end_date": "2026-08-10",
+            "paid_dates": ["2026-08-10"],
+        }, headers=auth(token))
+        holiday_id = client.get(
+            "/api/holidays", headers=auth(token),
+        ).json()[0]["holiday_id"]
+
+        client.delete(f"/api/holidays/{holiday_id}", headers=auth(token))
+        balance = client.get(
+            f"/api/holiday-balance/{employee_id}", headers=auth(token),
+        ).json()
+        assert balance["booked_hours"] == 0
+        assert balance["available_hours"] == pytest.approx(8)
+
+    def test_rebooking_releases_and_removes_old_entries_in_the_same_request(self, client):
+        token = register(client)
+        employee_id = self._employee(
+            client, token, hours=40, holiday_hours=8,
+        )
+        client.post("/api/holidays/leave", json={
+            "employee_id": employee_id,
+            "start_date": "2026-08-10", "end_date": "2026-08-10",
+            "paid_dates": ["2026-08-10"],
+        }, headers=auth(token))
+        old = client.get("/api/holidays", headers=auth(token)).json()
+        preview = client.get(
+            f"/api/holiday-balance/{employee_id}",
+            params=[("hours_per_day", 8),
+                    ("exclude_holiday_id", old[0]["holiday_id"])],
+            headers=auth(token),
+        ).json()
+        assert preview["available_hours"] == pytest.approx(8)
+        assert preview["max_payable_days"] == 1
+
+        moved = client.post("/api/holidays/leave", json={
+            "employee_id": employee_id,
+            "start_date": "2026-08-20", "end_date": "2026-08-20",
+            "paid_dates": ["2026-08-20"],
+            "replace_holiday_ids": [old[0]["holiday_id"]],
+        }, headers=auth(token))
+        assert moved.status_code == 201, moved.text
+        assert moved.json()["replaced_entries"] == 1
+        holidays = client.get("/api/holidays", headers=auth(token)).json()
+        assert [holiday["date"] for holiday in holidays] == ["2026-08-20"]
+        balance = client.get(
+            f"/api/holiday-balance/{employee_id}", headers=auth(token),
+        ).json()
+        assert balance["booked_hours"] == pytest.approx(8)
+        assert balance["available_hours"] == pytest.approx(0)
+
     def test_leave_appears_on_the_roster_and_blocks_work(self, client):
         token = register(client)
         employee_id = self._employee(client, token, hours=20)
@@ -2236,9 +2324,21 @@ class TestLeave:
             "start_date": "2026-08-10", "end_date": "2026-08-16",
             "paid_dates": ["2026-08-10", "2026-08-11"],
         }, headers=auth(token))
+        reserved = client.get(
+            f"/api/holiday-balance/{employee_id}", headers=auth(token),
+        ).json()
+        assert reserved["booked_hours"] == pytest.approx(8)
+        assert reserved["used_hours"] == 0
         roster_id = client.post("/api/roster/generate", json={"week_start": "2026-08-10"},
                                 headers=auth(token)).json()["roster_id"]
         client.post(f"/api/rosters/{roster_id}/approve?acknowledge_gaps=true", headers=auth(token))
+
+        current = client.get(
+            f"/api/holiday-balance/{employee_id}", headers=auth(token),
+        ).json()
+        assert current["booked_hours"] == 0
+        assert current["used_hours"] == pytest.approx(8)
+        assert current["available_hours"] == reserved["available_hours"]
 
         balance = client.get(
             f"/api/employees/{employee_id}/holiday-balance", headers=auth(token)

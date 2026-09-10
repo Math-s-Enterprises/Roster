@@ -333,6 +333,13 @@ class LeaveRequest(BaseModel):
         None, gt=0, le=24,
         description="Paid hours per holiday day. Defaults to their usual day.",
     )
+    replace_holiday_ids: List[str] = Field(
+        default_factory=list, max_length=200,
+        description=(
+            "Existing entries replaced by this booking. Used by Edit so their "
+            "reserved hours are released before the replacement is checked."
+        ),
+    )
 
 
 class FixedShiftIn(BaseModel):

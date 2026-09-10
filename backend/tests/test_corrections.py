@@ -164,12 +164,16 @@ class TestMissingData:
 # Phase 2 — reading the signal back
 # ---------------------------------------------------------------------------
 def _week(week_start, corrections_list, generated=True):
-    return {
+    roster = {
         "week_start": week_start, "approved": True,
-        "generated_shifts": [{"employee_id": "x", "day": "mon",
-                              "start": "09:00", "end": "17:00"}] if generated else [],
         "corrections": corrections_list,
     }
+    if generated:
+        roster["generated_shifts"] = [{
+            "employee_id": "x", "day": "mon",
+            "start": "09:00", "end": "17:00",
+        }]
+    return roster
 
 
 def _removed(day="wed", who="e1"):

@@ -169,6 +169,7 @@ class DemandProfile:
             "seasonal_weeks": self.seasonal_weeks,
             "edge_minutes": self.edge_minutes,
             "day_slots": self.day_slots,
+            "arrivals": self.arrivals,
             "source": self.source,
         }
 
@@ -191,6 +192,9 @@ class DemandProfile:
             day_slots={
                 d: [list(s) for s in slots]
                 for d, slots in (data.get("day_slots") or {}).items()
+            },
+            arrivals={
+                d: list(hours) for d, hours in (data.get("arrivals") or {}).items()
             },
             source=data.get("source", "learned"),
         )

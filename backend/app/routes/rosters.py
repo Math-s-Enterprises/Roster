@@ -19,6 +19,7 @@ from app.models import (
 )
 from app.services import compliance, corrections, llm, mailer, sick_cover
 from app.services import demand as demand_service
+from app.services import training_evidence
 from app.services.demand import build_profile
 from app.services.hierarchy import sort_employees
 from app.services.roster_validation import validate_shifts
@@ -267,6 +268,12 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
     # cannot be explained when the manager asks why somebody got a shift.
     seed = None if payload.keep_pinned else random.randrange(1_000_000_000)
 
+    training_context = training_evidence.generation_context(
+        shop, employees, holidays, fixed_shifts, rules, approved,
+        week_start=payload.week_start, seed=seed, only_day=payload.only_day,
+        department=payload.department, locked_shifts=locked_shifts,
+        weights=weights, demand=demand,
+    )
     result = solve_roster(
         shop, employees, holidays, fixed_shifts, rules, payload.week_start,
         weights, demand, history_rosters=approved,
@@ -299,6 +306,11 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
         # corrections are destroyed the moment they touch the roster — and
         # those corrections are the most useful signal the product has.
         "generated_shifts": [dict(s) for s in result["shifts"]],
+        "training_context": training_context,
+        "training_proposal": training_evidence.proposal(
+            result, shop=shop, employees=employees, holidays=holidays,
+            week_start=payload.week_start, history_rosters=approved,
+        ),
         "ai_summary": ai_summary,
         "approved": False,
         "department": payload.department,
@@ -766,12 +778,14 @@ async def approve_roster(
     # it is accounted for. A week with breaches can still become real, but only
     # deliberately, by somebody who proves who they are — and the log records
     # what they overrode.
+    approval_employees = await scope.employees.find(limit=1000)
+    approval_holidays = await scope.holidays.find(limit=1000)
     breaches = compliance.audit(
         roster.get("shifts") or [],
         shop=scope.shop,
-        employees=await scope.employees.find(limit=1000),
+        employees=approval_employees,
         week_start=roster["week_start"],
-        holidays=await scope.holidays.find(limit=1000),
+        holidays=approval_holidays,
     )
     hard = compliance.blocking(breaches)
     if hard:
@@ -820,6 +834,19 @@ async def approve_roster(
             f"you accept them.",
         )
 
+    approval_employee_ids = {
+        employee["employee_id"] for employee in approval_employees
+    }
+    approval_fixed_shifts = [
+        fixed for fixed in await scope.fixed_shifts.find(limit=1000)
+        if fixed.get("employee_id") in approval_employee_ids
+    ]
+    approval_context = training_evidence.context(
+        scope.shop, approval_employees, approval_holidays,
+        approval_fixed_shifts,
+        await scope.ai_rules.find({"enabled": True}),
+        week_start=roster["week_start"],
+    )
     superseded = await scope.rosters.find({
         "week_start": roster["week_start"],
         "department": roster.get("department"),
@@ -845,6 +872,22 @@ async def approve_roster(
     await scope.rosters.update_one({"roster_id": roster_id}, {
         "approved": True,
         "approved_at": _now(),
+        # Sick-cover changes the working roster later. Keep approval evidence
+        # separate; a deliberate reapproval replaces this with the new decision.
+        "training_approval": training_evidence.approval_evidence(
+            approval_context=approval_context,
+            generation_context=roster.get("training_context"),
+            generation_shifts=(roster.get("generated_shifts")
+                               if "generated_shifts" in roster else None),
+            final_shifts=roster.get("shifts") or [], corrections=changes,
+            forced=forced, uncovered_hours=empty, breaches=breaches,
+            constraint_result=training_evidence.constraint_outcome(
+                roster.get("shifts") or [], shop=scope.shop,
+                employees=approval_employees, holidays=approval_holidays,
+                week_start=roster["week_start"],
+                history_rosters=await _approved_rosters(scope),
+            ),
+        ),
         # Recorded on the roster, so a week that went out with known gaps
         # says so afterwards rather than looking like a clean approval.
         "approved_with_gaps": len(empty),
@@ -854,7 +897,7 @@ async def approve_roster(
         "edit_count": corrections.edit_count(changes),
         # Rosters generated before the snapshot existed cannot be compared,
         # so they are marked rather than counted as a perfect zero.
-        "corrections_measurable": bool(roster.get("generated_shifts")),
+        "corrections_measurable": "generated_shifts" in roster,
         # A forced week says so for ever. Whoever reads this roster later —
         # the manager, an inspector, the person who worked six days — sees
         # that somebody decided, who they were, and exactly what was broken.
