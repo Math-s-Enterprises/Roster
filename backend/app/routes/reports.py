@@ -6,18 +6,11 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException, status
 
 from app.models import CorrectionDecision
-from app.services import corrections, sick_balance
-from app.services.scheduler import shift_paid_hours
+from app.services import corrections, holiday_balance, sick_balance
 from app.services.shop_service import log_activity
 from app.tenancy import ShopScope, CurrentScope
 
 router = APIRouter(tags=["reports"])
-
-# Statutory holiday accrual: 12.07% of hours worked, the standard UK figure
-# for staff without fixed hours (5.6 weeks' leave / 46.4 working weeks).
-# Named and sourced here so it is not mistaken for an arbitrary constant.
-HOLIDAY_ACCRUAL_RATE = 0.1207
-
 
 @router.get("/reports/sick-balance")
 async def sick_balance_report(scope: ShopScope = CurrentScope):
@@ -91,59 +84,30 @@ async def sick_leave_report(scope: ShopScope = CurrentScope):
     }
 
 
-async def _accrual_totals(scope: ShopScope) -> Dict[str, Dict[str, float]]:
-    """Hours worked and paid holiday taken, per employee, in one pass.
-
-    The prototype re-read every approved roster once per employee, so cost
-    grew with employees x rosters. This scans the rosters once and buckets
-    by employee, which matters as history accumulates.
-    """
-    totals: Dict[str, Dict[str, float]] = {}
-
-    async for roster in scope.rosters.stream({"approved": True}):
-        for shift in roster.get("shifts", []):
-            employee_id = shift.get("employee_id")
-            if not employee_id:
-                continue
-            # Sick days and unpaid leave neither earn nor spend entitlement.
-            if shift.get("sick") or shift.get("unpaid_holiday"):
-                continue
-
-            bucket = totals.setdefault(employee_id, {"worked": 0.0, "used": 0.0})
-            hours = shift_paid_hours(shift)
-            if shift.get("paid_holiday"):
-                bucket["used"] += hours
-            else:
-                bucket["worked"] += hours
-
-    return totals
-
-
-def _balance(worked: float, used: float) -> Dict[str, float]:
-    accrued = worked * HOLIDAY_ACCRUAL_RATE
+def _legacy_holiday_balance(balance: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep the older report field names backed by the shared calculation."""
     return {
-        "hours_worked": round(worked, 1),
-        "accrued_holiday_hours": round(accrued, 2),
-        "used_paid_holiday": round(used, 1),
-        "balance": round(accrued - used, 2),
+        "employee_id": balance["employee_id"],
+        "name": balance.get("name"),
+        "role": balance.get("role"),
+        "hours_worked": balance["hours_worked"],
+        "accrued_holiday_hours": balance["accrued_hours"],
+        "used_paid_holiday": balance["used_hours"],
+        "booked_paid_holiday": balance["booked_hours"],
+        "balance": balance["available_hours"],
     }
 
 
 @router.get("/employees/holiday-balances")
 async def all_holiday_balances(scope: ShopScope = CurrentScope):
-    totals = await _accrual_totals(scope)
+    approved = [r async for r in scope.rosters.stream({"approved": True})]
+    bookings = [h async for h in scope.holidays.stream()]
     employees = await scope.employees.find(limit=1000)
     return [
-        {
-            "employee_id": e["employee_id"],
-            "name": e["name"],
-            "role": e.get("role"),
-            **_balance(
-                totals.get(e["employee_id"], {}).get("worked", 0.0),
-                totals.get(e["employee_id"], {}).get("used", 0.0),
-            ),
-        }
-        for e in employees
+        _legacy_holiday_balance(holiday_balance.compute_balance(
+            employee, approved, shop=scope.shop, holidays=bookings,
+        ))
+        for employee in employees
     ]
 
 
@@ -151,12 +115,15 @@ async def all_holiday_balances(scope: ShopScope = CurrentScope):
 # route wins; otherwise "{employee_id}" would capture "holiday-balances".
 @router.get("/employees/{employee_id}/holiday-balance")
 async def employee_holiday_balance(employee_id: str, scope: ShopScope = CurrentScope):
-    if not await scope.employees.find_one({"employee_id": employee_id}):
+    employee = await scope.employees.find_one({"employee_id": employee_id})
+    if not employee:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
 
-    totals = await _accrual_totals(scope)
-    bucket = totals.get(employee_id, {"worked": 0.0, "used": 0.0})
-    return {"employee_id": employee_id, **_balance(bucket["worked"], bucket["used"])}
+    approved = [r async for r in scope.rosters.stream({"approved": True})]
+    bookings = [h async for h in scope.holidays.stream()]
+    return _legacy_holiday_balance(holiday_balance.compute_balance(
+        employee, approved, shop=scope.shop, holidays=bookings,
+    ))
 
 
 # ---------------------------------------------------------------------------

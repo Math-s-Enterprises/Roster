@@ -43,8 +43,8 @@ import { Plus, Search, ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Sun,
  *    mean scanning every roster in the shop.
  *
  * 6. HISTORY is composed from the holiday balance — hours worked, accrued,
- *    taken, and any manual adjustments — because no narrative history is
- *    recorded anywhere.
+ *    booked, taken, and any manual adjustments — because no narrative
+ *    history is recorded anywhere.
  */
 
 const SORTS = [
@@ -703,7 +703,8 @@ export default function Employees() {
               <>
                 {selected.name} has worked <strong>{fmtHours(balance.hours_worked || 0)}</strong> on record,
                 accruing <strong>{fmtHours(balance.accrued_hours || 0)}</strong> of holiday.{" "}
-                <strong>{fmtHours(balance.used_hours || 0)}</strong> has been taken, leaving{" "}
+                <strong>{fmtHours(balance.used_hours || 0)}</strong> has been taken
+                {balance.booked_hours ? <>, and <strong>{fmtHours(balance.booked_hours)}</strong> is booked</> : null}, leaving{" "}
                 <strong>{fmtHours(balance.available_hours || 0)}</strong> available
                 {balance.opening_hours ? <> on top of an opening balance of {fmtHours(balance.opening_hours)}</> : null}.
                 {balance.adjustments?.length > 0 && (
@@ -1247,6 +1248,9 @@ function AdjustModal({ employee, balance, onClose, onSaved }) {
             <Row label="Previous adjustments" value={`${balance.adjustment_hours > 0 ? "+" : ""}${balance.adjustment_hours}h`} />
           )}
           <Row label="Paid holiday taken" value={`−${balance.used_hours}h`} />
+          {balance.booked_hours > 0 && (
+            <Row label="Paid holiday booked" value={`−${balance.booked_hours}h`} />
+          )}
           <div className="pt-1.5 border-t border-white/10">
             <Row label="Available" value={`${balance.available_hours}h`} strong />
           </div>

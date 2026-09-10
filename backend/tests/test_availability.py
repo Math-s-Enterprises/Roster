@@ -483,6 +483,51 @@ class TestHolidayBalance:
         assert balance["used_hours"] == 8
         assert balance["available_hours"] == pytest.approx(12)
 
+    def test_booked_paid_holiday_reserves_the_balance_before_approval(self):
+        employee = make_employee("e", opening_holiday_hours=20,
+                                 max_weekly_hours=40)
+        booking = {
+            "holiday_id": "h1", "scope": "employee", "employee_id": "e",
+            "date": "2026-08-04", "hours_per_day": 8,
+        }
+        balance = holiday_balance.compute_balance(
+            employee, [], holidays=[booking],
+        )
+        assert balance["used_hours"] == 0
+        assert balance["booked_hours"] == 8
+        assert balance["available_hours"] == pytest.approx(12)
+
+    def test_approved_holiday_moves_from_booked_to_used_without_double_charge(self):
+        employee = make_employee("e", opening_holiday_hours=20,
+                                 max_weekly_hours=40)
+        booking = {
+            "holiday_id": "h1", "scope": "employee", "employee_id": "e",
+            "date": "2026-08-05", "hours_per_day": 8,
+        }
+        approved = [{"week_start": "2026-08-03", "approved": True, "shifts": [{
+            "employee_id": "e", "day": "wed", "start": "", "end": "",
+            "paid_holiday": True, "paid_hours": 8,
+        }]}]
+        balance = holiday_balance.compute_balance(
+            employee, approved, holidays=[booking],
+        )
+        assert balance["used_hours"] == 8
+        assert balance["booked_hours"] == 0
+        assert balance["available_hours"] == pytest.approx(12)
+
+    def test_rebooking_can_release_the_entries_it_replaces(self):
+        employee = make_employee("e", opening_holiday_hours=8,
+                                 max_weekly_hours=40)
+        booking = {
+            "holiday_id": "h1", "scope": "employee", "employee_id": "e",
+            "date": "2026-08-04", "hours_per_day": 8,
+        }
+        balance = holiday_balance.compute_balance(
+            employee, [], holidays=[booking], excluded_holiday_ids={"h1"},
+        )
+        assert balance["booked_hours"] == 0
+        assert balance["available_hours"] == 8
+
     def test_booking_within_the_balance_is_allowed(self):
         balance = holiday_balance.compute_balance(
             make_employee("e", opening_holiday_hours=10), []

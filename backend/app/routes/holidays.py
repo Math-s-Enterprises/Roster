@@ -1,6 +1,6 @@
 """Holiday entitlement: balances, adjustments, and booking capacity."""
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -17,13 +17,20 @@ async def _approved(scope: ShopScope) -> List[Dict[str, Any]]:
     return [r async for r in scope.rosters.stream({"approved": True})]
 
 
+async def _bookings(scope: ShopScope) -> List[Dict[str, Any]]:
+    return [h async for h in scope.holidays.stream()]
+
+
 @router.get("")
 async def all_balances(scope: ShopScope = CurrentScope):
     """Everyone's entitlement, in the shop's reading order."""
     approved = await _approved(scope)
+    bookings = await _bookings(scope)
     employees = display_order(await scope.employees.find(limit=1000), scope.shop)
     return [
-        holiday_balance.compute_balance(e, approved, shop=scope.shop)
+        holiday_balance.compute_balance(
+            e, approved, shop=scope.shop, holidays=bookings,
+        )
         for e in employees
     ]
 
@@ -34,6 +41,10 @@ async def employee_balance(
     hours_per_day: float = Query(
         None, gt=0, le=24,
         description="Day length to price a booking at. Defaults to their contract / 5.",
+    ),
+    exclude_holiday_id: Optional[List[str]] = Query(
+        None,
+        description="Existing booking ids released while previewing a rebooking.",
     ),
     scope: ShopScope = CurrentScope,
 ):
@@ -47,7 +58,9 @@ async def employee_balance(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
 
     balance = holiday_balance.compute_balance(
-        employee, await _approved(scope), shop=scope.shop
+        employee, await _approved(scope), shop=scope.shop,
+        holidays=await _bookings(scope),
+        excluded_holiday_ids=set(exclude_holiday_id or []),
     )
     day_hours = hours_per_day or round((employee.get("max_weekly_hours") or 40) / 5, 2)
     return {
@@ -86,7 +99,8 @@ async def adjust_balance(
         "ok": True,
         "adjustment": adjustment,
         "balance": holiday_balance.compute_balance(
-            updated, await _approved(scope), shop=scope.shop
+            updated, await _approved(scope), shop=scope.shop,
+            holidays=await _bookings(scope),
         ),
     }
 
@@ -122,5 +136,6 @@ async def set_opening_balance(
     await scope.employees.update_one({"employee_id": employee_id}, changes)
     updated = await scope.employees.find_one({"employee_id": employee_id})
     return holiday_balance.compute_balance(
-        updated, await _approved(scope), shop=scope.shop
+        updated, await _approved(scope), shop=scope.shop,
+        holidays=await _bookings(scope),
     )

@@ -127,7 +127,10 @@ def context(shop, employees, holidays, fixed_shifts, rules, *, week_start=None):
         "schema_version": 2,
         "shop": select(shop, SHOP_FIELDS),
         "employees": [select(e, EMPLOYEE_FIELDS) for e in _ordered(employees, "employee_id")],
-        "holidays": [select(h, {"holiday_id", "employee_id", "date", "end_date", "scope"})
+        "holidays": [select(h, {
+            "holiday_id", "employee_id", "date", "end_date", "scope",
+            "hours_per_day",
+        })
                      for h in _ordered(holidays, "date", "employee_id", "holiday_id")],
         "fixed_shifts": [select(f, SHIFT_FIELDS | {"fixed_shift_id", "enabled", "days"})
                          for f in _ordered(fixed_shifts, "employee_id", "fixed_shift_id")],

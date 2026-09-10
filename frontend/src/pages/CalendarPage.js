@@ -1098,12 +1098,19 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
   useEffect(() => {
     if (!empId || (scope !== "leave-week" && !rebook)) { setBalance(null); return; }
     let cancelled = false;
-    const params = hoursPerDay ? `?hours_per_day=${hoursPerDay}` : "";
-    api.get(`/holiday-balance/${empId}${params}`)
+    const params = new URLSearchParams();
+    if (hoursPerDay) params.set("hours_per_day", String(hoursPerDay));
+    if (rebook) {
+      run.entries.forEach((entry) => {
+        if (entry.holiday_id) params.append("exclude_holiday_id", entry.holiday_id);
+      });
+    }
+    const query = params.toString();
+    api.get(`/holiday-balance/${empId}${query ? `?${query}` : ""}`)
       .then((r) => { if (!cancelled) setBalance(r.data); })
       .catch(() => { if (!cancelled) setBalance(null); });
     return () => { cancelled = true; };
-  }, [empId, scope, hoursPerDay, rebook]);
+  }, [empId, scope, hoursPerDay, rebook, run]);
 
   const maxPaidDays = balance?.max_payable_days ?? null;
   const requestedHours = hoursPerDay
@@ -1148,39 +1155,18 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
         });
         toast.success("Leave updated");
       } else if (rebook) {
-        // RE-BOOK, DO NOT DELETE FIRST.
+        // Re-book in one server operation. The existing ids release their
+        // reserved hours for validation and are removed with the replacement,
+        // including dates outside a shortened or moved range.
         //
-        // `/holidays/leave` already replaces any existing leave inside the
-        // range it is given, so posting the new booking corrects the days it
-        // covers in one call. Deleting first would open a window where a
-        // failure leaves the manager with no booking at all; this way a
-        // failure leaves the original untouched.
-        //
-        // What the POST cannot know about is days the absence USED to cover
-        // and no longer does — shortening 17-20 Sep to 17-18 leaves the 19th
-        // and 20th behind — so those are removed afterwards, by id.
-        const kept = new Set(
-          (() => {
-            const out = [];
-            for (let d = leaveFrom, guard = 0; d <= leaveTo && guard < 400;
-                 d = addDays(d, 1), guard++) out.push(d);
-            return out;
-          })(),
-        );
         const r = await api.post("/holidays/leave", {
           employee_id: empId, start_date: leaveFrom, end_date: leaveTo,
           paid_dates: paidDates, label: label || "Holiday",
+          replace_holiday_ids: run.entries.map((entry) => entry.holiday_id).filter(Boolean),
         });
-        const orphans = run.entries.filter(
-          (x) => !x.end_date && !kept.has(x.date),
-        );
-        for (const orphan of orphans) {
-          await api.delete(`/holidays/${orphan.holiday_id}`);
-        }
         toast.success(
           `${r.data.employee}: ${r.data.paid_days} paid day(s) = ${r.data.paid_hours_total}h` +
-          (r.data.unpaid_days ? `, ${r.data.unpaid_days} unpaid` : "") +
-          (orphans.length ? `, ${orphans.length} day(s) removed` : ""),
+          (r.data.unpaid_days ? `, ${r.data.unpaid_days} unpaid` : ""),
         );
       } else if (collapse) {
         // Several day-records of the same kind become ONE range record: the
@@ -1305,6 +1291,12 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
                   <span className="hol-muted"> @ {balance.hours_per_day}h</span>
                 </span>
               </div>
+              {balance.booked_hours > 0 && (
+                <div className="flex justify-between" style={{ marginTop: 4 }}>
+                  <span className="hol-muted">Already booked</span>
+                  <span className="font-mono">{balance.booked_hours}h</span>
+                </div>
+              )}
             </div>
           )}
 
