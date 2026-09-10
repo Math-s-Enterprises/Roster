@@ -1,5 +1,7 @@
 # Learned rostering — implementation plan
 
+This is the earlier proposal. See [the current work queue](WORK_QUEUE.md) for completed repairs, local work awaiting review and the next steps. The status and experiment figures below describe the original proposal, not current readiness.
+
 Status: **proposed**, not built. Written after the feasibility experiment in
 `backend/ml/experiment_baseline.py`, which reached AUC 0.869 on attendance and
 76.8% top-3 on shift patterns using 30 weeks of one shop's real history.

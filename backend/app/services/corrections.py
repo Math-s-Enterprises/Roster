@@ -212,7 +212,9 @@ def edit_trend(rosters: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, 
     recent = _approved_first(rosters)[:limit]
     out = []
     for roster in reversed(recent):
-        measurable = bool(roster.get("generated_shifts"))
+        # An empty proposal is still a measured proposal.  Presence of the
+        # snapshot distinguishes it from a roster created before capture.
+        measurable = "generated_shifts" in roster
         out.append({
             "week_start": roster.get("week_start"),
             "version": roster.get("version"),
@@ -230,7 +232,7 @@ def summarise(rosters: List[Dict[str, Any]]) -> Dict[str, Any]:
     so the manager can look at the evidence without being sold a conclusion.
     """
     window = _approved_first(rosters)[:CORRECTION_WINDOW]
-    measurable = [r for r in window if r.get("generated_shifts")]
+    measurable = [r for r in window if "generated_shifts" in r]
 
     by_kind: Dict[str, int] = {}
     grouped: Dict[str, Dict[str, Any]] = {}

@@ -1050,6 +1050,8 @@ class TestFinishGranularity:
     def test_it_survives_a_round_trip(self):
         from app.services.demand import DemandProfile
 
-        assert DemandProfile.from_dict(
-            DemandProfile(edge_minutes=30).to_dict()
-        ).edge_minutes == 30
+        restored = DemandProfile.from_dict(
+            DemandProfile(edge_minutes=30, arrivals={"mon": [2] + [0] * 23}).to_dict()
+        )
+        assert restored.edge_minutes == 30
+        assert restored.arrivals["mon"][0] == 2
