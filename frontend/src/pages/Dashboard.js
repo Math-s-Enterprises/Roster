@@ -1,8 +1,94 @@
-import React, { useEffect, useState } from "react";
-import { api, fmtHours, fmtMoney } from "@/lib/api";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, ShieldCheck, Euro, Activity, Sparkles, ArrowRight, Wand2, CheckCircle2, HelpCircle } from "lucide-react";
+import { api, errorMessage, fmtHours, fmtMoney, mondayOf } from "@/lib/api";
 import { toast } from "sonner";
+import { CheckCircle2, AlertCircle, Wand2, Sparkles } from "lucide-react";
+
+/**
+ * Dashboard — shop home (handoff: Dashboard).
+ *
+ * Land, see the shop is in a fit state, deal with anything flagged, generate
+ * the next roster. Styling is the handoff's palette, scoped to .db-*.
+ *
+ * Everything is read from endpoints this page already used: /shop,
+ * /employees, /rosters, /activity, /setup-status. The force-approval band
+ * reads force_approved, force_approved_by, force_approved_reason and
+ * overridden_rules, which approve_roster already writes.
+ *
+ * DEVIATIONS
+ *
+ * 1. Generate roster navigates to the roster page for the next un-rostered
+ *    week rather than running the solver here. Generation carries pinned
+ *    shifts, plan limits, refusal dialogs and rebalance-by-day, and a second
+ *    implementation of it on this page would drift from the first. The
+ *    button still answers the question "which week am I generating?" by
+ *    finding that week itself.
+ *
+ * 2. Recent rosters is a CSS grid with table roles rather than a real
+ *    <table>. The handoff asks for both a real table and minmax() tracks,
+ *    and a table cannot express minmax. Same choice as the sibling pages.
+ *
+ * 3. Activity entries carry no actor or link of their own — the log stores
+ *    an action and a sentence. The action is mapped to a route so entries
+ *    are still clickable, a leading email is emboldened as the actor, and
+ *    anything mentioning broken rules is marked in amber.
+ *
+ * 4. "Load demo team" is kept, shown only when the shop has no employees.
+ *    It is how a new shop gets something to look at, and dropping it would
+ *    leave the empty state with no way forward but manual entry.
+ */
+
+const iso = (d) => d.toISOString().slice(0, 10);
+
+/** Where an activity entry should take you, by action. */
+function hrefForAction(action = "") {
+  if (action.startsWith("roster")) return "/roster";
+  if (action.startsWith("employee")) return "/employees";
+  if (action.startsWith("rule") || action.startsWith("ai_rule")) return "/rules";
+  if (action.startsWith("holiday") || action.startsWith("leave")) return "/calendar";
+  if (action.startsWith("fixed")) return "/fixed-shifts";
+  if (action.startsWith("shop") || action.startsWith("setup")) return "/onboarding";
+  return "/roster";
+}
+
+/**
+ * Render one log line: bold a leading email (the actor the log embeds in its
+ * sentence) and pick out anything about broken rules in amber.
+ */
+function entryParts(detail = "") {
+  const text = String(detail);
+  const email = text.match(/^\S+@\S+\.\S+/);
+  const head = email ? email[0] : null;
+  const rest = head ? text.slice(head.length) : text;
+  const broken = rest.match(/(\d+\s+rule\(?s?\)?\s+broken)/i);
+  if (!broken) return { head, before: rest, warn: null, after: "" };
+  const at = rest.indexOf(broken[0]);
+  return {
+    head,
+    before: rest.slice(0, at),
+    warn: broken[0],
+    after: rest.slice(at + broken[0].length),
+  };
+}
+
+const fmtStamp = (value) => {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return { label: String(value || ""), iso: "" };
+  return {
+    label: d.toLocaleString(undefined, {
+      weekday: "short", day: "numeric", month: "short",
+      hour: "2-digit", minute: "2-digit",
+    }),
+    iso: d.toISOString(),
+  };
+};
+
+const fmtWeek = (weekStart) => {
+  const d = new Date(`${weekStart}T00:00:00`);
+  return Number.isNaN(d.getTime())
+    ? weekStart
+    : d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+};
 
 export default function Dashboard() {
   const [shop, setShop] = useState(null);
@@ -11,342 +97,431 @@ export default function Dashboard() {
   const [activity, setActivity] = useState([]);
   const [setup, setSetup] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const navigate = useNavigate();
 
-  const load = async () => {
-    setLoading(true);
+  const load = useCallback(async () => {
     try {
       const [s, e, r, a, st] = await Promise.all([
-        api.get("/shop"), api.get("/employees"), api.get("/rosters"), api.get("/activity"),
-        api.get("/setup-status"),
+        api.get("/shop"),
+        api.get("/employees"),
+        api.get("/rosters"),
+        api.get("/activity").catch(() => ({ data: [] })),
+        api.get("/setup-status").catch(() => ({ data: null })),
       ]);
-      setShop(s.data); setEmployees(e.data); setRosters(r.data); setActivity(a.data);
+      setShop(s.data);
+      setEmployees(e.data || []);
+      setRosters(r.data || []);
+      setActivity(a.data || []);
       setSetup(st.data);
     } catch (err) {
-      toast.error("Failed to load dashboard");
-    } finally { setLoading(false); }
-  };
-  useEffect(() => { load(); }, []);
+      toast.error(errorMessage(err, "Could not load the dashboard"));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
 
   const latest = rosters[0];
+  const thisWeek = mondayOf();
+
+  /** The current week's roster, which is what the force band is about. */
+  const currentWeek = useMemo(
+    () => rosters.find((r) => r.week_start === thisWeek && r.approved)
+      || rosters.find((r) => r.week_start === thisWeek)
+      || null,
+    [rosters, thisWeek],
+  );
+
+  const forced = currentWeek?.force_approved ? currentWeek : null;
+  const brokenRules = forced?.overridden_rules || [];
+
+  /**
+   * The first week from today with no roster at all — the week Generate is
+   * actually for. Capped so a fully-rostered shop still gets an answer.
+   */
+  const nextOpenWeek = useMemo(() => {
+    const taken = new Set(rosters.map((r) => r.week_start));
+    const d = new Date(`${thisWeek}T00:00:00`);
+    for (let i = 0; i < 12; i += 1) {
+      const week = iso(d);
+      if (!taken.has(week)) return week;
+      d.setDate(d.getDate() + 7);
+    }
+    return thisWeek;
+  }, [rosters, thisWeek]);
+
+  /** Approved rosters plus this week's drafts, newest first, capped at five. */
+  const recent = useMemo(() => {
+    const list = rosters.filter((r) => r.approved || r.week_start === thisWeek);
+    return list.slice(0, 5);
+  }, [rosters, thisWeek]);
+
+  const peakCost = useMemo(
+    () => Math.max(0, ...recent.map((r) => Number(r.labor_cost) || 0)),
+    [recent],
+  );
+
+  const archivedDrafts = useMemo(
+    () => rosters.filter((r) => r.week_start === thisWeek && !r.approved).length,
+    [rosters, thisWeek],
+  );
+
+  const complianceTone = (score) =>
+    score == null ? undefined : score < 75 ? "bad" : score < 90 ? "warn" : "good";
+
   const seedDemo = async () => {
-    await api.post("/seed-demo");
-    toast.success("Demo team loaded");
-    load();
+    try {
+      await api.post("/seed-demo");
+      toast.success("Demo team loaded");
+      await load();
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not load the demo team"));
+    }
   };
 
-  if (loading) return <div className="text-white/60">Loading…</div>;
+  const resetAll = async () => {
+    if (confirmText !== "RESET") return;
+    setResetting(true);
+    try {
+      await api.post("/dev/reset");
+      toast.success("Data reset — the shop is empty");
+      setConfirmOpen(false);
+      setConfirmText("");
+      await load();
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not reset the shop"));
+    } finally {
+      setResetting(false);
+    }
+  };
 
-  return (
-    <div className="max-w-7xl">
-      <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
-        <div>
-          <div className="text-xs text-white/40 uppercase tracking-widest mb-2">Shop</div>
-          <h1 className="text-4xl lg:text-5xl font-light">
-            <span className="neon-text font-bold">{shop?.name}</span>
-          </h1>
-          {/* Reads from the checklist, not from `onboarded`. That flag only
-              means the shop wizard was finished, and the page used to
-              announce "Everything is set up" at the exact moment a new shop
-              had no staff, no history and no fixed shifts. */}
-          <p className="text-white/50 mt-2 max-w-lg text-sm">
-            {setup?.complete
-              ? "Everything is set up. Generate this week's roster in one click."
-              : setup
-                ? `${setup.done} of ${setup.total} setup steps done — see below.`
-                : ""}
-          </p>
-        </div>
-        <div className="flex gap-3 flex-wrap">
-          {!shop?.onboarded && (
-            <button data-testid="btn-onboarding" onClick={() => navigate("/onboarding")} className="px-5 py-2.5 rounded-full glass text-sm flex items-center gap-2">
-              Complete setup <ArrowRight size={14} />
-            </button>
-          )}
-          {employees.length === 0 && (
-            <button data-testid="btn-seed" onClick={seedDemo} className="px-5 py-2.5 rounded-full glass-solid text-sm flex items-center gap-2">
-              <Sparkles size={14} className="text-cyan-400" /> Load demo team
-            </button>
-          )}
-          <button data-testid="btn-reset" onClick={async () => { if (window.confirm("Wipe ALL employees, rosters, rules and start fresh?")) { await api.post("/dev/reset"); toast.success("Data reset — shop is empty"); load(); } }} className="px-5 py-2.5 rounded-full text-xs text-red-400 border border-red-500/30 hover:bg-red-500/10">Reset all data</button>
-          <button data-testid="btn-generate-roster" onClick={() => navigate("/roster")} className="neon-btn px-5 py-2.5 rounded-full text-sm flex items-center gap-2">
-            <Wand2 size={14} /> Generate roster
-          </button>
-        </div>
-      </div>
+  const setupComplete = setup?.complete;
+  const stepsLeft = setup ? Math.max(0, setup.total - setup.done) : 0;
+  const outstanding = (setup?.steps || [])
+    .filter((s) => !s.done)
+    .map((s) => s.title || s.label || s.id)
+    .filter(Boolean);
 
-      {setup && <GettingStarted setup={setup} />}
-
-      {/* KPI grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-        <KpiCard icon={<Users size={16} />} label="Team" value={employees.length} unit="people" testId="kpi-team" />
-        <KpiCard icon={<ShieldCheck size={16} />} label="Compliance" value={latest?.compliance_score ?? "—"} unit={latest ? "score" : ""} accent testId="kpi-compliance" />
-        <KpiCard icon={<Euro size={16} />} label="Weekly cost" value={latest ? fmtMoney(latest.labor_cost) : "—"} unit={latest ? "EUR" : ""} testId="kpi-cost" />
-        <KpiCard icon={<Activity size={16} />} label="Utilization" value={latest ? `${latest.utilization}%` : "—"} unit={latest ? "of capacity" : ""} testId="kpi-utilization" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 glass rounded-3xl p-8">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-medium">Recent rosters</h2>
-            <button onClick={() => navigate("/roster")} className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
-              Open roster <ArrowRight size={12} />
-            </button>
-          </div>
-          {rosters.length === 0 ? (
-            <div className="text-white/40 text-sm py-12 text-center">
-              No rosters yet. Complete setup then click <span className="neon-text font-medium">Generate roster</span>.
-            </div>
-          ) : (
-            <ul className="space-y-3">
-              {rosters.slice(0, 5).map((r) => (
-                <li key={r.roster_id} className="flex items-center justify-between glass-solid rounded-xl p-4">
-                  <div>
-                    <div className="text-sm font-medium">Week of {r.week_start} · <span className="neon-text">{r.version}</span></div>
-                    <div className="text-xs text-white/40 font-mono mt-1">{fmtHours(r.total_hours)} · {fmtMoney(r.labor_cost)} · score {r.compliance_score}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {r.issues?.length > 0 && <span className="conflict-dot" />}
-                    {r.approved && <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">Approved</span>}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="glass rounded-3xl p-8">
-          <h2 className="text-xl font-medium mb-6">Activity</h2>
-          {activity.length === 0 ? (
-            <div className="text-white/40 text-sm py-6">No activity yet.</div>
-          ) : (
-            <ul className="space-y-4">
-              {activity.slice(0, 8).map((a) => (
-                <li key={a.log_id} className="text-sm">
-                  <div className="text-white/80">{a.detail}</div>
-                  <div className="text-[11px] text-white/40 font-mono mt-1">{new Date(a.created_at).toLocaleString()}</div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * What to do next, and why it matters.
- *
- * Ordered so each step makes the next one worth doing: import before adding
- * staff by hand, because the import creates everyone named on the sheet;
- * employment types before generating, because they decide contracted hours
- * and a roster built on the wrong contract has to be thrown away rather than
- * corrected.
- *
- * Every step's state comes from the server, which derives it from the data
- * rather than from a stored "step 3 done" flag. A flag would keep claiming
- * success after the data behind it was deleted — precisely when a new user
- * most needs to be told the truth.
- *
- * Collapses to one line once finished instead of disappearing, so the
- * walkthrough stays reachable.
- */
-function GettingStarted({ setup }) {
-  const navigate = useNavigate();
-  const [open, setOpen] = useState(!setup.complete);
-  const [explain, setExplain] = useState(false);
-
-  const pct = Math.round((setup.done / Math.max(1, setup.total)) * 100);
-
-  if (setup.complete && !open) {
-    return (
-      <div className="card p-4 mb-8 flex items-center gap-3 text-[13px]">
-        <CheckCircle2 size={16} style={{ color: "var(--primary)" }} />
-        <span>Setup complete.</span>
-        <button onClick={() => setOpen(true)} className="btn btn-ghost ml-auto text-[12px]">
-          Review steps
-        </button>
-      </div>
-    );
+  if (loading) {
+    return <div className="db-page"><div className="db-empty">Loading…</div></div>;
   }
 
   return (
-    <div className="card p-6 mb-8">
-      <div className="flex items-start justify-between gap-4 mb-1">
+    <div className="db-page">
+      <header className="db-head">
         <div>
-          <div className="eyebrow mb-1">Getting started</div>
-          <h2 className="text-lg">
-            {setup.complete ? "You're set up" : "Next steps for your shop"}
-          </h2>
+          <div className="db-eyebrow">SHOP</div>
+          <h1 className="db-h1">{shop?.name || "Your shop"}</h1>
+          <p className="db-sub">
+            {setupComplete
+              ? "Everything is set up. Generate this week's roster in one click."
+              : outstanding.length > 0
+                ? `Still to do: ${outstanding.slice(0, 3).join(", ")}${outstanding.length > 3 ? `, and ${outstanding.length - 3} more` : ""}.`
+                : "Finish setting up the shop before generating a roster."}
+          </p>
         </div>
-        <div className="text-right shrink-0">
-          <div className="font-mono text-lg">{setup.done}/{setup.total}</div>
-          <div className="text-[11px]" style={{ color: "var(--ink-mute-2)" }}>done</div>
+        <div className="db-actions">
+          {employees.length === 0 && (
+            <button type="button" data-testid="btn-seed" className="db-btn db-btn-2" onClick={seedDemo}>
+              <Sparkles size={15} strokeWidth={1.8} /> Load demo team
+            </button>
+          )}
+          <button
+            type="button"
+            data-testid="btn-reset"
+            className="db-btn db-btn-danger"
+            onClick={() => { setConfirmText(""); setConfirmOpen(true); }}
+            aria-describedby="db-reset-desc"
+          >
+            Reset all data
+          </button>
+          <span id="db-reset-desc" className="sr-only">
+            Permanently deletes every employee, roster and rule in this shop.
+          </span>
+          <button
+            type="button"
+            data-testid="btn-generate-roster"
+            className="db-btn db-btn-1"
+            onClick={() => navigate(`/roster?week=${nextOpenWeek}`)}
+          >
+            <Wand2 size={15} strokeWidth={1.8} /> Generate roster
+          </button>
         </div>
-      </div>
+      </header>
 
-      <div className="h-1 rounded-full overflow-hidden mb-5" style={{ background: "var(--canvas-raised)" }}>
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--primary)" }} />
-      </div>
-
-      <ol className="space-y-1">
-        {setup.steps.map((step, i) => {
-          const isNext = step.id === setup.next_step_id;
-          return (
-            <li
-              key={step.id}
-              data-testid={`setup-step-${step.id}`}
-              className="flex gap-3 p-3 rounded-lg"
-              style={{
-                background: isNext ? "var(--canvas-soft)" : "transparent",
-                border: isNext ? "1px solid var(--hairline-strong)" : "1px solid transparent",
-              }}
-            >
-              <div className="shrink-0 mt-0.5">
-                {step.done ? (
-                  <CheckCircle2 size={17} style={{ color: "var(--primary)" }} />
-                ) : (
-                  <div
-                    className="w-[17px] h-[17px] rounded-full flex items-center justify-center text-[10px] font-mono"
-                    style={{
-                      border: "1px solid var(--hairline-strong)",
-                      color: "var(--ink-mute-2)",
-                    }}
-                  >
-                    {i + 1}
-                  </div>
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span
-                    className="text-sm"
-                    style={{ color: step.done ? "var(--ink-mute)" : "var(--ink)" }}
-                  >
-                    {step.title}
-                  </span>
-                  {step.optional && <span className="pill">Optional</span>}
-                  {isNext && <span className="pill">Start here</span>}
-                </div>
-
-                {/* Shown until the step is done. A manager who does not know
-                    why importing matters will skip it, then blame the roster. */}
-                {!step.done && (
-                  <p className="text-[12px] mt-1 leading-relaxed" style={{ color: "var(--ink-mute)" }}>
-                    {step.why}
-                  </p>
-                )}
-
-                <div className="text-[11px] mt-1 font-mono" style={{ color: "var(--ink-mute-2)" }}>
-                  {step.detail}
-                </div>
-              </div>
-
-              {!step.done && (
-                <button
-                  data-testid={`setup-go-${step.id}`}
-                  onClick={() => navigate(step.action.path)}
-                  className={isNext ? "btn btn-primary shrink-0" : "btn btn-secondary shrink-0"}
-                >
-                  {step.action.label} <ArrowRight size={13} />
-                </button>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-
-      <button
-        onClick={() => setExplain(!explain)}
-        className="btn btn-ghost mt-4 text-[12px]"
-        data-testid="btn-how-it-works"
-      >
-        <HelpCircle size={14} /> {explain ? "Hide" : "How the roster is built"}
-      </button>
-
-      {explain && <HowItWorks />}
-
-      {setup.complete && (
-        <button onClick={() => setOpen(false)} className="btn btn-ghost mt-2 text-[12px]">
-          Hide this
-        </button>
+      {setup && (
+        <div className="db-setup">
+          <div className="db-setup-main">
+            {setupComplete ? (
+              <CheckCircle2 size={16} color="#3ddc91" strokeWidth={1.8} aria-hidden="true" />
+            ) : (
+              <AlertCircle size={16} color="#ffb066" strokeWidth={1.8} aria-hidden="true" />
+            )}
+            <span className="db-setup-head" data-state={setupComplete ? "done" : "todo"}>
+              {setupComplete ? "Setup complete" : `${stepsLeft} step${stepsLeft === 1 ? "" : "s"} left`}
+            </span>
+            <span className="db-setup-rest">
+              {setupComplete
+                ? `· ${employees.length} ${employees.length === 1 ? "person" : "people"}, shop hours and fixed shifts all in place`
+                : `· ${outstanding.join(", ")}`}
+            </span>
+          </div>
+          <button type="button" className="db-link" onClick={() => navigate("/onboarding")}>
+            {setupComplete ? "Review steps" : "Finish setup"}
+          </button>
+        </div>
       )}
-    </div>
-  );
-}
 
-/**
- * The walkthrough.
- *
- * Written as what the scheduler does and what it will refuse to do, because
- * the questions managers actually ask are "why is this hour empty" and "why
- * did it not give her that shift" — and the answer to both is a rule.
- */
-function HowItWorks() {
-  return (
-    <div className="mt-4 pt-4 space-y-5" style={{ borderTop: "1px solid var(--hairline)" }}>
-      <Explain title="Four rules that are never broken">
-        Somebody is on from opening to closing. A 24-hour shop always has
-        someone in. Hours go to the most senior role first. Nobody works more
-        than 12 hours or more than 5 days in a week. If keeping these means
-        leaving an hour empty, the roster leaves it empty and tells you —
-        rather than quietly rostering somebody who cannot legally be there.
-      </Explain>
+      <div className="db-stats">
+        <div className="db-stat">
+          <div className="db-stat-label">Team</div>
+          <div className="db-stat-value">
+            {employees.length}<span className="db-stat-unit">people</span>
+          </div>
+        </div>
+        <div className="db-stat">
+          <div className="db-stat-label">Compliance</div>
+          <div className="db-stat-value" data-tone={complianceTone(latest?.compliance_score)}>
+            {latest ? latest.compliance_score : "—"}
+            {latest && <span className="db-stat-unit">/100</span>}
+          </div>
+        </div>
+        <div className="db-stat">
+          <div className="db-stat-label">Weekly cost</div>
+          <div className="db-stat-value">{latest ? fmtMoney(latest.labor_cost) : "—"}</div>
+        </div>
+        <div className="db-stat">
+          <div className="db-stat-label">Utilisation</div>
+          <div className="db-stat-value">
+            {latest ? `${latest.utilization}%` : "—"}
+            {latest && <span className="db-stat-unit">of capacity</span>}
+          </div>
+        </div>
+      </div>
 
-      <Explain title="It copies your own rosters">
-        From the weeks you import, it learns which shifts your shop actually
-        runs, how many people are on each day, and who normally works what.
-        A generated week reuses those shapes. If somebody has never worked a
-        06:00 start, it will not give them one.
-      </Explain>
+      {/* Only when the current week was forced. The absence is the message. */}
+      {forced && (
+        <div className="db-forced">
+          <div className="db-forced-inner">
+            <div>
+              <div className="db-forced-label">This week was force-approved</div>
+              <p className="db-forced-say">
+                {forced.version} for the week of {fmtWeek(forced.week_start)} went out with{" "}
+                <strong>
+                  {brokenRules.length} rule{brokenRules.length === 1 ? "" : "s"} broken
+                </strong>
+                {forced.force_approved_by ? ` by ${forced.force_approved_by}` : ""}
+                {forced.force_approved_reason ? ` — “${forced.force_approved_reason}”` : ""}
+                {" "}— worth checking before the same happens next week.
+              </p>
+            </div>
+            <div className="db-forced-acts">
+              <button
+                type="button"
+                className="db-link"
+                onClick={() => navigate(`/roster?week=${forced.week_start}&roster=${forced.roster_id}`)}
+              >
+                See what broke
+              </button>
+              <button
+                type="button"
+                className="db-link db-link-mute"
+                onClick={() => navigate(`/roster?week=${forced.week_start}`)}
+              >
+                Open roster
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      <Explain title="Contracts are honoured before preferences">
-        Full-time contract means 42.5 hours on the floor, breaks included,
-        every week. The scheduler builds their shifts to reach it, choosing
-        the lengths that fit rather than a fixed block. Students and hourly
-        staff flex around them.
-      </Explain>
+      <div className="db-split">
+        <div className="db-left">
+          <div className="db-colhead-wrap">
+            <h2 className="db-h2">Recent rosters</h2>
+            <button type="button" className="db-link" onClick={() => navigate("/roster")}>
+              Open roster
+            </button>
+          </div>
 
-      <Explain title="Edit, then rebalance">
-        Change any shift and it becomes pinned. Press Rebalance and everyone
-        else is re-solved around your pinned shifts, so a small correction
-        does not cost you the rest of the week. A change that would break one
-        of the four rules is refused, with the reason.
-      </Explain>
+          {recent.length === 0 ? (
+            <div className="db-empty">
+              <span>No rosters yet — generate your first.</span>
+              <button
+                type="button"
+                className="db-btn db-btn-1"
+                onClick={() => navigate(`/roster?week=${nextOpenWeek}`)}
+              >
+                <Wand2 size={15} strokeWidth={1.8} /> Generate roster
+              </button>
+            </div>
+          ) : (
+            <div role="table" aria-label="Recent rosters">
+              <div className="db-row db-colhead" role="row">
+                <span role="columnheader">Week · version</span>
+                <span className="db-num" role="columnheader">Hours</span>
+                <span className="db-num" role="columnheader">Cost</span>
+                <span className="db-num" role="columnheader">Score</span>
+                <span className="db-num" role="columnheader">State</span>
+              </div>
 
-      <Explain title="Approving makes it real">
-        An approved week is the schedule people work, and it joins what the
-        scheduler learns from. It is locked at that point — to change it, use
-        Unapprove, which also takes it back out of the learning. A week that
-        has already been worked cannot be reopened.
-      </Explain>
-    </div>
-  );
-}
+              {recent.map((r) => {
+                const cost = Number(r.labor_cost) || 0;
+                const stamp = r.approved_at ? fmtStamp(r.approved_at) : null;
+                return (
+                  <button
+                    type="button"
+                    key={r.roster_id}
+                    className="db-row db-rosterrow"
+                    role="row"
+                    data-testid={`roster-row-${r.roster_id}`}
+                    onClick={() => navigate(`/roster?week=${r.week_start}&roster=${r.roster_id}`)}
+                    aria-label={`Week of ${fmtWeek(r.week_start)}, ${r.version}, ${r.approved ? "approved" : "draft"}. Open it.`}
+                  >
+                    <span role="cell" style={{ minWidth: 0 }}>
+                      <span className="db-rowtitle">
+                        Week of {fmtWeek(r.week_start)} · {r.version}
+                      </span>
+                      <span className="db-rowsub">
+                        {r.approved
+                          ? stamp ? `Approved ${stamp.label}` : "Approved"
+                          : r.archived ? "Superseded" : "Draft — not approved"}
+                        {r.force_approved ? " · force-approved" : ""}
+                      </span>
+                    </span>
+                    <span className="db-num db-val" role="cell">{fmtHours(r.total_hours)}</span>
+                    <span
+                      className="db-num db-val"
+                      role="cell"
+                      data-peak={peakCost > 0 && cost === peakCost}
+                    >
+                      {fmtMoney(cost)}
+                    </span>
+                    <span className="db-num db-val" role="cell">{r.compliance_score ?? "—"}</span>
+                    <span className="db-num" role="cell">
+                      {r.approved
+                        ? <span className="db-tag">Approved</span>
+                        : <span className="db-state-draft">Draft</span>}
+                    </span>
+                  </button>
+                );
+              })}
 
-function Explain({ title, children }) {
-  return (
-    <div>
-      <div className="text-[13px] font-medium mb-1">{title}</div>
-      <p className="text-[12px] leading-relaxed" style={{ color: "var(--ink-mute)" }}>
-        {children}
+              <div className="db-listfoot">
+                <span>
+                  {archivedDrafts > 0
+                    ? `${archivedDrafts} draft${archivedDrafts === 1 ? "" : "s"} for the week of ${fmtWeek(thisWeek)}`
+                    : `Showing ${recent.length} of ${rosters.length}`}
+                </span>
+                <button type="button" className="db-link" onClick={() => navigate("/past")}>
+                  Past rosters
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="db-right">
+          <div className="db-colhead-wrap">
+            <h2 className="db-h2">Activity</h2>
+            <span className="db-today">Latest</span>
+          </div>
+
+          {activity.length === 0 ? (
+            <div className="db-empty">Nothing has happened yet.</div>
+          ) : (
+            <>
+              <ol className="db-feed">
+                {activity.slice(0, 8).map((a) => {
+                  const parts = entryParts(a.detail);
+                  const stamp = fmtStamp(a.created_at);
+                  return (
+                    <li className="db-entry" key={a.log_id}>
+                      <button
+                        type="button"
+                        className="db-entry-btn"
+                        onClick={() => navigate(hrefForAction(a.action))}
+                      >
+                        <span className="db-entry-text">
+                          {parts.head && <strong>{parts.head}</strong>}
+                          {parts.before}
+                          {parts.warn && <em>{parts.warn}</em>}
+                          {parts.after}
+                        </span>
+                        <time className="db-entry-time" dateTime={stamp.iso}>{stamp.label}</time>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+              <div className="db-listfoot">
+                <span>{activity.length > 8 ? `Showing 8 of ${activity.length}` : `${activity.length} recent`}</span>
+                <button type="button" className="db-link" onClick={() => navigate("/roster")}>
+                  Show everything
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <p className="db-note">
+        <strong>Generate roster</strong> builds a draft for the next week with no roster yet
+        {nextOpenWeek ? ` — currently the week of ${fmtWeek(nextOpenWeek)}` : ""}. It never overwrites an
+        approved roster: reopening one starts a new version and says so.{" "}
+        <strong>Reset all data cannot be undone</strong> — it deletes every employee, roster, rule and
+        fixed shift in this shop, and there is no copy kept.
       </p>
-    </div>
-  );
-}
 
-function KpiCard({ icon, label, value, unit, accent, testId }) {
-  return (
-    <div data-testid={testId} className={`rounded-2xl p-6 ${accent ? "neon-border" : "glass"}`}>
-      <div className="flex items-center gap-2 text-xs text-white/50 uppercase tracking-wider">
-        <span className="text-cyan-400">{icon}</span> {label}
-      </div>
-      <div className="mt-4 flex items-baseline gap-2">
-        <div className="text-4xl font-light font-mono">{value}</div>
-        {unit && <div className="text-xs text-white/40">{unit}</div>}
-      </div>
+      {confirmOpen && (
+        <div className="db-scrim" onClick={() => !resetting && setConfirmOpen(false)}>
+          <div
+            className="db-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Reset all data"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Reset all data</h2>
+            <p>
+              This deletes <strong>every employee, roster, rule and fixed shift</strong> in{" "}
+              {shop?.name || "this shop"}. It cannot be undone and no copy is kept.
+            </p>
+            <label className="db-setup-rest" htmlFor="db-confirm">
+              Type RESET to confirm
+            </label>
+            <input
+              id="db-confirm"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="RESET"
+              autoComplete="off"
+              style={{ marginTop: 8 }}
+            />
+            <div className="db-dialog-acts">
+              <button
+                type="button"
+                className="db-btn db-btn-danger"
+                disabled={confirmText !== "RESET" || resetting}
+                onClick={resetAll}
+              >
+                {resetting ? "Resetting…" : "Reset everything"}
+              </button>
+              <button
+                type="button"
+                className="db-link db-link-mute"
+                disabled={resetting}
+                onClick={() => setConfirmOpen(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
