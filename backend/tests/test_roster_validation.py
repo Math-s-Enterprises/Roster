@@ -40,6 +40,45 @@ def check(shifts, employees=None, holidays=None, **kwargs):
     )
 
 
+def test_compiled_closing_role_rule_is_rechecked_after_manual_edits():
+    shop = make_shop(hours=[{
+        "day": "mon", "open": "09:00", "close": "22:00", "closed": False,
+    }])
+    employees = [
+        make_employee("manager", role="Manager"),
+        make_employee("cashier", role="Cashier"),
+    ]
+    rules = [{
+        "enabled": True,
+        "approved": True,
+        "compiled": {
+            "rule_type": "ROLE_REQUIREMENT",
+            "target_roles": ["Manager", "Supervisor"],
+            "time_slot": "CLOSING",
+            "min_count": 1,
+            "condition": "AT_LEAST",
+        },
+    }]
+
+    broken = validate_shifts(
+        [
+            shift("manager", start="09:00", end="17:00"),
+            shift("cashier", start="14:00", end="22:00"),
+        ],
+        shop=shop, employees=employees, week_start=WEEK, ai_rules=rules,
+    )
+    assert any("closing rule" in message for message in broken.blocking)
+
+    fixed = validate_shifts(
+        [
+            shift("cashier", start="09:00", end="17:00"),
+            shift("manager", start="14:00", end="22:00"),
+        ],
+        shop=shop, employees=employees, week_start=WEEK, ai_rules=rules,
+    )
+    assert not [message for message in fixed.blocking if "closing rule" in message]
+
+
 # ---------------------------------------------------------------------------
 # Refused outright
 # ---------------------------------------------------------------------------

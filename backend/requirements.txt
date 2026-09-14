@@ -21,7 +21,7 @@ bcrypt>=4.0
 google-auth>=2.35          # verifies Google Identity Services ID tokens
 
 # --- Integrations ----------------------------------------------------------
-anthropic>=0.40            # roster summaries, OCR, rule compilation
+anthropic>=0.104.1         # structured-output rule compilation, summaries, OCR
 stripe>=11.0
 httpx>=0.27                # Resend email API + image fetching for OCR
 

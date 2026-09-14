@@ -31,11 +31,11 @@ Done. Future generated approvals now preserve effective hard constraints, learne
 
 ### 3. Make closing rules work end to end
 
-- [ ] Support “either a manager or supervisor must be rostered at closing” as a shop-specific rule with an explicit closing scope.
-- [ ] Verify parsing, generation and validation agree, including overnight closing and insufficient eligible staff.
-- [ ] Explain unsupported rules or unmet requirements clearly in the app.
+- [x] Support “either a manager or supervisor must be rostered at closing” as a shop-specific rule with an explicit closing scope.
+- [x] Verify parsing, generation and validation agree, including overnight closing and insufficient eligible staff.
+- [x] Explain unsupported rules or unmet requirements clearly in the app.
 
-Done when the requested role alternative is enforced at closing and an impossible requirement is reported honestly.
+Done. Anthropic now compiles free text into schema-constrained JSON, while the backend accepts only rule shapes the deterministic scheduler can enforce. Closing is derived from each shop's configured hours, including a split shift after midnight. Generation places and protects a qualified closer; edits, audits, approval and training evidence recheck the same rule. Unsupported output and impossible or 24-hour closing requirements are reported instead of silently ignored. Validation: 881 passed, 1 expected failure; frontend production build passed with one pre-existing hook warning in `RosterView.js`.
 
 ### 4. Design and evaluate the next ML model
 

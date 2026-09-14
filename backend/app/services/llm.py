@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from app import config
+from app.services.rule_parser import validate_constraint
 
 log = logging.getLogger("roster.llm")
 
@@ -63,13 +64,20 @@ async def _complete(
     content: Any,
     *,
     max_tokens: int = 1024,
+    output_schema: Optional[Dict[str, Any]] = None,
 ) -> str:
     client = _get_client()
+    options = {}
+    if output_schema:
+        options["output_config"] = {
+            "format": {"type": "json_schema", "schema": output_schema}
+        }
     message = await client.messages.create(
         model=config.ANTHROPIC_MODEL,
         max_tokens=max_tokens,
         system=system,
         messages=[{"role": "user", "content": content}],
+        **options,
     )
     return "".join(block.text for block in message.content if block.type == "text")
 
@@ -136,12 +144,12 @@ def _sniff_media_type(data: bytes) -> str:
     return "image/jpeg"
 
 
-async def ocr_roster_image(image_url: str, known_employee_names: List[str]) -> Dict[str, Any]:
-    """Read a roster image from a URL."""
-    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as http:
-        response = await http.get(image_url)
-        response.raise_for_status()
-    return await ocr_roster_bytes(response.content, known_employee_names)
+#async def ocr_roster_image(image_url: str, known_employee_names: List[str]) -> Dict[str, Any]:
+#    """Read a roster image from a URL."""
+#    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as http:
+#        response = await http.get(image_url)
+#        response.raise_for_status()
+#    return await ocr_roster_bytes(response.content, known_employee_names)
 
 
 async def ocr_roster_bytes(
@@ -177,13 +185,42 @@ async def ocr_roster_bytes(
 # ---------------------------------------------------------------------------
 # 3. Rule compilation
 # ---------------------------------------------------------------------------
+ROSTER_RULE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "rule_type": {
+            "type": "string",
+            "enum": [
+                "ROLE_REQUIREMENT", "NO_CLOSE", "NO_OPEN", "NO_DAY",
+                "MAX_STAFF", "NOT_TOGETHER", "ROTATING_DAY_OFF",
+            ],
+        },
+        "target_roles": {"type": "array", "items": {"type": "string"}},
+        "time_slot": {"type": "string", "enum": ["CLOSING"]},
+        "min_count": {"type": "integer"},
+        "condition": {"type": "string", "enum": ["AT_LEAST"]},
+        "employee_ids": {"type": "array", "items": {"type": "string"}},
+        "days": {
+            "type": "array",
+            "items": {"type": "string", "enum": [
+                "mon", "tue", "wed", "thu", "fri", "sat", "sun",
+            ]},
+        },
+        "value": {"type": "integer"},
+        "description": {"type": "string"},
+    },
+    "required": ["rule_type"],
+    "additionalProperties": False,
+}
+
 _RULE_SYSTEM = (
-    "You convert natural-language scheduling rules into JSON constraints. "
-    "Reply with STRICT JSON only. Schema: "
-    '{"type":"no_close|no_open|no_day|max_hours|min_rest|required_together|'
-    'role_required_day|other","employee_ids":[...],"days":["mon".."sun"],'
-    '"role":"...","value":number,"description":"..."}. '
-    "Omit fields that do not apply. Only reference employee IDs from the provided list."
+    "You are a rule compiler for a deterministic workforce scheduler. "
+    "For a closing requirement use ROLE_REQUIREMENT with target_roles, "
+    "time_slot CLOSING, min_count 1 and condition AT_LEAST. Use the other "
+    "rule types only for their literal meaning. Omit days to mean every "
+    "trading day. Closing means the final interval before the shop's "
+    "configured closing time; never invent a clock time. Only reference "
+    "employee IDs from the supplied list."
 )
 
 
@@ -197,5 +234,9 @@ async def compile_rule(
         for e in employees
     ]
     prompt = f"Known employees: {roster}\n\nRule: {title} — {description}"
-    raw = await _complete(_RULE_SYSTEM, prompt, max_tokens=1024)
-    return _extract_json(raw)
+    raw = await _complete(
+        _RULE_SYSTEM, prompt, max_tokens=1024, output_schema=ROSTER_RULE_SCHEMA
+    )
+    return validate_constraint(
+        _extract_json(raw), {employee["id"] for employee in roster}
+    )

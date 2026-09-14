@@ -1548,6 +1548,91 @@ def test_a_custom_rule_is_enforced_without_an_api_key(client):
     assert sundays == [], "the rule was written but not obeyed"
 
 
+def test_manager_or_supervisor_closing_rule_survives_the_whole_http_flow(client):
+    token = register(client)
+    client.put(
+        "/api/shop",
+        json={"hours": [{
+            "day": "mon", "open": "09:00", "close": "22:00", "closed": False,
+        }]},
+        headers=auth(token),
+    )
+    roles = {}
+    for name, role in (("Morgan", "Manager"), ("Casey", "Cashier")):
+        employee = client.post(
+            "/api/employees",
+            json={
+                **EMPLOYEE, "name": name, "role": role,
+                "email": f"{name.lower()}@example.com",
+            },
+            headers=auth(token),
+        ).json()
+        roles[employee["employee_id"]] = role
+
+    rule = client.post(
+        "/api/ai-rules",
+        json={
+            "title": "Qualified closer",
+            "description": "Either a manager or supervisor must close every day",
+            "category": "custom",
+        },
+        headers=auth(token),
+    ).json()
+    assert rule["approved"] is True
+    assert rule["compiled"]["time_slot"] == "CLOSING"
+
+    roster = client.post(
+        "/api/roster/generate",
+        json={"week_start": _future_monday()},
+        headers=auth(token),
+    ).json()
+    monday = [shift for shift in roster["shifts"] if shift["day"] == "mon"]
+    closer = next(
+        shift for shift in monday
+        if shift["end"] == "22:00" and roles[shift["employee_id"]] == "Manager"
+    )
+    opener = next(
+        shift for shift in monday
+        if roles[shift["employee_id"]] == "Cashier"
+    )
+
+    edited = []
+    for shift in roster["shifts"]:
+        employee_id = shift["employee_id"]
+        if shift is closer:
+            employee_id = opener["employee_id"]
+        elif shift is opener:
+            employee_id = closer["employee_id"]
+        edited.append({
+            "employee_id": employee_id,
+            "day": shift["day"],
+            "start": shift.get("start") or "",
+            "end": shift.get("end") or "",
+        })
+
+    saved = client.put(
+        f"/api/rosters/{roster['roster_id']}",
+        json={"shifts": edited},
+        headers=auth(token),
+    )
+    assert saved.status_code == 200, saved.text
+    assert any("closing rule" in reason for reason in saved.json()["introduced"])
+
+    audit = client.get(
+        f"/api/rosters/{roster['roster_id']}/audit", headers=auth(token),
+    ).json()
+    assert any(
+        breach["rule"] == "closing_role_requirement"
+        for person in audit["people"] for breach in person["breaches"]
+    )
+
+    refused = client.post(
+        f"/api/rosters/{roster['roster_id']}/approve", headers=auth(token),
+    )
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["needs_force"] is True
+
+
 def test_an_unreadable_rule_is_reported_not_ignored(client):
     """Silently dropping it is how somebody writes a rule, sees it listed as
     enabled, and gets a roster that breaks it."""

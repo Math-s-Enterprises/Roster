@@ -22,7 +22,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.models import AIRuleIn
 from app.services import llm
-from app.services.rule_parser import parse_rule
+from app.services.rule_parser import parse_rule, validate_constraint
 from app.tenancy import ShopScope, CurrentScope
 
 router = APIRouter(prefix="/ai-rules", tags=["rules"])
@@ -63,6 +63,13 @@ async def _compile_locally(payload: AIRuleIn, scope: ShopScope) -> Dict[str, Any
     """
     employees = await scope.employees.find(limit=1000)
     compiled = parse_rule(payload.title, payload.description, employees)
+    if compiled:
+        try:
+            compiled = validate_constraint(
+                compiled, {employee["employee_id"] for employee in employees}
+            )
+        except ValueError:
+            compiled = None
     if compiled:
         # Auto-approved: a deterministic parse is auditable and reversible,
         # unlike a model's guess, so there is nothing to review.
@@ -125,17 +132,32 @@ async def compile_rule(rule_id: str, scope: ShopScope = CurrentScope):
     # Re-compiling revokes prior approval: the constraint has changed, so the
     # earlier sign-off no longer applies to it.
     await scope.ai_rules.update_one(
-        {"rule_id": rule_id}, {"compiled": compiled, "approved": False}
+        {"rule_id": rule_id}, {
+            "compiled": compiled, "approved": False, "compiled_by": "anthropic",
+        }
     )
-    return {"compiled": compiled, "approved": False}
+    return {"compiled": compiled, "approved": False, "compiled_by": "anthropic"}
 
 
 @router.post("/{rule_id}/approve-compiled")
 async def approve_compiled_rule(rule_id: str, scope: ShopScope = CurrentScope):
     rule = await _get_or_404(scope, rule_id)
+    _reject_if_locked(rule)
     if not rule.get("compiled"):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "This rule has not been compiled yet."
         )
-    await scope.ai_rules.update_one({"rule_id": rule_id}, {"approved": True})
+    employees = await scope.employees.find(limit=1000)
+    try:
+        compiled = validate_constraint(
+            rule["compiled"], {employee["employee_id"] for employee in employees}
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"This compiled rule cannot be enforced: {exc}",
+        )
+    await scope.ai_rules.update_one(
+        {"rule_id": rule_id}, {"compiled": compiled, "approved": True}
+    )
     return {"ok": True}

@@ -4,7 +4,12 @@ A rule the solver cannot read does nothing. Compiling used to go through the
 LLM, so a shop with no API key wrote rules that saved, displayed as enabled,
 and were silently ignored.
 """
-from app.services.rule_parser import parse_rule
+import asyncio
+
+import pytest
+
+from app.services import llm
+from app.services.rule_parser import parse_rule, validate_constraint
 
 TEAM = [
     {"employee_id": "e1", "name": "Sarah"},
@@ -20,6 +25,21 @@ def parse(text):
 
 
 class TestCommonShapes:
+    def test_manager_or_supervisor_at_closing_uses_the_role_schema(self):
+        rule = parse(
+            "I want either manager or supervisor closing every day. "
+            "There should be at least one."
+        )
+        assert rule == {
+            "rule_type": "ROLE_REQUIREMENT",
+            "target_roles": ["Manager", "Supervisor"],
+            "time_slot": "CLOSING",
+            "min_count": 1,
+            "condition": "AT_LEAST",
+            "days": [],
+            "description": "A manager or supervisor must cover closing",
+        }
+
     def test_never_works_a_day(self):
         rule = parse("Sarah never works Sundays")
         assert rule["type"] == "no_day"
@@ -67,6 +87,35 @@ class TestCareful:
 
     def test_empty_text_is_not_a_rule(self):
         assert parse_rule("", "", TEAM) is None
+
+    def test_an_unsupported_model_rule_cannot_be_approved(self):
+        with pytest.raises(ValueError, match="Unsupported rule type"):
+            validate_constraint({"rule_type": "REST_PERIOD", "min_count": 1})
+
+
+def test_anthropic_requests_schema_enforced_output(monkeypatch):
+    captured = {}
+
+    class Messages:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return type("Response", (), {
+                "content": [type("Block", (), {
+                    "type": "text",
+                    "text": '{"rule_type":"ROLE_REQUIREMENT"}',
+                })()]
+            })()
+
+    monkeypatch.setattr(
+        llm, "_get_client", lambda: type("Client", (), {"messages": Messages()})()
+    )
+    asyncio.run(llm._complete(
+        "system", "prompt", output_schema=llm.ROSTER_RULE_SCHEMA
+    ))
+
+    assert captured["output_config"] == {
+        "format": {"type": "json_schema", "schema": llm.ROSTER_RULE_SCHEMA}
+    }
 
 
 class TestANumberMustBeAboutPeople:

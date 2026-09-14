@@ -310,6 +310,7 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
         "training_proposal": training_evidence.proposal(
             result, shop=shop, employees=employees, holidays=holidays,
             week_start=payload.week_start, history_rosters=approved,
+            ai_rules=rules,
         ),
         "ai_summary": ai_summary,
         "approved": False,
@@ -467,6 +468,7 @@ async def update_roster(
     employees = await scope.employees.find(limit=1000)
     holidays = await scope.holidays.find(limit=1000)
     approved = await _approved_rosters(scope)
+    active_rules = await scope.ai_rules.find({"enabled": True}, limit=200)
 
     def check(candidate):
         return validate_shifts(
@@ -476,6 +478,7 @@ async def update_roster(
             holidays=holidays,
             week_start=existing["week_start"],
             history_rosters=approved,
+            ai_rules=active_rules,
         )
 
     before = check(existing.get("shifts", []))
@@ -601,6 +604,7 @@ async def suggest_for_gap(
     employees = await scope.employees.find(limit=1000)
     approved = await _approved_rosters(scope)
     week_start = roster["week_start"]
+    active_rules = await scope.ai_rules.find({"enabled": True}, limit=200)
 
     taken = {
         s["employee_id"] for s in roster.get("shifts", [])
@@ -625,6 +629,7 @@ async def suggest_for_gap(
             holidays=await scope.holidays.find(limit=1000),
             week_start=week_start,
             history_rosters=approved,
+            ai_rules=active_rules,
         )
         mine = [
             m for m in verdict.blocking + verdict.warnings
@@ -662,12 +667,14 @@ async def audit_roster(roster_id: str, scope: ShopScope = CurrentScope):
 
     employees = await scope.employees.find(limit=1000)
     holidays = await scope.holidays.find(limit=1000)
+    active_rules = await scope.ai_rules.find({"enabled": True}, limit=200)
     breaches = compliance.audit(
         roster.get("shifts") or [],
         shop=scope.shop,
         employees=employees,
         week_start=roster["week_start"],
         holidays=holidays,
+        ai_rules=active_rules,
     )
 
     # How this week compares to the shape the shop normally runs. Separate
@@ -708,7 +715,7 @@ async def audit_roster(roster_id: str, scope: ShopScope = CurrentScope):
         # (or broken) after the week was generated shows up here without
         # regenerating and losing the manager's edits.
         "inactive_rules": inactive_rule_titles(
-            await scope.ai_rules.find({"enabled": True}, limit=200)
+            active_rules
         ),
         "staffing": demand_service.compare_to_usual(
             roster.get("shifts") or [], profile,
@@ -780,12 +787,14 @@ async def approve_roster(
     # what they overrode.
     approval_employees = await scope.employees.find(limit=1000)
     approval_holidays = await scope.holidays.find(limit=1000)
+    approval_rules = await scope.ai_rules.find({"enabled": True}, limit=200)
     breaches = compliance.audit(
         roster.get("shifts") or [],
         shop=scope.shop,
         employees=approval_employees,
         week_start=roster["week_start"],
         holidays=approval_holidays,
+        ai_rules=approval_rules,
     )
     hard = compliance.blocking(breaches)
     if hard:
@@ -844,7 +853,7 @@ async def approve_roster(
     approval_context = training_evidence.context(
         scope.shop, approval_employees, approval_holidays,
         approval_fixed_shifts,
-        await scope.ai_rules.find({"enabled": True}),
+        approval_rules,
         week_start=roster["week_start"],
     )
     superseded = await scope.rosters.find({
@@ -886,6 +895,7 @@ async def approve_roster(
                 employees=approval_employees, holidays=approval_holidays,
                 week_start=roster["week_start"],
                 history_rosters=await _approved_rosters(scope),
+                ai_rules=approval_rules,
             ),
         ),
         # Recorded on the roster, so a week that went out with known gaps

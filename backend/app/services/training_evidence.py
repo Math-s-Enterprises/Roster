@@ -196,13 +196,13 @@ def assignment_source(shift):
 
 
 def constraint_outcome(shifts, *, shop, employees, holidays, week_start,
-                       history_rosters=None):
+                       history_rosters=None, ai_rules=None):
     """Derived constraint result, stripped of names and free-text messages."""
     from app.services import compliance
 
     breaches = compliance.audit(
         shifts, shop=shop, employees=employees, holidays=holidays,
-        week_start=week_start,
+        week_start=week_start, ai_rules=ai_rules,
     )
     return {
         "uncovered_hours": compliance.uncovered_hours(
@@ -222,7 +222,7 @@ def constraint_outcome(shifts, *, shop, employees, holidays, week_start,
 
 
 def proposal(result, *, shop, employees, holidays, week_start,
-             history_rosters=None):
+             history_rosters=None, ai_rules=None):
     """The solver's final proposal, with placement provenance and checks."""
     roles = {e.get("employee_id"): e.get("role", "") for e in employees}
     decisions = []
@@ -246,7 +246,7 @@ def proposal(result, *, shop, employees, holidays, week_start,
         "constraint_outcome": constraint_outcome(
             result.get("shifts") or [], shop=shop, employees=employees,
             holidays=holidays, week_start=week_start,
-            history_rosters=history_rosters,
+            history_rosters=history_rosters, ai_rules=ai_rules,
         ),
         "summary": {
             "shift_rows": len(result.get("shifts") or []),

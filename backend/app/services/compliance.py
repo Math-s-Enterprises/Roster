@@ -45,9 +45,10 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from app.services import availability as avail
-from app.services import hierarchy
+from app.services import hierarchy, rule_parser
 from app.services.scheduler import (
     ABSOLUTE_MAX_SHIFT_HOURS,
+    covers_closing,
     DAYS,
     MAX_WORKING_DAYS,
     MIN_REST_HOURS,
@@ -115,6 +116,95 @@ def _leave_dates(holidays: List[Dict[str, Any]]) -> Dict[str, set]:
             blocked.setdefault(employee_id, set()).add(cursor.isoformat())
             cursor += timedelta(days=1)
     return blocked
+
+
+def closing_role_breaches(
+    shifts: List[Dict[str, Any]],
+    *,
+    shop: Dict[str, Any],
+    employees: List[Dict[str, Any]],
+    ai_rules: Optional[List[Dict[str, Any]]] = None,
+    week_start: Optional[str] = None,
+    holidays: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """Trading days where a compiled closing role requirement is unmet."""
+    constraints = rule_parser.compiled_constraints(ai_rules or [])
+    if not any(
+        rule_parser.closing_supervisor_rules(constraints, day) for day in DAYS
+    ):
+        return []
+
+    by_id = {employee["employee_id"]: employee for employee in employees}
+    hours_by_day = {
+        row.get("day"): row for row in (shop or {}).get("hours") or []
+    }
+    closed_dates = set()
+    for holiday in holidays or []:
+        if holiday.get("scope") != "shop":
+            continue
+        try:
+            start = datetime.strptime(holiday["date"], "%Y-%m-%d").date()
+            end = datetime.strptime(
+                holiday.get("end_date") or holiday["date"], "%Y-%m-%d"
+            ).date()
+        except (KeyError, TypeError, ValueError):
+            continue
+        while start <= end:
+            closed_dates.add(start.isoformat())
+            start += timedelta(days=1)
+
+    try:
+        monday = datetime.strptime(week_start or "", "%Y-%m-%d").date()
+        date_for = {
+            DAYS[index]: (monday + timedelta(days=index)).isoformat()
+            for index in range(7)
+        }
+    except ValueError:
+        date_for = {}
+
+    breaches = []
+    for day in DAYS:
+        if not rule_parser.closing_supervisor_rules(constraints, day):
+            continue
+        hours = hours_by_day.get(day)
+        if not hours or hours.get("closed") or date_for.get(day) in closed_dates:
+            continue
+        if (shop or {}).get("open_24h"):
+            message = (
+                f"The closing role rule cannot apply on {day}: this shop is "
+                f"configured as open 24 hours and has no closing time."
+            )
+        else:
+            open_m = to_minutes(hours["open"])
+            close_m = to_minutes(hours["close"])
+            if close_m <= open_m:
+                close_m += 24 * 60
+
+            covered = False
+            for shift in _worked(shifts):
+                if shift.get("day") != day:
+                    continue
+                employee = by_id.get(shift.get("employee_id"), {})
+                if not hierarchy.is_supervisory(employee.get("role"), shop):
+                    continue
+                if covers_closing(shift["start"], shift["end"], close_m):
+                    covered = True
+                    break
+            if covered:
+                continue
+            message = (
+                f"Your closing rule requires at least one manager or supervisor "
+                f"at {hours['close']} on {day}, but none is rostered then."
+            )
+
+        breaches.append({
+            "employee_id": None,
+            "name": "Closing coverage",
+            "rule": "closing_role_requirement",
+            "message": message,
+            "overridable": True,
+        })
+    return breaches
 
 
 def uncovered_hours(
@@ -196,6 +286,7 @@ def audit(
     employees: List[Dict[str, Any]],
     week_start: str,
     holidays: Optional[List[Dict[str, Any]]] = None,
+    ai_rules: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Every rule this week breaks, grouped by the person it affects.
 
@@ -365,6 +456,11 @@ def audit(
                     f"{name} finishes {earlier['end']} on {earlier['day']} and "
                     f"starts {later['start']} on {later['day']} — {rest:.1f}h "
                     f"off, under the {min_rest:g}h between shifts.")
+
+    found.extend(closing_role_breaches(
+        shifts, shop=shop, employees=employees, ai_rules=ai_rules,
+        week_start=week_start, holidays=holidays,
+    ))
 
     # Hard breaches first, then by person: whoever reads this should meet the
     # thing they cannot override before the things they can.

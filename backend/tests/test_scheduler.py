@@ -166,6 +166,55 @@ class TestRuleOneRolePriority:
         assert monday[0]["employee_id"] == "mgr"
 
 
+class TestCompiledClosingRoleRule:
+    RULE = [{
+        "enabled": True,
+        "approved": True,
+        "compiled": {
+            "rule_type": "ROLE_REQUIREMENT",
+            "target_roles": ["Manager", "Supervisor"],
+            "time_slot": "CLOSING",
+            "min_count": 1,
+            "condition": "AT_LEAST",
+        },
+    }]
+
+    @pytest.mark.parametrize("opening,closing,max_h", [
+        ("09:00", "22:00", 7),
+        ("22:00", "06:00", 8),
+        ("20:00", "06:00", 5),
+    ])
+    def test_manager_or_supervisor_covers_normal_and_overnight_closing(
+        self, opening, closing, max_h
+    ):
+        team = big_team()
+        roles = {employee["employee_id"]: employee["role"] for employee in team}
+        result = solve_roster(
+            make_shop(opening, closing, max_h=max_h),
+            team, [], [], self.RULE, WEEK,
+        )
+
+        for day in ALL_DAYS:
+            closers = [
+                shift for shift in result["shifts"]
+                if shift["day"] == day and shift["end"] == closing
+            ]
+            assert any(
+                roles[shift["employee_id"]] in {"Manager", "Supervisor"}
+                for shift in closers
+            ), f"{day} has no manager or supervisor at {closing}"
+
+    def test_impossible_closing_cover_is_reported(self):
+        result = solve_roster(
+            make_shop("09:00", "22:00"),
+            [make_employee("cashier", "Cashier", max_hours=80)],
+            [], [], self.RULE, WEEK,
+        )
+        assert any(
+            "requires a manager or supervisor at closing" in issue
+            for issue in result["issues"]
+        )
+
 # ---------------------------------------------------------------------------
 # RULE 2 — continuous coverage
 # ---------------------------------------------------------------------------
