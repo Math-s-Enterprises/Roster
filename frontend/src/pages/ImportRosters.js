@@ -317,13 +317,13 @@ export default function ImportRosters() {
         >
           {busy ? (
             <>
-              <Loader2 size={28} className="animate-spin" color="#3ddc91" aria-hidden="true" />
+              <Loader2 size={28} className="animate-spin" color="var(--t-accent)" aria-hidden="true" />
               <h2 className="im-drop-head">Reading {reading}…</h2>
               <p className="im-drop-sub">Photos and PDFs take longer — they are read page by page.</p>
             </>
           ) : (
             <>
-              <Upload size={28} color="#3ddc91" strokeWidth={1.8} aria-hidden="true" />
+              <Upload size={28} color="var(--t-accent)" strokeWidth={1.8} aria-hidden="true" />
               <h2 className="im-drop-head">Drop a roster file here</h2>
               <p className="im-drop-sub">
                 Excel · CSV{caps.pdf ? " · PDF" : ""}{caps.image ? " · photo" : ""}
@@ -592,7 +592,7 @@ function ImportedWeeks({ refreshKey, summary, onChange, onReplace }) {
         </div>
         <div className="im-controls">
           <div className="im-search">
-            <Search size={14} color="#6f6f6f" strokeWidth={1.6} aria-hidden="true" />
+            <Search size={14} color="var(--t-faint)" strokeWidth={1.6} aria-hidden="true" />
             <input
               value={query}
               onChange={(e) => { setQuery(e.target.value); setVisible(PAGE); }}

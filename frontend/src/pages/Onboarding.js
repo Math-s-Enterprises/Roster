@@ -310,7 +310,7 @@ export default function Onboarding() {
                 onChange={(e) => setOpen24h(e.target.checked)}
               />
               <span className="ss-box" aria-hidden="true">
-                {open24h && <Check size={12} color="#04140c" strokeWidth={3} />}
+                {open24h && <Check size={12} color="var(--t-on-accent)" strokeWidth={3} />}
               </span>
               <span className="ss-check-label">Open 24 hours</span>
             </label>
@@ -542,7 +542,7 @@ export default function Onboarding() {
                 onChange={(e) => setStrictDaysOff(e.target.checked)}
               />
               <span className="ss-box" aria-hidden="true">
-                {strictDaysOff && <Check size={12} color="#04140c" strokeWidth={3} />}
+                {strictDaysOff && <Check size={12} color="var(--t-on-accent)" strokeWidth={3} />}
               </span>
               <span className="ss-check-label">Preferred days off are never overridden</span>
             </label>
@@ -562,7 +562,7 @@ export default function Onboarding() {
                 onChange={(e) => setBreaksPaid(e.target.checked)}
               />
               <span className="ss-box" aria-hidden="true">
-                {breaksPaid && <Check size={12} color="#04140c" strokeWidth={3} />}
+                {breaksPaid && <Check size={12} color="var(--t-on-accent)" strokeWidth={3} />}
               </span>
               <span className="ss-check-label">Breaks are paid</span>
             </label>
