@@ -554,7 +554,7 @@ export default function RosterView() {
         e.name, e.role, (e.departments || []).join("/"), DAY_LABELS[s.day],
         d.toISOString().slice(0, 10),
         s.start || label, s.end || label,
-        shiftPaidHours(s).toFixed(1),
+        shiftPaidHours(s, !!shop?.breaks_are_paid).toFixed(1),
       ]);
     });
     const csv = rows.map((r) => r.join(",")).join("\n");
@@ -591,7 +591,7 @@ export default function RosterView() {
       pdf.text(DAY_LABELS[s.day], colX[2], y);
       pdf.text(fmtDayDate(d), colX[3], y);
       pdf.text(s.start && s.end ? `${s.start} – ${s.end}` : label, colX[4], y);
-      pdf.text(`${shiftPaidHours(s).toFixed(1)}h`, colX[5], y);
+      pdf.text(`${shiftPaidHours(s, !!shop?.breaks_are_paid).toFixed(1)}h`, colX[5], y);
       y += 6; if (y > 195) { pdf.addPage(); y = 20; }
     });
     // Footer
@@ -738,8 +738,9 @@ export default function RosterView() {
   const shownPeople = gridPeople.slice(0, visiblePeople);
 
   const hoursFor = (id) => (roster?.shifts || [])
-    .filter((s) => s.employee_id === id)
-    .reduce((a, s) => a + shiftPaidHours(s), 0);
+    .filter((s) => s.employee_id === id && s.start && s.end
+      && !s.paid_holiday && !s.unpaid_holiday && !s.sick)
+    .reduce((a, s) => a + shiftPaidHours(s, !!shop?.breaks_are_paid), 0);
 
   const headcount = (day) =>
     (shiftsByDay[day] || []).filter((s) => s.start && !s.paid_holiday && !s.unpaid_holiday && !s.sick).length;

@@ -191,16 +191,30 @@ def inactive_rule_titles(ai_rules: List[Dict[str, Any]]) -> List[str]:
     ]
 
 
-def shift_paid_hours(shift: Dict[str, Any]) -> float:
+def shift_paid_hours(
+    shift: Dict[str, Any], *, breaks_paid: Optional[bool] = None,
+) -> float:
     """Paid hours for a stored shift, whatever shape it is in.
 
     Handles three cases: entries that already carry `paid_hours` (everything
     the current solver writes), paid-holiday entries which have no times at
-    all, and older rosters written before breaks were modelled.
+    all, and older rosters written before breaks were modelled. Passing the
+    shop's current break setting deliberately recomputes working shifts from
+    their times, so changing that setting cannot leave old stored totals on
+    screen.
     """
+    start, end = shift.get("start") or "", shift.get("end") or ""
+    is_leave = any(shift.get(flag) for flag in (
+        "paid_holiday", "unpaid_holiday", "sick",
+    ))
+    if breaks_paid is not None and start and end and not is_leave:
+        span = shift_duration_minutes(start, end) / 60
+        if breaks_paid:
+            return span
+        if shift.get("break_minutes") is not None:
+            return max(0.0, span - float(shift["break_minutes"]) / 60)
     if shift.get("paid_hours") is not None:
         return float(shift["paid_hours"])
-    start, end = shift.get("start") or "", shift.get("end") or ""
     if not start or not end:
         return 0.0
     return paid_hours(start, end)

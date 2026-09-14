@@ -154,11 +154,9 @@ def build_report(
                 continue
 
             span = shift_span_hours(shift)
-            paid = shift_paid_hours(shift)
-            if breaks_paid:
-                # The stored paid_hours was written with breaks deducted;
-                # a shop that pays through them owes the full span.
-                paid = span
+            # Recompute from the times and the CURRENT shop setting. Stored
+            # hours may have been written before that setting was changed.
+            paid = shift_paid_hours(shift, breaks_paid=breaks_paid)
 
             row["span_hours"] += span
             row["paid_hours"] += paid

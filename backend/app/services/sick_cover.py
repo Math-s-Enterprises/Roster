@@ -121,7 +121,9 @@ def rank_cover(
             continue
         if not (shift.get("start") and shift.get("end")):
             continue
-        worked[eid] = worked.get(eid, 0.0) + shift_paid_hours(shift)
+        worked[eid] = worked.get(eid, 0.0) + shift_paid_hours(
+            shift, breaks_paid=breaks_paid,
+        )
         spanned[eid] = spanned.get(eid, 0.0) + (
             shift_duration_minutes(shift["start"], shift["end"]) / 60
         )

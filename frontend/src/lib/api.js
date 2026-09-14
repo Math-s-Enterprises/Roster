@@ -233,13 +233,24 @@ export function shiftHours(start, end) {
 /**
  * Paid hours for a stored shift — what the person is actually paid for.
  *
- * Prefers the figure the backend computed, because it is the one payroll
- * uses and it is the only one that exists for a holiday entry (which has no
- * times at all). Falls back to the span for older rosters saved before
- * paid_hours was recorded.
+ * When the shop setting is supplied, working shifts are recalculated from
+ * their times so a setting change takes effect immediately. Holiday entries
+ * have no times and therefore keep their stored paid entitlement.
  */
-export function shiftPaidHours(shift) {
+export function shiftPaidHours(shift, breaksArePaid) {
   if (!shift) return 0;
+  const isLeave = shift.paid_holiday || shift.unpaid_holiday || shift.sick;
+  if (typeof breaksArePaid === "boolean" && shift.start && shift.end && !isLeave) {
+    const span = shiftHours(shift.start, shift.end);
+    if (breaksArePaid) return span;
+    if (Number.isFinite(shift.break_minutes)) {
+      return Math.max(0, span - shift.break_minutes / 60);
+    }
+    if (Number.isFinite(shift.paid_hours)) return shift.paid_hours;
+    const breakMinutes = span >= 10 ? 60 : span >= 8 ? 45
+      : span >= 6 ? 30 : span >= 5 ? 15 : 0;
+    return Math.max(0, span - breakMinutes / 60);
+  }
   if (Number.isFinite(shift.paid_hours)) return shift.paid_hours;
   return shiftHours(shift.start, shift.end);
 }

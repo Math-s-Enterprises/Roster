@@ -443,6 +443,27 @@ def test_editing_a_shift_does_not_strip_holiday_pay(client):
     assert after.get("paid_hours") == holiday.get("paid_hours")
 
 
+def test_saved_roster_hours_follow_the_current_break_setting(client):
+    """Changing the shop setting must immediately change every roster total."""
+    token = register(client)
+    roster_id, employee_id, other_id, shifts = _roster_with_leave(client, token)
+    saved = client.put(
+        f"/api/rosters/{roster_id}", json={"shifts": shifts}, headers=auth(token),
+    ).json()
+    work = next(s for s in saved["shifts"] if s["employee_id"] == employee_id)
+    assert work["paid_hours"] == pytest.approx(7.25)
+    assert saved["total_hours"] == pytest.approx(7.2)
+
+    client.put("/api/shop", json={"breaks_are_paid": True}, headers=auth(token))
+    roster = next(
+        r for r in client.get("/api/rosters", headers=auth(token)).json()
+        if r["roster_id"] == roster_id
+    )
+    work = next(s for s in roster["shifts"] if s["employee_id"] == employee_id)
+    assert work["paid_hours"] == pytest.approx(8.0)
+    assert roster["total_hours"] == pytest.approx(8.0)
+
+
 def _week_with_a_pre_existing_breach(client, token):
     """A saved roster that has since come to break a rule.
 

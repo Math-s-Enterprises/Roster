@@ -1,4 +1,4 @@
-import { availabilityConflict, leaveConflict } from "../lib/api";
+import { availabilityConflict, leaveConflict, shiftPaidHours } from "../lib/api";
 
 test("an unavailable roster day is named before a manual shift is saved", () => {
   expect(availabilityConflict(
@@ -24,4 +24,10 @@ test("a live leave booking is named before a manual shift is saved", () => {
     "2026-08-10",
     "wed",
   )).toBe("Anish is on unpaid leave on Wednesday.");
+});
+
+test("displayed hours follow the shop break setting, not a stored old total", () => {
+  const shift = { start: "09:00", end: "17:00", paid_hours: 7.25 };
+  expect(shiftPaidHours(shift, false)).toBe(7.25);
+  expect(shiftPaidHours(shift, true)).toBe(8);
 });
