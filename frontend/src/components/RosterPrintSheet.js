@@ -74,7 +74,7 @@ export default function RosterPrintSheet({ roster, employees, shop, pages = 1 })
   const cell = (shift) => {
     if (!shift) return "";
     if (shift.paid_holiday) return "Holiday";
-    if (shift.unpaid_holiday) return "Unpaid";
+    if (shift.unpaid_holiday) return "N/A";
     if (shift.sick) return "Sick";
     return `${shift.start}–${shift.end}`;
   };
@@ -115,7 +115,11 @@ export default function RosterPrintSheet({ roster, employees, shop, pages = 1 })
               {group.people.map((employee) => {
                 const mine = byPerson[employee.employee_id] || {};
                 const hours = Object.values(mine)
-                  .reduce((total, s) => total + shiftPaidHours(s), 0);
+                  .filter((s) => s.start && s.end
+                    && !s.paid_holiday && !s.unpaid_holiday && !s.sick)
+                  .reduce((total, s) => total + shiftPaidHours(
+                    s, !!shop?.breaks_are_paid,
+                  ), 0);
                 return (
                   <tr key={employee.employee_id} style={{ height: `${rowMm}mm` }}>
                     <td className="print-name-col">{employee.name}</td>

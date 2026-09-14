@@ -70,7 +70,7 @@ const edge = (t) => (typeof t === "string" && t.endsWith(":00") ? t.slice(0, 2) 
 const isLeave = (shift) => Boolean(shift.paid_holiday || shift.unpaid_holiday || shift.sick);
 
 const leaveWord = (shift) =>
-  shift.sick ? "Sick" : shift.unpaid_holiday ? "Unpaid" : "Holiday";
+  shift.sick ? "Sick" : shift.unpaid_holiday ? "N/A" : "Holiday";
 
 /** Tags for the identity block, at most four. */
 function tagsFor(employee, balance, overBy) {

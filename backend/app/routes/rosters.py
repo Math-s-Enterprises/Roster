@@ -32,6 +32,7 @@ from app.services.scheduler import (
     MAX_WORKING_DAYS,
     break_minutes,
     paid_hours,
+    shop_breaks_paid,
     shift_duration_minutes,
     shift_paid_hours,
     solve_roster,
@@ -56,6 +57,48 @@ async def _approved_rosters(scope: ShopScope) -> List[Dict[str, Any]]:
     the weights instead of failing visibly.
     """
     return [roster async for roster in scope.rosters.stream({"approved": True})]
+
+
+def _with_current_break_setting(
+    roster: Dict[str, Any], shop: Dict[str, Any], employees: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Present roster hours and wages using the shop's setting right now."""
+    breaks_paid = shop_breaks_paid(shop)
+    rates = {e["employee_id"]: e.get("hourly_rate", 0) for e in employees}
+    shifts = []
+    per_employee: Dict[str, float] = {
+        employee["employee_id"]: 0.0 for employee in employees
+    }
+    total = labor = 0.0
+
+    for stored in roster.get("shifts", []):
+        shift = dict(stored)
+        is_work = bool(shift.get("start") and shift.get("end")) and not any(
+            shift.get(flag) for flag in ("paid_holiday", "unpaid_holiday", "sick")
+        )
+        if is_work:
+            hours = shift_paid_hours(shift, breaks_paid=breaks_paid)
+            shift["paid_hours"] = round(hours, 2)
+            total += hours
+            per_employee[shift["employee_id"]] = (
+                per_employee.get(shift["employee_id"], 0.0) + hours
+            )
+        if not (shift.get("unpaid_holiday") or shift.get("sick")):
+            labor += shift_paid_hours(
+                shift, breaks_paid=breaks_paid,
+            ) * rates.get(shift.get("employee_id"), 0)
+        shifts.append(shift)
+
+    return {
+        **roster,
+        "shifts": shifts,
+        "total_hours": round(total, 1),
+        "labor_cost": round(labor, 2),
+        "per_employee_hours": {
+            employee_id: round(hours, 1)
+            for employee_id, hours in per_employee.items()
+        },
+    }
 
 
 async def _approved_for_week(
@@ -334,7 +377,14 @@ async def list_rosters(
     limit: int = Query(200, ge=1, le=500),
     skip: int = Query(0, ge=0),
 ):
-    return await scope.rosters.find(limit=limit, skip=skip, sort=[("created_at", -1)])
+    rosters = await scope.rosters.find(
+        limit=limit, skip=skip, sort=[("created_at", -1)],
+    )
+    employees = await scope.employees.find(limit=1000)
+    return [
+        _with_current_break_setting(roster, scope.shop, employees)
+        for roster in rosters
+    ]
 
 
 @router.get("/rosters/past")
@@ -343,9 +393,14 @@ async def list_past_rosters(
     limit: int = Query(200, ge=1, le=500),
 ):
     today = datetime.now(timezone.utc).date().isoformat()
-    return await scope.rosters.find(
+    rosters = await scope.rosters.find(
         {"week_start": {"$lt": today}}, limit=limit, sort=[("week_start", -1)]
     )
+    employees = await scope.employees.find(limit=1000)
+    return [
+        _with_current_break_setting(roster, scope.shop, employees)
+        for roster in rosters
+    ]
 
 
 # NOTE: declared after /rosters/past so the literal path wins. FastAPI
@@ -386,7 +441,8 @@ async def get_roster(roster_id: str, scope: ShopScope = CurrentScope):
         + " — the shop would be left unattended."
         for run in collapse_hour_runs(uncovered)
     ]
-    return roster
+    employees = await scope.employees.find(limit=1000)
+    return _with_current_break_setting(roster, scope.shop, employees)
 
 
 # ---------------------------------------------------------------------------
@@ -449,7 +505,10 @@ async def update_roster(
             record.update({
                 "span_hours": round(span, 2),
                 "break_minutes": break_minutes(span),
-                "paid_hours": round(paid_hours(data["start"], data["end"]), 2),
+                "paid_hours": round(paid_hours(
+                    data["start"], data["end"],
+                    breaks_paid=shop_breaks_paid(scope.shop),
+                ), 2),
             })
             # A work shift cannot inherit a leave label from whatever used to
             # occupy this slot.
@@ -525,14 +584,15 @@ async def update_roster(
     pre_existing = [p for p in verdict.blocking if p not in introduced]
 
     rates = {e["employee_id"]: e.get("hourly_rate", 0) for e in employees}
-    # Paid hours, matching how the solver costs a roster — breaks are unpaid,
-    # and a paid-holiday day still costs a day's wages.
+    breaks_paid = shop_breaks_paid(scope.shop)
+    # Paid hours, matching how the solver costs a roster. Paid holiday still
+    # costs wages; whether work breaks are paid is this shop's setting.
     labor_cost = sum(
-        shift_paid_hours(s) * rates.get(s["employee_id"], 0)
+        shift_paid_hours(s, breaks_paid=breaks_paid) * rates.get(s["employee_id"], 0)
         for s in shifts if not (s.get("unpaid_holiday") or s.get("sick"))
     )
     total_hours = sum(
-        shift_paid_hours(s)
+        shift_paid_hours(s, breaks_paid=breaks_paid)
         for s in shifts
         if not (s.get("unpaid_holiday") or s.get("sick") or s.get("paid_holiday"))
     )
@@ -578,7 +638,10 @@ async def update_roster(
     saved = await scope.rosters.find_one({"roster_id": roster_id})
     # What THIS edit caused, so the UI can name it rather than showing the
     # week's whole backlog of problems after every keystroke.
-    return {**saved, "introduced": introduced}
+    return {
+        **_with_current_break_setting(saved, scope.shop, employees),
+        "introduced": introduced,
+    }
 
 
 @router.get("/rosters/{roster_id}/suggestions")
@@ -1064,7 +1127,10 @@ async def report_sick(
             "end": original["end"],
             "span_hours": round(span, 2),
             "break_minutes": break_minutes(span),
-            "paid_hours": round(paid_hours(original["start"], original["end"]), 2),
+            "paid_hours": round(paid_hours(
+                original["start"], original["end"],
+                breaks_paid=shop_breaks_paid(scope.shop),
+            ), 2),
             "fixed": False,
             # Pinned so a later rebalance cannot quietly undo the cover the
             # manager arranged by phone.
@@ -1079,11 +1145,12 @@ async def report_sick(
     await scope.rosters.update_one({"roster_id": roster_id}, {
         "shifts": shifts,
         "labor_cost": sum(
-            shift_paid_hours(s) * rates.get(s["employee_id"], 0)
+            shift_paid_hours(s, breaks_paid=shop_breaks_paid(scope.shop))
+            * rates.get(s["employee_id"], 0)
             for s in shifts if not (s.get("unpaid_holiday") or s.get("sick"))
         ),
         "total_hours": sum(
-            shift_paid_hours(s) for s in shifts
+            shift_paid_hours(s, breaks_paid=shop_breaks_paid(scope.shop)) for s in shifts
             if not (s.get("unpaid_holiday") or s.get("sick") or s.get("paid_holiday"))
         ),
     })
@@ -1169,11 +1236,12 @@ async def undo_sick(
     await scope.rosters.update_one({"roster_id": roster_id}, {
         "shifts": shifts,
         "labor_cost": sum(
-            shift_paid_hours(s) * rates.get(s["employee_id"], 0)
+            shift_paid_hours(s, breaks_paid=shop_breaks_paid(scope.shop))
+            * rates.get(s["employee_id"], 0)
             for s in shifts if not (s.get("unpaid_holiday") or s.get("sick"))
         ),
         "total_hours": sum(
-            shift_paid_hours(s) for s in shifts
+            shift_paid_hours(s, breaks_paid=shop_breaks_paid(scope.shop)) for s in shifts
             if not (s.get("unpaid_holiday") or s.get("sick") or s.get("paid_holiday"))
         ),
     })
@@ -1283,7 +1351,10 @@ async def add_extra_shift(
         "end": payload.end,
         "span_hours": round(span, 2),
         "break_minutes": break_minutes(span),
-        "paid_hours": round(paid_hours(payload.start, payload.end), 2),
+        "paid_hours": round(paid_hours(
+            payload.start, payload.end,
+            breaks_paid=shop_breaks_paid(scope.shop),
+        ), 2),
         "fixed": False,
         # Both flags. `extra` keeps it off the demand slots; `pinned` keeps a
         # rebalance from moving the person out from under it.
@@ -1296,11 +1367,12 @@ async def add_extra_shift(
     await scope.rosters.update_one({"roster_id": roster_id}, {
         "shifts": shifts,
         "labor_cost": sum(
-            shift_paid_hours(s) * rates.get(s["employee_id"], 0)
+            shift_paid_hours(s, breaks_paid=shop_breaks_paid(scope.shop))
+            * rates.get(s["employee_id"], 0)
             for s in shifts if not (s.get("unpaid_holiday") or s.get("sick"))
         ),
         "total_hours": sum(
-            shift_paid_hours(s) for s in shifts
+            shift_paid_hours(s, breaks_paid=shop_breaks_paid(scope.shop)) for s in shifts
             if not (s.get("unpaid_holiday") or s.get("sick") or s.get("paid_holiday"))
         ),
     })

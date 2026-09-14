@@ -152,6 +152,57 @@ export const DAY_LABELS = {
   fri: "Friday", sat: "Saturday", sun: "Sunday",
 };
 
+export function availabilityConflict(employee, day, start, end) {
+  const availability = employee?.availability;
+  if (!availability) return null;
+  const name = employee.name || "This employee";
+  if (availability.available_days?.length
+      && !availability.available_days.includes(day)) {
+    return `${name} is not available on ${DAY_LABELS[day]}.`;
+  }
+  if (availability.earliest_start && start < availability.earliest_start) {
+    return `${name} cannot start before ${availability.earliest_start}.`;
+  }
+  const overnight = end <= start;
+  if (availability.latest_finish) {
+    const finish = overnight || end === "00:00" ? "24:00" : end;
+    const latest = availability.latest_finish === "00:00"
+      ? "24:00" : availability.latest_finish;
+    if (finish > latest) {
+      return `${name} cannot work past ${availability.latest_finish}.`;
+    }
+  }
+  if (overnight && availability.can_work_overnight === false) {
+    return `${name} does not work overnight shifts.`;
+  }
+  return null;
+}
+
+/** Return a warning when a work shift overlaps a live leave booking.
+ *
+ * This reads the holiday records rather than the roster cell, so it also
+ * catches a leave booking added after a draft roster was generated.
+ */
+export function leaveConflict(holidays, employee, weekStart, day) {
+  const employeeId = employee?.employee_id;
+  if (!employeeId || !weekStart || !DAYS.includes(day)) return null;
+
+  const date = new Date(`${weekStart}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + DAYS.indexOf(day));
+  const dateIso = date.toISOString().slice(0, 10);
+  const booking = (holidays || []).find((holiday) => (
+    holiday.employee_id === employeeId
+      && ["employee", "unavailable", "sick"].includes(holiday.scope)
+      && holiday.date <= dateIso
+      && (holiday.end_date || holiday.date) >= dateIso
+  ));
+  if (!booking) return null;
+
+  const kind = booking.scope === "employee" ? "paid holiday"
+    : booking.scope === "unavailable" ? "unpaid leave" : "sick leave";
+  return `${employee.name || "This employee"} is on ${kind} on ${DAY_LABELS[day]}.`;
+}
+
 export const DAY_SHORT = {
   mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu",
   fri: "Fri", sat: "Sat", sun: "Sun",
@@ -182,13 +233,24 @@ export function shiftHours(start, end) {
 /**
  * Paid hours for a stored shift — what the person is actually paid for.
  *
- * Prefers the figure the backend computed, because it is the one payroll
- * uses and it is the only one that exists for a holiday entry (which has no
- * times at all). Falls back to the span for older rosters saved before
- * paid_hours was recorded.
+ * When the shop setting is supplied, working shifts are recalculated from
+ * their times so a setting change takes effect immediately. Holiday entries
+ * have no times and therefore keep their stored paid entitlement.
  */
-export function shiftPaidHours(shift) {
+export function shiftPaidHours(shift, breaksArePaid) {
   if (!shift) return 0;
+  const isLeave = shift.paid_holiday || shift.unpaid_holiday || shift.sick;
+  if (typeof breaksArePaid === "boolean" && shift.start && shift.end && !isLeave) {
+    const span = shiftHours(shift.start, shift.end);
+    if (breaksArePaid) return span;
+    if (Number.isFinite(shift.break_minutes)) {
+      return Math.max(0, span - shift.break_minutes / 60);
+    }
+    if (Number.isFinite(shift.paid_hours)) return shift.paid_hours;
+    const breakMinutes = span >= 10 ? 60 : span >= 8 ? 45
+      : span >= 6 ? 30 : span >= 5 ? 15 : 0;
+    return Math.max(0, span - breakMinutes / 60);
+  }
   if (Number.isFinite(shift.paid_hours)) return shift.paid_hours;
   return shiftHours(shift.start, shift.end);
 }

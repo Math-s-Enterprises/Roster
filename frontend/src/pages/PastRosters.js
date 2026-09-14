@@ -149,7 +149,7 @@ export default function PastRosters() {
         || String(a.start || "").localeCompare(String(b.start || "")))
       .forEach((sh) => {
         const e = empMap[sh.employee_id] || {};
-        const label = sh.paid_holiday ? "Holiday" : sh.unpaid_holiday ? "Unpaid" : sh.sick ? "Sick" : "";
+        const label = sh.paid_holiday ? "Holiday" : sh.unpaid_holiday ? "N/A" : sh.sick ? "Sick" : "";
         rows.push([
           e.name || sh.employee_id,
           e.role || "",

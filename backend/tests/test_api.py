@@ -443,6 +443,27 @@ def test_editing_a_shift_does_not_strip_holiday_pay(client):
     assert after.get("paid_hours") == holiday.get("paid_hours")
 
 
+def test_saved_roster_hours_follow_the_current_break_setting(client):
+    """Changing the shop setting must immediately change every roster total."""
+    token = register(client)
+    roster_id, employee_id, other_id, shifts = _roster_with_leave(client, token)
+    saved = client.put(
+        f"/api/rosters/{roster_id}", json={"shifts": shifts}, headers=auth(token),
+    ).json()
+    work = next(s for s in saved["shifts"] if s["employee_id"] == employee_id)
+    assert work["paid_hours"] == pytest.approx(7.25)
+    assert saved["total_hours"] == pytest.approx(7.2)
+
+    client.put("/api/shop", json={"breaks_are_paid": True}, headers=auth(token))
+    roster = next(
+        r for r in client.get("/api/rosters", headers=auth(token)).json()
+        if r["roster_id"] == roster_id
+    )
+    work = next(s for s in roster["shifts"] if s["employee_id"] == employee_id)
+    assert work["paid_hours"] == pytest.approx(8.0)
+    assert roster["total_hours"] == pytest.approx(8.0)
+
+
 def _week_with_a_pre_existing_breach(client, token):
     """A saved roster that has since come to break a rule.
 
@@ -2389,15 +2410,21 @@ class TestLeave:
         client.post("/api/holidays/leave", json={
             "employee_id": employee_id,
             "start_date": "2026-08-10", "end_date": "2026-08-16",
-            "paid_dates": ["2026-08-10", "2026-08-11"],
+            # Tuesday is deliberately between two paid days: the grid must
+            # show that gap as N/A rather than as an empty, workable cell.
+            "paid_dates": ["2026-08-10", "2026-08-12"],
         }, headers=auth(token))
 
         roster = client.post("/api/roster/generate", json={"week_start": "2026-08-10"},
                              headers=auth(token)).json()
         mine = [s for s in roster["shifts"] if s["employee_id"] == employee_id]
 
-        assert {s["day"] for s in mine if s.get("paid_holiday")} == {"mon", "tue"}
-        assert not [s for s in mine if not s.get("paid_holiday")]
+        assert {s["day"] for s in mine if s.get("paid_holiday")} == {"mon", "wed"}
+        assert {s["day"] for s in mine if s.get("unpaid_holiday")} == {
+            "tue", "thu", "fri", "sat", "sun",
+        }
+        assert all(not s.get("start") and not s.get("end") for s in mine)
+        assert all(s.get("paid_hours") == 0 for s in mine if s.get("unpaid_holiday"))
 
     def test_holiday_hours_draw_down_the_balance(self, client):
         token = register(client)
