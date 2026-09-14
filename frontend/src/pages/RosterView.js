@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { api, errorMessage, refusalReasons, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, shiftHours, shiftPaidHours, dateForDay, fmtDayDate } from "@/lib/api";
+import { api, errorMessage, refusalReasons, availabilityConflict, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, shiftHours, shiftPaidHours, dateForDay, fmtDayDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import RosterPrintSheet from "@/components/RosterPrintSheet";
 import { Link, useSearchParams } from "react-router-dom";
@@ -426,6 +426,12 @@ export default function RosterView() {
     if (payload && shiftHours(payload.start, payload.end) > 11) {
       toast.error("Shift exceeds 11h limit"); return;
     }
+    const availability = payload && availabilityConflict(
+      empMap[payload.employee_id], payload.day, payload.start, payload.end,
+    );
+    if (availability && !window.confirm(
+      `${availability}\n\nAre you sure you want to save this shift?`,
+    )) return;
     const shifts = (roster.shifts || []).filter((s) => s.shift_id !== editShift.shift_id);
     if (payload) {
       const dup = shifts.find((s) => s.employee_id === payload.employee_id && s.day === payload.day);
@@ -486,6 +492,16 @@ export default function RosterView() {
       toast.error(`${empMap[toEmpId]?.name || "They"} are on leave that day`);
       return;
     }
+
+    const availabilityWarnings = [
+      availabilityConflict(empMap[toEmpId], toDay, shift.start, shift.end),
+      occupant && availabilityConflict(
+        empMap[shift.employee_id], shift.day, occupant.start, occupant.end,
+      ),
+    ].filter(Boolean);
+    if (availabilityWarnings.length && !window.confirm(
+      `${availabilityWarnings.join("\n")}\n\n${occupant ? "Swap" : "Move"} anyway?`,
+    )) return;
 
     const shifts = (roster.shifts || []).map((s) => {
       if (at(s, shift.employee_id, shift.day)) {
@@ -1853,6 +1869,7 @@ function ShiftModal({ shift, employee, onClose, onSave, onDelete, onUnpin, isNew
 
   const under16 = employee?.age < 16;
   const conflict = under16 && (start < "08:00" || end > "19:00");
+  const availability = availabilityConflict(employee, shift.day, start, end);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4" onClick={onClose}>
@@ -1925,6 +1942,12 @@ function ShiftModal({ shift, employee, onClose, onSave, onDelete, onUnpin, isNew
             {conflict && (
               <div className="status-danger mt-4 p-3 text-[13px] flex items-center gap-2">
                 <AlertTriangle size={13} /> Under-16 curfew: shift must be within 08:00–19:00.
+              </div>
+            )}
+
+            {availability && (
+              <div className="status-warn mt-4 p-3 text-[13px] flex items-center gap-2">
+                <AlertTriangle size={13} /> {availability} You will be asked to confirm before saving.
               </div>
             )}
 

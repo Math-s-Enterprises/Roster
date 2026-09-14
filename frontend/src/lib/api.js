@@ -152,6 +152,32 @@ export const DAY_LABELS = {
   fri: "Friday", sat: "Saturday", sun: "Sunday",
 };
 
+export function availabilityConflict(employee, day, start, end) {
+  const availability = employee?.availability;
+  if (!availability) return null;
+  const name = employee.name || "This employee";
+  if (availability.available_days?.length
+      && !availability.available_days.includes(day)) {
+    return `${name} is not available on ${DAY_LABELS[day]}.`;
+  }
+  if (availability.earliest_start && start < availability.earliest_start) {
+    return `${name} cannot start before ${availability.earliest_start}.`;
+  }
+  const overnight = end <= start;
+  if (availability.latest_finish) {
+    const finish = overnight || end === "00:00" ? "24:00" : end;
+    const latest = availability.latest_finish === "00:00"
+      ? "24:00" : availability.latest_finish;
+    if (finish > latest) {
+      return `${name} cannot work past ${availability.latest_finish}.`;
+    }
+  }
+  if (overnight && availability.can_work_overnight === false) {
+    return `${name} does not work overnight shifts.`;
+  }
+  return null;
+}
+
 export const DAY_SHORT = {
   mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu",
   fri: "Fri", sat: "Sat", sun: "Sun",
