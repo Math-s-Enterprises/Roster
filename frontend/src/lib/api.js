@@ -178,6 +178,31 @@ export function availabilityConflict(employee, day, start, end) {
   return null;
 }
 
+/** Return a warning when a work shift overlaps a live leave booking.
+ *
+ * This reads the holiday records rather than the roster cell, so it also
+ * catches a leave booking added after a draft roster was generated.
+ */
+export function leaveConflict(holidays, employee, weekStart, day) {
+  const employeeId = employee?.employee_id;
+  if (!employeeId || !weekStart || !DAYS.includes(day)) return null;
+
+  const date = new Date(`${weekStart}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + DAYS.indexOf(day));
+  const dateIso = date.toISOString().slice(0, 10);
+  const booking = (holidays || []).find((holiday) => (
+    holiday.employee_id === employeeId
+      && ["employee", "unavailable", "sick"].includes(holiday.scope)
+      && holiday.date <= dateIso
+      && (holiday.end_date || holiday.date) >= dateIso
+  ));
+  if (!booking) return null;
+
+  const kind = booking.scope === "employee" ? "paid holiday"
+    : booking.scope === "unavailable" ? "unpaid leave" : "sick leave";
+  return `${employee.name || "This employee"} is on ${kind} on ${DAY_LABELS[day]}.`;
+}
+
 export const DAY_SHORT = {
   mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu",
   fri: "Fri", sat: "Sat", sun: "Sun",

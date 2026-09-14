@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { api, errorMessage, refusalReasons, availabilityConflict, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, shiftHours, shiftPaidHours, dateForDay, fmtDayDate } from "@/lib/api";
+import { api, errorMessage, refusalReasons, availabilityConflict, leaveConflict, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, shiftHours, shiftPaidHours, dateForDay, fmtDayDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import RosterPrintSheet from "@/components/RosterPrintSheet";
 import { Link, useSearchParams } from "react-router-dom";
@@ -69,6 +69,7 @@ export default function RosterView() {
   };
   const [roster, setRoster] = useState(null);
   const [emps, setEmps] = useState([]);
+  const [holidays, setHolidays] = useState([]);
   const [shop, setShop] = useState(null);
   const [department, setDepartment] = useState(null);
   const [generating, setGenerating] = useState(false);
@@ -115,8 +116,10 @@ export default function RosterView() {
   const [highlight, setHighlight] = useState(null);
 
   const load = async () => {
-    const [e, r, s] = await Promise.all([api.get("/employees"), api.get("/rosters"), api.get("/shop")]);
-    setEmps(e.data); setRosters(r.data); setShop(s.data);
+    const [e, r, s, h] = await Promise.all([
+      api.get("/employees"), api.get("/rosters"), api.get("/shop"), api.get("/holidays"),
+    ]);
+    setEmps(e.data); setRosters(r.data); setShop(s.data); setHolidays(h.data);
     // An explicit ?roster= wins over the week lookup. Past Rosters links a
     // specific version, and matching on week alone would open whichever
     // roster for that week came back first — usually the approved one,
@@ -426,11 +429,13 @@ export default function RosterView() {
     if (payload && shiftHours(payload.start, payload.end) > 11) {
       toast.error("Shift exceeds 11h limit"); return;
     }
-    const availability = payload && availabilityConflict(
-      empMap[payload.employee_id], payload.day, payload.start, payload.end,
-    );
-    if (availability && !window.confirm(
-      `${availability}\n\nAre you sure you want to save this shift?`,
+    const employee = payload && empMap[payload.employee_id];
+    const warnings = payload && [
+      leaveConflict(holidays, employee, roster.week_start, payload.day),
+      availabilityConflict(employee, payload.day, payload.start, payload.end),
+    ].filter(Boolean);
+    if (warnings?.length && !window.confirm(
+      `${warnings.join("\n")}\n\nAre you sure you want to save this shift?`,
     )) return;
     const shifts = (roster.shifts || []).filter((s) => s.shift_id !== editShift.shift_id);
     if (payload) {
@@ -493,14 +498,18 @@ export default function RosterView() {
       return;
     }
 
-    const availabilityWarnings = [
+    const moveWarnings = [
+      leaveConflict(holidays, empMap[toEmpId], roster.week_start, toDay),
       availabilityConflict(empMap[toEmpId], toDay, shift.start, shift.end),
+      occupant && leaveConflict(
+        holidays, empMap[shift.employee_id], roster.week_start, shift.day,
+      ),
       occupant && availabilityConflict(
         empMap[shift.employee_id], shift.day, occupant.start, occupant.end,
       ),
     ].filter(Boolean);
-    if (availabilityWarnings.length && !window.confirm(
-      `${availabilityWarnings.join("\n")}\n\n${occupant ? "Swap" : "Move"} anyway?`,
+    if (moveWarnings.length && !window.confirm(
+      `${moveWarnings.join("\n")}\n\n${occupant ? "Swap" : "Move"} anyway?`,
     )) return;
 
     const shifts = (roster.shifts || []).map((s) => {
@@ -540,7 +549,7 @@ export default function RosterView() {
     (roster.shifts || []).forEach((s) => {
       const e = empMap[s.employee_id] || {};
       const d = dateForDay(roster.week_start, s.day);
-      const label = s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "Unpaid" : s.sick ? "Sick" : "";
+      const label = s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "N/A" : s.sick ? "Sick" : "";
       rows.push([
         e.name, e.role, (e.departments || []).join("/"), DAY_LABELS[s.day],
         d.toISOString().slice(0, 10),
@@ -576,7 +585,7 @@ export default function RosterView() {
     sorted.forEach((s) => {
       const e = empMap[s.employee_id] || {};
       const d = dateForDay(roster.week_start, s.day);
-      const label = s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "Unpaid leave" : s.sick ? "Sick" : "";
+      const label = s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "N/A" : s.sick ? "Sick" : "";
       pdf.text(String(e.name || "").slice(0, 24), colX[0], y);
       pdf.text(String(e.role || ""), colX[1], y);
       pdf.text(DAY_LABELS[s.day], colX[2], y);
@@ -684,7 +693,7 @@ export default function RosterView() {
   };
 
   const leaveLabel = (s) =>
-    s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "Unpaid" : "Sick";
+    s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "N/A" : "Sick";
 
   /** The click behaviour is unchanged from the previous layout — an
    *  approved week only accepts a sick report, everything else asks you
@@ -1843,7 +1852,7 @@ function Modal({ children, onClose }) {
 
 const LEAVE_LABELS = {
   paid_holiday: "Paid holiday",
-  unpaid_holiday: "Unpaid leave",
+  unpaid_holiday: "N/A — unpaid leave",
   sick: "Sick leave",
 };
 

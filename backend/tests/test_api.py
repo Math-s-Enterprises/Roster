@@ -2389,15 +2389,21 @@ class TestLeave:
         client.post("/api/holidays/leave", json={
             "employee_id": employee_id,
             "start_date": "2026-08-10", "end_date": "2026-08-16",
-            "paid_dates": ["2026-08-10", "2026-08-11"],
+            # Tuesday is deliberately between two paid days: the grid must
+            # show that gap as N/A rather than as an empty, workable cell.
+            "paid_dates": ["2026-08-10", "2026-08-12"],
         }, headers=auth(token))
 
         roster = client.post("/api/roster/generate", json={"week_start": "2026-08-10"},
                              headers=auth(token)).json()
         mine = [s for s in roster["shifts"] if s["employee_id"] == employee_id]
 
-        assert {s["day"] for s in mine if s.get("paid_holiday")} == {"mon", "tue"}
-        assert not [s for s in mine if not s.get("paid_holiday")]
+        assert {s["day"] for s in mine if s.get("paid_holiday")} == {"mon", "wed"}
+        assert {s["day"] for s in mine if s.get("unpaid_holiday")} == {
+            "tue", "thu", "fri", "sat", "sun",
+        }
+        assert all(not s.get("start") and not s.get("end") for s in mine)
+        assert all(s.get("paid_hours") == 0 for s in mine if s.get("unpaid_holiday"))
 
     def test_holiday_hours_draw_down_the_balance(self, client):
         token = register(client)

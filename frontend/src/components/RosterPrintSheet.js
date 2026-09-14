@@ -74,7 +74,7 @@ export default function RosterPrintSheet({ roster, employees, shop, pages = 1 })
   const cell = (shift) => {
     if (!shift) return "";
     if (shift.paid_holiday) return "Holiday";
-    if (shift.unpaid_holiday) return "Unpaid";
+    if (shift.unpaid_holiday) return "N/A";
     if (shift.sick) return "Sick";
     return `${shift.start}–${shift.end}`;
   };

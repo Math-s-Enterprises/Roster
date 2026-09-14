@@ -646,7 +646,7 @@ class _RosterBuilder:
         (
             self.shop_closed_dates,
             self.employee_off_dates,
-            self.paid_leave_dates,
+            self.leave_dates,
         ) = self._index_holidays(holidays)
         # Kept as given so `_report_under_contract` can hand them to
         # `compliance.under_contract`, which takes the same raw list the
@@ -793,15 +793,15 @@ class _RosterBuilder:
         return dates
 
     def _index_holidays(self, holidays):
-        """Split leave into 'cannot be rostered' and 'paid holiday taken'.
+        """Split leave into shop closures, days off, and visible leave dates.
 
-        Both block scheduling, but only paid holiday appears on the roster and
-        draws down entitlement — so they are tracked separately rather than
-        collapsed into one set.
+        Paid and unpaid leave both block scheduling and both appear on the
+        roster. Only paid leave draws down entitlement. Sick leave is handled
+        by its own policy and is therefore not inserted here.
         """
         shop_closed: Set[str] = set()
         employee_off: Dict[str, Set[str]] = {}
-        paid_leave: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        leave_dates: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
         for holiday in holidays:
             scope = holiday.get("scope")
@@ -817,14 +817,14 @@ class _RosterBuilder:
 
             employee_off.setdefault(employee_id, set()).update(dates)
 
-            # Only 'employee' scope is paid holiday. 'unavailable' is unpaid
-            # and 'sick' is handled by its own policy, so neither is recorded
-            # as holiday taken.
-            if scope == "employee":
+            # Both parts of a leave booking belong in the grid: selected
+            # paid days are Holiday and the remaining unavailable days are
+            # N/A. Sick leave is handled by its own policy.
+            if scope in ("employee", "unavailable"):
                 for date_iso in dates:
-                    paid_leave.setdefault(employee_id, {})[date_iso] = holiday
+                    leave_dates.setdefault(employee_id, {})[date_iso] = holiday
 
-        return shop_closed, employee_off, paid_leave
+        return shop_closed, employee_off, leave_dates
 
     @staticmethod
     def _index_fixed_shifts(fixed_shifts):
@@ -2004,23 +2004,25 @@ class _RosterBuilder:
         contract = employee.get("max_weekly_hours") or 0
         return round(contract / 5, 2) if contract else 0.0
 
-    def _apply_paid_leave(self, day: str, date_iso: str, assigned_today: Set[str]) -> None:
-        """Put booked paid holiday on the roster.
+    def _apply_leave(self, day: str, date_iso: str, assigned_today: Set[str]) -> None:
+        """Put booked paid holiday and unpaid N/A days on the roster.
 
         Without this a person on holiday simply vanishes from the week: the
-        manager cannot see why they are missing, and the hours never draw down
-        their entitlement because the balance report reads roster shifts. The
-        entry carries no times — it is not a shift, it is a paid absence — so
-        it contributes nothing to coverage.
+        manager cannot see why they are missing. Each entry carries no times,
+        because it is an absence rather than a shift, and contributes nothing
+        to coverage. Only paid entries carry paid hours.
         """
         for employee in self.employees:
             employee_id = employee["employee_id"]
-            booking = self.paid_leave_dates.get(employee_id, {}).get(date_iso)
+            booking = self.leave_dates.get(employee_id, {}).get(date_iso)
             if not booking:
                 continue
 
-            hours = booking.get("hours_per_day") or self._typical_paid_day(employee)
-            if hours <= 0:
+            is_paid = booking.get("scope") == "employee"
+            hours = (
+                booking.get("hours_per_day") or self._typical_paid_day(employee)
+            ) if is_paid else 0.0
+            if is_paid and hours <= 0:
                 continue
 
             self.result.shifts.append({
@@ -2029,14 +2031,15 @@ class _RosterBuilder:
                 "day": day,
                 "start": "", "end": "",
                 "fixed": False,
-                "paid_holiday": True,
-                "label": booking.get("label") or "Holiday",
+                "paid_holiday": is_paid,
+                "unpaid_holiday": not is_paid,
+                "label": booking.get("label") or ("Holiday" if is_paid else "N/A"),
                 "span_hours": 0.0,
                 "break_minutes": 0,
-                "paid_hours": round(hours, 2),
+                "paid_hours": round(hours, 2) if is_paid else 0.0,
             })
-            # Holiday is paid but is not work: it does not consume the weekly
-            # working-hours cap, so hours_used is deliberately untouched.
+            # Leave is not work, even when it is paid: it does not consume the
+            # weekly working-hours cap, so hours_used is deliberately untouched.
             assigned_today.add(employee_id)
 
     def _apply_locked_shifts(self, day: str, assigned_today: Set[str]) -> None:
@@ -3405,7 +3408,7 @@ class _RosterBuilder:
 
             assigned_today: Set[str] = set()
             assigned_by_day[day] = assigned_today
-            self._apply_paid_leave(day, date_iso, assigned_today)
+            self._apply_leave(day, date_iso, assigned_today)
             # Pinned before recurring: if the manager put somebody somewhere
             # by hand this week, that beats the standing arrangement.
             self._apply_locked_shifts(day, assigned_today)
