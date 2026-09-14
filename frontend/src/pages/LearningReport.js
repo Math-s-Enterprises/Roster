@@ -11,39 +11,154 @@
  * The suggestions are the other half. When the same edit has been made three
  * times, the scheduler offers to change a real setting — a fixed shift, a day
  * off, an availability window — rather than quietly weighting something in the
- * background. That matters: learning you cannot inspect is learning you cannot
- * trust, and if it has concluded something wrong the manager must be able to
- * find out from a screen rather than from a bad roster.
+ * background. Learning you cannot inspect is learning you cannot trust, and if
+ * it has concluded something wrong the manager must be able to find out from a
+ * screen rather than from a bad roster. Which is why every suggestion can be
+ * refused, and refusing is permanent.
  *
- * Which is why every suggestion can be refused, and refusing is permanent.
+ * Layout is the handoff's, scoped to .wl-* in index.css: a three-stat band, a
+ * two-column explanation split, one table of every logged change.
+ *
+ * DEVIATIONS
+ *
+ * 1. "Set up now" appears only once a pattern has reached the repeat
+ *    threshold, not at ×2 as the handoff says. POST /reports/corrections/apply
+ *    looks the signature up among the real suggestions and 404s otherwise, so
+ *    an earlier button could only fail.
+ *
+ * 2. There is no "Undo refusal". Refusals are stored, and the API has dismiss
+ *    but nothing to reverse it — matching the product decision that refusing
+ *    is permanent. Refused rows say so rather than offering an action that
+ *    does not exist.
+ *
+ * 3. Refused rows are derived, not flagged: the report returns a count of
+ *    refusals but not which ones. A pattern at or past the threshold that is
+ *    absent from the suggestion list has been refused, which is the only way
+ *    it can be missing.
+ *
+ * 4. Rows are a CSS grid with table roles rather than a real <table> — the
+ *    handoff asks for both a real table and minmax() tracks, and a table
+ *    cannot express minmax. Same choice as the sibling pages.
  */
-import React, { useEffect, useState } from "react";
-import { api, errorMessage, DAY_LABELS } from "@/lib/api";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { api, errorMessage, DAY_LABELS, DAYS } from "@/lib/api";
 import { toast } from "sonner";
-import { Check, X, TrendingDown, Sparkles, RefreshCw } from "lucide-react";
+import { Download } from "lucide-react";
 
-const ACTION_LABEL = {
-  fixed_shift: "Fixed shift",
-  day_off: "Day off",
-  earliest_start: "Availability",
+const SORT_KEY = "roster_learning_sort";
+const PAGE = 7;
+
+const SORTS = [
+  { key: "most-repeated", label: "Most repeated" },
+  { key: "by-day", label: "By day" },
+  { key: "newest", label: "Newest" },
+];
+
+/** What accepting a suggestion actually creates, and where it will live. */
+const LANDS_IN = {
+  fixed_shift: "This becomes a template on Fixed Shifts.",
+  day_off: "This becomes a guaranteed day off on the employee's record.",
+  earliest_start: "This changes the availability window on the employee's record.",
 };
+
+const fmtWeek = (weekStart) => {
+  const d = new Date(`${weekStart}T00:00:00`);
+  return Number.isNaN(d.getTime())
+    ? weekStart
+    : d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+};
+
+/** Join week labels the way a person would say them. */
+function listWeeks(weeks) {
+  const names = weeks.map(fmtWeek);
+  if (names.length === 0) return "";
+  if (names.length === 1) return `the week of ${names[0]}`;
+  return `weeks of ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * One correction as a sentence, in the manager's own voice and past tense.
+ * A screen full of `{kind: "removed", slot: "09:00-17:00"}` is data, not an
+ * explanation, and the point of this page is that somebody can disagree
+ * with what it says.
+ */
+function describe(p) {
+  const who = p.employee_name || "Someone";
+  if (p.kind === "swap") return `You used ${who} instead of ${p.replaced_employee_name} for ${p.slot}`;
+  if (p.kind === "moved") return `You moved ${who} from ${p.from_slot} to ${p.to_slot}`;
+  if (p.kind === "removed") return `You took ${who} off (${p.slot})`;
+  return `You added ${who} · ${p.slot}`;
+}
 
 export default function LearningReport() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
+  const [sort, setSort] = useState(() => localStorage.getItem(SORT_KEY) || "most-repeated");
+  const [visible, setVisible] = useState(PAGE);
+  const [confirming, setConfirming] = useState(null);
+  const navigate = useNavigate();
 
-  const load = async () => {
-    setLoading(true);
+  const load = useCallback(async () => {
     try {
       const r = await api.get("/reports/corrections");
       setReport(r.data);
     } catch (err) {
       toast.error(errorMessage(err, "Could not load what has been learned"));
     } finally { setLoading(false); }
-  };
+  }, []);
+  useEffect(() => { load(); }, [load]);
 
-  useEffect(() => { load(); }, []);
+  const chooseSort = (key) => { setSort(key); localStorage.setItem(SORT_KEY, key); };
+
+  const minRepeats = report?.min_repeats ?? 3;
+  const patterns = useMemo(() => report?.patterns || [], [report]);
+  const suggestions = useMemo(() => report?.suggestions || [], [report]);
+
+  /** Signatures the scheduler is currently willing to act on. */
+  const offered = useMemo(
+    () => new Set(suggestions.map((s) => s.signature)),
+    [suggestions],
+  );
+
+  /** Only measured weeks count — a roster with no snapshot cannot be compared. */
+  const measured = useMemo(
+    () => (report?.trend || []).filter((t) => t.measurable),
+    [report],
+  );
+  const lastThree = useMemo(() => measured.slice(-3), [measured]);
+
+  const editsLast = measured.length ? measured[measured.length - 1].edit_count : 0;
+  const editsPrev = measured.length > 1 ? measured[measured.length - 2].edit_count : null;
+  const rose = editsPrev != null && editsLast > editsPrev;
+
+  const rows = useMemo(() => {
+    const list = patterns.map((p) => {
+      const weeks = p.weeks || [];
+      const ready = p.count >= minRepeats;
+      const refused = ready && !offered.has(p.signature);
+      return {
+        ...p,
+        lastWeek: weeks.length ? [...weeks].sort().at(-1) : "",
+        ready,
+        refused,
+        remaining: Math.max(0, minRepeats - p.count),
+      };
+    });
+    if (sort === "by-day") {
+      return list.sort((a, b) =>
+        (DAYS.indexOf(a.day) - DAYS.indexOf(b.day)) || (b.count - a.count));
+    }
+    if (sort === "newest") {
+      return list.sort((a, b) =>
+        String(b.lastWeek).localeCompare(String(a.lastWeek)) || (b.count - a.count));
+    }
+    return list.sort((a, b) =>
+      (b.count - a.count) || String(b.lastWeek).localeCompare(String(a.lastWeek)));
+  }, [patterns, sort, minRepeats, offered]);
+
+  const shown = rows.slice(0, visible);
 
   const decide = async (signature, accept) => {
     setBusy(signature);
@@ -51,280 +166,325 @@ export default function LearningReport() {
       const r = await api.post(
         `/reports/corrections/${accept ? "apply" : "dismiss"}`, { signature },
       );
-      toast.success(accept ? `Learned — ${r.data.detail}` : "Won't suggest that again");
-      load();
+      toast.success(accept ? `Set up — ${r.data.detail}` : "Won't be offered again");
+      setConfirming(null);
+      await load();
     } catch (err) {
       toast.error(errorMessage(err, "Could not save that"));
     } finally { setBusy(""); }
   };
 
+  const exportCsv = () => {
+    if (rows.length === 0) {
+      toast.error("No changes to export yet");
+      return;
+    }
+    const escape = (v) => {
+      const str = String(v ?? "");
+      return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+    const out = [
+      ["Times", "Day", "What you changed", "State", "Weeks seen"],
+      ...rows.map((p) => [
+        p.count,
+        DAY_LABELS[p.day] || p.day,
+        describe(p),
+        p.refused ? "Refused" : p.ready ? "Ready to set up" : `${p.remaining} more to offer`,
+        (p.weeks || []).join(" / "),
+      ]),
+    ];
+    const csv = out.map((r) => r.map(escape).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `changes-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${rows.length} ${rows.length === 1 ? "change" : "changes"}`);
+  };
+
   if (loading) {
-    return (
-      <div className="p-8 flex items-center gap-2 text-[13px]"
-           style={{ color: "var(--ink-mute)" }}>
-        <RefreshCw size={14} className="animate-spin" /> Reading your corrections…
-      </div>
-    );
+    return <div className="wl-page"><div className="wl-emptyrow" style={{ padding: 28 }}>Reading your corrections…</div></div>;
   }
   if (!report) return null;
 
-  const measured = report.trend.filter((t) => t.measurable);
-  const counts = measured.map((t) => t.edit_count);
-  const peak = Math.max(1, ...counts);
+  const suggestion = confirming
+    ? suggestions.find((s) => s.signature === confirming)
+    : null;
 
   return (
-    <div className="p-8 max-w-4xl">
-      <h1 className="text-2xl font-medium">What the scheduler has learned</h1>
-      <p className="text-[13px] mt-1 mb-8" style={{ color: "var(--ink-mute)" }}>
-        Every edit you make to a generated roster is the most useful thing this
-        app sees — it is you saying what "right" looks like here.
-      </p>
+    <div className="wl-page">
+      <header className="wl-head">
+        <div>
+          <div className="wl-eyebrow">LEARNING</div>
+          <h1 className="wl-h1">What the scheduler has learned</h1>
+          <p className="wl-sub">
+            Every edit you make to a generated roster is the most useful thing this app sees — it is
+            you saying what “right” looks like here.
+          </p>
+        </div>
+        <button type="button" className="wl-btn" onClick={exportCsv} disabled={rows.length === 0}>
+          <Download size={15} strokeWidth={1.6} /> Export changes
+        </button>
+      </header>
 
-      {/* ---- the number that matters ---- */}
-      <div className="card p-6 mb-6">
-        <div className="flex items-center gap-2 mb-4">
-          <TrendingDown size={15} style={{ color: "var(--primary)" }} />
-          <h2 className="text-sm font-medium">Edits needed per roster</h2>
+      <div className="wl-stats">
+        <div className="wl-stat">
+          <div className="wl-stat-label">Edits last week</div>
+          <div className="wl-stat-value" data-tone={rose ? "warn" : "good"}>{editsLast}</div>
+          <div className="wl-stat-cap">
+            {editsPrev == null
+              ? measured.length ? "first measured week" : "nothing measured yet"
+              : `${rose ? "up" : "down"} from ${editsPrev}`}
+          </div>
+        </div>
+        <div className="wl-stat">
+          <div className="wl-stat-label">Weekly average</div>
+          <div className="wl-stat-value">
+            {measured.length >= 3 && report.average_per_week != null ? report.average_per_week : "—"}
+          </div>
+          <div className="wl-stat-cap">
+            {measured.length >= 3
+              ? `across ${measured.length} rosters`
+              : `${measured.length} roster${measured.length === 1 ? "" : "s"} measured — too few to average`}
+          </div>
+        </div>
+        <div className="wl-stat">
+          <div className="wl-stat-label">Refused</div>
+          <div className="wl-stat-value">{report.dismissed_count || 0}</div>
+          <div className="wl-stat-cap">never offered again</div>
+        </div>
+      </div>
+
+      <div className="wl-split">
+        <div className="wl-left">
+          <div className="wl-label">Things you keep changing by hand</div>
+          {suggestions.length === 0 ? (
+            <>
+              <p className="wl-body">
+                <strong>Nothing yet.</strong> Make the same change {minRepeats} weeks running — moving
+                somebody off a day, adding a shift the generator missed, always lengthening the same
+                shift — and it will offer to set that up permanently.
+              </p>
+              {report.dismissed_count > 0 && (
+                <p className="wl-aside">
+                  You have refused {report.dismissed_count} so far; those are not offered again.
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="wl-body">
+                Each of these has come up at least {minRepeats} times. Setting one up changes a real
+                setting you can see and undo — nothing is hidden.
+              </p>
+              <div className="wl-ready">
+                {suggestions.map((s) => (
+                  <div className="wl-ready-row" key={s.signature}>
+                    <span className="wl-ready-text">
+                      {s.employee_name} · {s.headline}
+                      <span className="wl-ready-why">{s.because}</span>
+                    </span>
+                    <button
+                      type="button"
+                      data-testid={`apply-${s.signature}`}
+                      className="wl-link"
+                      onClick={() => setConfirming(s.signature)}
+                      aria-label={`Set up ${s.employee_name}, ${s.headline}`}
+                    >
+                      Set up now
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
-        {measured.length === 0 ? (
-          <p className="text-[13px]" style={{ color: "var(--ink-mute)" }}>
-            Nothing to show yet. Approve a roster you have edited and this
-            starts filling in.
-          </p>
-        ) : (
-          <>
-            {/*
-              A CHART OF ONE BAR IS NOT A TREND.
+        <div className="wl-right">
+          <div className="wl-label">Edits needed per roster</div>
+          {lastThree.length === 0 ? (
+            <p className="wl-run-note">
+              Nothing measured yet. Approve a roster you have edited and this starts filling in.
+            </p>
+          ) : (
+            <>
+              <div className="wl-run">
+                {lastThree.map((t, i) => (
+                  <React.Fragment key={t.week_start}>
+                    {i > 0 && <span className="wl-run-sep" aria-hidden="true">·</span>}
+                    {i === lastThree.length - 1
+                      ? <em>{t.edit_count}</em>
+                      : <span>{t.edit_count}</span>}
+                  </React.Fragment>
+                ))}
+              </div>
+              <p className="wl-run-note">
+                {listWeeks(lastThree.map((t) => t.week_start))
+                  .replace(/^w/, "W")
+                  .replace(/^the w/, "The w")}.{" "}
+                {measured.length >= 3 && report.average_per_week != null
+                  ? `Averaging ${report.average_per_week} a week`
+                  : "Too few weeks to average yet"}
+                {editsLast === 0
+                  ? " — last week needed none at all."
+                  : editsPrev != null && editsLast < editsPrev
+                    ? " — last week needed fewer."
+                    : "."}
+              </p>
+            </>
+          )}
+        </div>
+      </div>
 
-              With a single measured week, `flex-1` stretched that week across
-              the full width and it read as a grey slab rather than a column —
-              a shape that says "here is your trend" when there is exactly one
-              observation. The cap keeps a bar bar-shaped until there are
-              enough weeks for the row to fill naturally.
-            */}
-            <div className="flex items-end gap-4 h-28"
-                 style={{ maxWidth: measured.length < 4
-                   ? `${measured.length * 84}px` : undefined }}>
-              {measured.map((week) => (
-                <div key={week.week_start} className="flex-1 flex flex-col items-center gap-1">
-                  <div className="text-[13px] font-mono">{week.edit_count}</div>
-                  <div
-                    className="w-full rounded-t"
-                    style={{
-                      // A clean week is the goal, so it still gets a visible
-                      // sliver rather than nothing at all.
-                      height: `${Math.max(4, (week.edit_count / peak) * 80)}px`,
-                      // These were `var(--good)` and `var(--accent)`, and
-                      // NEITHER of them drew anything:
-                      //
-                      //   --good   has never been defined, in this file or
-                      //            index.css or anywhere else.
-                      //   --accent IS defined, but only inside the shadcn
-                      //            @layer block, where it holds a bare HSL
-                      //            TRIPLET ("0 0% 15%") meant to be used as
-                      //            hsl(var(--accent)). On its own it is not
-                      //            a colour, so the declaration is dropped.
-                      //
-                      // An invalid background is silent — no console error,
-                      // no fallback — so every bar in this chart rendered
-                      // with no fill at all. The whole point of the screen
-                      // is showing the edit count falling, and it has been
-                      // showing nothing.
-                      //
-                      // --ink-mute-2 rather than a hairline colour: measured
-                      // against --canvas-soft, --hairline-strong is 1.8:1,
-                      // which is barely better than the bug it replaces.
-                      // This is 5.4:1.
-                      background: week.edit_count === 0
-                        ? "var(--primary)" : "var(--ink-mute-2)",
-                      opacity: week.edit_count === 0 ? 1 : 0.85,
-                    }}
-                  />
-                  <div className="text-[10px] font-mono" style={{ color: "var(--ink-mute-2)" }}>
-                    {week.week_start?.slice(5)}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="text-[13px] mt-4" style={{ color: "var(--ink-secondary)" }}>
-              {report.clean_weeks > 0 && (
-                <>
-                  <span style={{ color: "var(--ink)" }}>
-                    {report.clean_weeks} of the last {report.weeks_measured}
-                  </span>{" "}
-                  needed no changes at all.{" "}
-                </>
+      <div className="wl-section">
+        <div>
+          <h2 className="wl-h2">
+            Every change you have made <span>({patterns.length})</span>
+          </h2>
+          <p className="wl-section-sub">
+            Across your last {report.weeks_measured}{" "}
+            approved {report.weeks_measured === 1 ? "roster" : "rosters"}. Shown whether or not it has
+            been repeated often enough to act on.
+          </p>
+        </div>
+        <div className="wl-sorts" role="group" aria-label="Sort changes">
+          {SORTS.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              className="wl-sort"
+              aria-pressed={sort === s.key}
+              onClick={() => chooseSort(s.key)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="wl-table" role="table" aria-label="Every change you have made">
+        <div className="wl-row wl-colhead" role="row">
+          <span role="columnheader">Times</span>
+          <span role="columnheader">Day</span>
+          <span role="columnheader">What you changed</span>
+          <span role="columnheader">State</span>
+          <span role="columnheader" aria-label="Actions" />
+        </div>
+
+        {patterns.length === 0 ? (
+          <div className="wl-emptyrow">
+            No edits yet — generate and adjust a roster and your changes appear here.
+          </div>
+        ) : shown.map((p) => (
+          <div className="wl-row wl-data" role="row" key={p.signature} data-refused={p.refused}>
+            <span className="wl-times" role="cell">×{p.count}</span>
+            <span className="wl-day" role="cell">{DAY_LABELS[p.day] || p.day}</span>
+            <span className="wl-what" role="cell">{describe(p)}</span>
+            <span className="wl-state" role="cell" data-refused={p.refused}>
+              {p.refused
+                ? "Refused — not offered again"
+                : p.ready
+                  ? "Ready to set up"
+                  : `${p.remaining} more to offer`}
+            </span>
+            <span className="wl-acts" role="cell">
+              {p.refused ? (
+                <span className="wl-state">—</span>
+              ) : p.ready ? (
+                <button
+                  type="button"
+                  className="wl-link"
+                  disabled={busy === p.signature}
+                  onClick={() => setConfirming(p.signature)}
+                  aria-label={`Set up ${describe(p)}`}
+                >
+                  Set up now
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="wl-link wl-link-mute"
+                  onClick={() => navigate(`/roster?week=${p.lastWeek}`)}
+                  aria-label={`Open the week of ${fmtWeek(p.lastWeek)}`}
+                >
+                  Open week
+                </button>
               )}
-              {/*
-                "Averaging 63 edits a week" from ONE week is not an average,
-                it is that week — and stated as an average it invites the
-                manager to read a habit into a single roster. The whole screen
-                exists to show a number falling over time, so it must not
-                claim a trend it has not measured. Below three weeks it says
-                what it actually knows.
-              */}
-              {report.average_per_week !== null && (
-                measured.length < 3 ? (
-                  <>
-                    That is {measured.length === 1 ? "the only week" : "both weeks"}
-                    {" "}measured so far — too few to average. Approve a few more
-                    and this becomes a trend.
-                  </>
-                ) : (
-                  <>Averaging {report.average_per_week} edits a week
-                    {" "}across {measured.length} weeks.</>
-                )
-              )}
-            </div>
-          </>
+            </span>
+          </div>
+        ))}
+
+        {patterns.length > 0 && (
+          <div className="wl-foot">
+            <span>Showing {shown.length} of {rows.length} changes</span>
+            {rows.length > shown.length && (
+              <button type="button" className="wl-link" onClick={() => setVisible(rows.length)}>
+                Show all {rows.length}
+              </button>
+            )}
+          </div>
         )}
       </div>
 
-      {/*
-        ---- suggestions ----
+      <p className="wl-note">
+        A change has to repeat across <strong>{minRepeats} approved rosters</strong> before it is
+        offered — <strong>one-offs are noise, repeats are policy</strong>. Drafts never count, so
+        regenerating a week twice cannot fake a pattern. <strong>Set up now</strong> writes the real
+        setting behind the change — a fixed shift, a day off, an availability window — where anyone
+        can find and undo it in the ordinary screens; nothing is weighted invisibly.{" "}
+        <strong>Refusing removes a pattern from consideration for good</strong>, so it will not be
+        raised again.
+      </p>
 
-        The empty state is not decoration. This section used to disappear
-        entirely until something had repeated MIN_REPEATS times, which meant
-        the whole feature was invisible on a shop with one roster of
-        history — and a manager who never sees it cannot know that repeating
-        an edit is what makes it stop being asked of them.
-
-        So when there is nothing to offer, it says what it is waiting for.
-      */}
-      {report.suggestions.length === 0 ? (
-        <div className="card p-6 mb-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Sparkles size={15} style={{ color: "var(--ink-mute-2)" }} />
-            <h2 className="text-sm font-medium">Things you keep changing by hand</h2>
-          </div>
-          <p className="text-[13px]" style={{ color: "var(--ink-mute)" }}>
-            Nothing yet. When you make the same change{" "}
-            {report.min_repeats} weeks running — moving somebody off a day,
-            adding a shift the generator missed, always lengthening the same
-            shift — it will offer to set that up permanently, and you can
-            accept or refuse it here.
-            {report.dismissed_count > 0 && (
-              <> You have refused {report.dismissed_count} so far; those are
-                 not offered again.</>
-            )}
-          </p>
-        </div>
-      ) : (
-        <div className="card p-6 mb-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Sparkles size={15} style={{ color: "var(--primary)" }} />
-            <h2 className="text-sm font-medium">
-              Things you keep changing by hand
-            </h2>
-          </div>
-          <p className="text-[13px] mb-5" style={{ color: "var(--ink-mute)" }}>
-            Each of these has come up at least {report.min_repeats} times.
-            Accepting one changes a real setting you can see and undo — nothing
-            is hidden.
-          </p>
-
-          <div className="space-y-3">
-            {report.suggestions.map((s) => (
-              <div key={s.signature} className="card-soft p-4">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="pill">{ACTION_LABEL[s.action] || s.action}</span>
-                      <span className="text-[13px]" style={{ color: "var(--ink)" }}>
-                        {s.employee_name} · {s.headline}
-                      </span>
-                    </div>
-                    <div className="text-[13px] mt-2" style={{ color: "var(--ink-secondary)" }}>
-                      {s.because}
-                    </div>
-                    <div className="text-[11px] mt-1" style={{ color: "var(--ink-mute-2)" }}>
-                      {s.effect}
-                    </div>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      data-testid={`dismiss-${s.signature}`}
-                      onClick={() => decide(s.signature, false)}
-                      disabled={busy === s.signature}
-                      className="btn btn-ghost"
-                      title="Never suggest this again"
-                    >
-                      <X size={13} /> No
-                    </button>
-                    <button
-                      data-testid={`apply-${s.signature}`}
-                      onClick={() => decide(s.signature, true)}
-                      disabled={busy === s.signature}
-                      className="btn btn-primary"
-                    >
-                      <Check size={13} /> Do it
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
+      {suggestion && (
+        <div className="wl-scrim" onClick={() => !busy && setConfirming(null)}>
+          <div
+            className="wl-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Set this up permanently"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Set this up permanently?</h2>
+            <p>
+              <strong>{suggestion.employee_name} · {suggestion.headline}</strong>
+            </p>
+            <p>{suggestion.because}</p>
+            <div className="wl-sheet-where">
+              {LANDS_IN[suggestion.action] || "This writes a real setting you can see and change."}
+              {suggestion.effect ? ` ${suggestion.effect}` : ""}
+            </div>
+            <div className="wl-sheet-acts">
+              <button
+                type="button"
+                className="wl-btn wl-btn-1"
+                disabled={busy === suggestion.signature}
+                onClick={() => decide(suggestion.signature, true)}
+              >
+                {busy === suggestion.signature ? "Setting up…" : "Set it up"}
+              </button>
+              <button
+                type="button"
+                data-testid={`dismiss-${suggestion.signature}`}
+                className="wl-link wl-link-mute"
+                disabled={busy === suggestion.signature}
+                onClick={() => decide(suggestion.signature, false)}
+              >
+                Not for me
+              </button>
+              <button
+                type="button"
+                className="wl-link wl-link-mute"
+                disabled={busy === suggestion.signature}
+                onClick={() => setConfirming(null)}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
-
-      {/* ---- the evidence, unfiltered ---- */}
-      <div className="card p-6">
-        <h2 className="text-sm font-medium mb-1">Every change you have made</h2>
-        <p className="text-[13px] mb-4" style={{ color: "var(--ink-mute)" }}>
-          Across your last {report.weeks_measured} approved{" "}
-          {report.weeks_measured === 1 ? "roster" : "rosters"}. Shown whether or
-          not it has been repeated often enough to act on.
-        </p>
-
-        {report.patterns.length === 0 ? (
-          <p className="text-[13px]" style={{ color: "var(--ink-mute)" }}>
-            No corrections recorded — the rosters went out as generated.
-          </p>
-        ) : (
-          <div className="space-y-1.5">
-            {report.patterns.map((p) => (
-              <div key={p.signature}
-                   className="flex items-center gap-3 text-[13px] py-1.5"
-                   style={{ borderBottom: "1px solid var(--hairline)" }}>
-                <span className="font-mono text-[11px] w-8 shrink-0"
-                      style={{ color: p.count >= report.min_repeats
-                        ? "var(--primary)" : "var(--ink-mute-2)" }}>
-                  ×{p.count}
-                </span>
-                <span className="w-20 shrink-0" style={{ color: "var(--ink-mute-2)" }}>
-                  {DAY_LABELS[p.day] || p.day}
-                </span>
-                <span className="flex-1 min-w-0 truncate">
-                  {describe(p)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
-}
-
-/**
- * One correction as a sentence.
- *
- * Written the way a manager would say it out loud — "you took Jane off
- * Wednesday" — rather than as a field dump. A screen full of
- * `{kind: "removed", slot: "09:00-17:00"}` is data, not an explanation, and
- * the point of this page is that somebody can disagree with what it says.
- */
-function describe(p) {
-  const who = p.employee_name || "Someone";
-  if (p.kind === "swap") {
-    return `You used ${who} instead of ${p.replaced_employee_name} for ${p.slot}`;
-  }
-  if (p.kind === "moved") {
-    return `You moved ${who} from ${p.from_slot} to ${p.to_slot}`;
-  }
-  if (p.kind === "removed") {
-    return `You took ${who} off (${p.slot})`;
-  }
-  return `You added ${who} (${p.slot})`;
 }
