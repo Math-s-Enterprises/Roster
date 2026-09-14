@@ -1,7 +1,7 @@
 """Shop settings and employee/holiday/fixed-shift management."""
 import uuid
-from datetime import datetime, timedelta
-from typing import List
+from datetime import date, datetime, timedelta
+from typing import Dict, List, Set
 
 from fastapi import (
     APIRouter, File, Form, HTTPException, Query, UploadFile, status,
@@ -11,7 +11,7 @@ from app import db
 from app.models import (
     ContactApply, EmployeeIn, FixedShiftIn, HolidayIn, LeaveRequest, ShopUpdate,
 )
-from app.services.scheduler import DAYS
+from app.services.scheduler import DAYS, shift_paid_hours, shop_breaks_paid
 from app.services import availability as avail
 from app.services import contact_import
 from app.services import holiday_balance
@@ -24,6 +24,159 @@ from app.services.shop_service import apply_24h_defaults
 from app.tenancy import ShopScope, CurrentScope
 
 router = APIRouter(tags=["shop"])
+
+
+def _record_dates(record: Dict) -> Set[str]:
+    """Every date covered by one holiday record, tolerating old bad rows."""
+    try:
+        start = date.fromisoformat(record["date"])
+        end = date.fromisoformat(record.get("end_date") or record["date"])
+    except (KeyError, TypeError, ValueError):
+        return set()
+    if end < start:
+        return set()
+    return {
+        (start + timedelta(days=offset)).isoformat()
+        for offset in range((end - start).days + 1)
+    }
+
+
+def _overlapping_absences(
+    bookings: List[Dict], employee_id: str, requested_dates: Set[str],
+    *, exclude_ids: Set[str] | None = None,
+) -> List[Dict]:
+    """Existing employee absences touching any requested calendar date."""
+    excluded = exclude_ids or set()
+    return [
+        booking for booking in bookings
+        if booking.get("holiday_id") not in excluded
+        and booking.get("employee_id") == employee_id
+        and booking.get("scope") in ("employee", "unavailable", "sick")
+        and bool(_record_dates(booking) & requested_dates)
+    ]
+
+
+def _overlap_detail(conflicts: List[Dict]) -> str:
+    dates = sorted({day for booking in conflicts for day in _record_dates(booking)})
+    shown = ", ".join(dates[:5])
+    if len(dates) > 5:
+        shown += f" and {len(dates) - 5} more"
+    return (
+        f"Leave is already booked for this employee on {shown}. "
+        "Open the existing booking and use Edit instead."
+    )
+
+
+async def _sync_employee_leave_to_drafts(
+    scope: ShopScope, employee_id: str, *, replace_dates: Set[str] | None = None,
+) -> None:
+    """Make open roster cells reflect the employee's current leave bookings.
+
+    Booking or moving leave wins over shifts already present on those dates.
+    On later syncs, an ordinary work cell is retained: it represents the
+    manager deliberately scheduling the person after seeing the leave warning.
+    Approved rosters are records and are never rewritten here.
+    """
+    replace_dates = replace_dates or set()
+    bookings = [
+        booking async for booking in scope.holidays.stream({
+            "employee_id": employee_id,
+            "scope": {"$in": ["employee", "unavailable", "sick"]},
+        })
+    ]
+    booked_by_date: Dict[str, Dict] = {}
+    for booking in bookings:
+        for booked_date in _record_dates(booking):
+            booked_by_date[booked_date] = booking
+
+    employees = await scope.employees.find(limit=1000)
+    rates = {
+        employee["employee_id"]: employee.get("hourly_rate", 0)
+        for employee in employees
+    }
+    breaks_paid = shop_breaks_paid(scope.shop)
+
+    async for roster in scope.rosters.stream({"approved": {"$ne": True}}):
+        try:
+            monday = date.fromisoformat(roster["week_start"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        day_for_date = {
+            (monday + timedelta(days=index)).isoformat(): day
+            for index, day in enumerate(DAYS)
+        }
+
+        shifts = []
+        for shift in roster.get("shifts", []):
+            same_employee = shift.get("employee_id") == employee_id
+            shift_date = (
+                (monday + timedelta(days=DAYS.index(shift["day"]))).isoformat()
+                if shift.get("day") in DAYS else ""
+            )
+            is_leave = bool(
+                shift.get("paid_holiday") or shift.get("unpaid_holiday")
+                or shift.get("sick")
+            )
+            # All stored leave cells are derived again from the booking rows.
+            # A newly booked/moved date also replaces any older work cell.
+            if same_employee and (is_leave or shift_date in replace_dates):
+                continue
+            shifts.append(dict(shift))
+
+        occupied = {
+            (shift.get("employee_id"), shift.get("day")) for shift in shifts
+        }
+        for booked_date, booking in booked_by_date.items():
+            day = day_for_date.get(booked_date)
+            if not day or (employee_id, day) in occupied:
+                continue
+            is_paid = booking.get("scope") == "employee"
+            is_sick = booking.get("scope") == "sick"
+            hours = float(booking.get("hours_per_day") or 0) if is_paid else 0.0
+            shifts.append({
+                "shift_id": f"sh_{uuid.uuid4().hex[:8]}",
+                "employee_id": employee_id,
+                "day": day,
+                "start": "",
+                "end": "",
+                "fixed": False,
+                "paid_holiday": is_paid,
+                "unpaid_holiday": not is_paid and not is_sick,
+                "sick": is_sick,
+                "label": booking.get("label") or (
+                    "Holiday" if is_paid else "Sick" if is_sick else "N/A"
+                ),
+                "span_hours": 0.0,
+                "break_minutes": 0,
+                "paid_hours": round(hours, 2),
+            })
+
+        work_hours: Dict[str, float] = {
+            employee["employee_id"]: 0.0 for employee in employees
+        }
+        total_hours = labor_cost = 0.0
+        for shift in shifts:
+            hours = shift_paid_hours(shift, breaks_paid=breaks_paid)
+            if not (
+                shift.get("paid_holiday")
+                or shift.get("unpaid_holiday")
+                or shift.get("sick")
+            ):
+                total_hours += hours
+                work_hours[shift["employee_id"]] = (
+                    work_hours.get(shift["employee_id"], 0.0) + hours
+                )
+            if not (shift.get("unpaid_holiday") or shift.get("sick")):
+                labor_cost += hours * rates.get(shift.get("employee_id"), 0)
+
+        await scope.rosters.update_one({"roster_id": roster["roster_id"]}, {
+            "shifts": shifts,
+            "total_hours": round(total_hours, 1),
+            "labor_cost": round(labor_cost, 2),
+            "per_employee_hours": {
+                key: round(value, 1) for key, value in work_hours.items()
+            },
+        })
 
 # Employees are identified by name alone. The prototype assigned each new
 # starter one of four stock Unsplash portraits on a rotating index, so a
@@ -255,7 +408,7 @@ async def list_holidays(scope: ShopScope = CurrentScope):
 @router.post("/holidays", status_code=status.HTTP_201_CREATED)
 async def create_holiday(payload: HolidayIn, scope: ShopScope = CurrentScope):
     data = payload.model_dump()
-    if data["scope"] in ("employee", "sick") and not data.get("employee_id"):
+    if data["scope"] in ("employee", "unavailable", "sick") and not data.get("employee_id"):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             f"An employee must be selected for {data['scope']} leave.",
@@ -263,9 +416,23 @@ async def create_holiday(payload: HolidayIn, scope: ShopScope = CurrentScope):
     if data.get("end_date") and data["end_date"] < data["date"]:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "End date cannot precede the start date.")
 
-    return await scope.holidays.insert({
+    requested_dates = _record_dates(data)
+    if data.get("employee_id"):
+        bookings = [booking async for booking in scope.holidays.stream()]
+        conflicts = _overlapping_absences(
+            bookings, data["employee_id"], requested_dates,
+        )
+        if conflicts:
+            raise HTTPException(status.HTTP_409_CONFLICT, _overlap_detail(conflicts))
+
+    created = await scope.holidays.insert({
         "holiday_id": f"hol_{uuid.uuid4().hex[:10]}", **data
     })
+    if data.get("employee_id"):
+        await _sync_employee_leave_to_drafts(
+            scope, data["employee_id"], replace_dates=requested_dates,
+        )
+    return created
 
 
 MAX_LEAVE_DAYS = 190   # roughly six months; guards against a typo'd year
@@ -356,19 +523,17 @@ async def book_leave(payload: LeaveRequest, scope: ShopScope = CurrentScope):
             "Only this employee's existing holiday entries can be replaced.",
         )
 
-    # The endpoint has always replaced existing per-day leave inside the new
-    # range. Its old paid rows must likewise be released during validation.
-    in_range_ids = {
-        holiday.get("holiday_id") for holiday in bookings
-        if holiday.get("employee_id") == payload.employee_id
-        and holiday.get("date") in date_set
-        and holiday.get("scope") in ("employee", "unavailable")
-        and holiday.get("holiday_id")
-    }
-    excluded_ids = replace_ids | in_range_ids
+    conflicts = _overlapping_absences(
+        bookings, payload.employee_id, date_set, exclude_ids=replace_ids,
+    )
+    if conflicts:
+        raise HTTPException(status.HTTP_409_CONFLICT, _overlap_detail(conflicts))
+
+    # Only Edit may release an existing reservation. A new booking that
+    # happens to overlap must not silently become an edit.
     balance = holiday_balance.compute_balance(
         employee, approved, shop=scope.shop, holidays=bookings,
-        excluded_holiday_ids=excluded_ids,
+        excluded_holiday_ids=replace_ids,
     )
     requested_hours = hours * len(paid_dates)
     verdict = holiday_balance.check_can_book(balance, requested_hours)
@@ -383,21 +548,15 @@ async def book_leave(payload: LeaveRequest, scope: ShopScope = CurrentScope):
             f"unpaid, or adjust their balance.",
         )
 
-    # Replace the records named by Edit, including old dates outside the new
-    # range, then replace any existing leave inside the new range. Keeping the
-    # whole change in this endpoint avoids a successful rebooking leaving
-    # orphaned reserved hours if the browser closes before separate deletes.
+    # Replace only the exact records named by Edit, including old dates outside
+    # the new range. Add never supplies these ids, so it can never overwrite a
+    # booking merely because the dates happen to match.
     if replace_ids:
         await scope.holidays.delete_many({
             "holiday_id": {"$in": sorted(replace_ids)},
             "employee_id": payload.employee_id,
             "scope": {"$in": ["employee", "unavailable"]},
         })
-    await scope.holidays.delete_many({
-        "employee_id": payload.employee_id,
-        "date": {"$in": all_dates},
-        "scope": {"$in": ["employee", "unavailable"]},
-    })
 
     for date_iso in all_dates:
         is_paid = date_iso in paid_dates
@@ -410,6 +569,13 @@ async def book_leave(payload: LeaveRequest, scope: ShopScope = CurrentScope):
             "employee_id": payload.employee_id,
             **({"hours_per_day": hours} if is_paid else {}),
         })
+
+    # Booking and editing leave immediately changes every open roster week it
+    # touches. This is what turns unticked days inside the range into visible
+    # N/A cells instead of leaving stale shifts or empty '+' cells behind.
+    await _sync_employee_leave_to_drafts(
+        scope, payload.employee_id, replace_dates=date_set,
+    )
 
     return {
         "ok": True,
@@ -441,7 +607,7 @@ async def update_holiday(
     could not be created should not be reachable by editing into it.
     """
     data = payload.model_dump()
-    if data["scope"] in ("employee", "sick") and not data.get("employee_id"):
+    if data["scope"] in ("employee", "unavailable", "sick") and not data.get("employee_id"):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             f"An employee must be selected for {data['scope']} leave.",
@@ -457,17 +623,40 @@ async def update_holiday(
     # changes none — which would 404 an edit that opened the form, altered
     # nothing and pressed Save. Not hypothetical: that is the commonest way
     # to leave an edit dialog.
-    if not await scope.holidays.find_one({"holiday_id": holiday_id}):
+    existing = await scope.holidays.find_one({"holiday_id": holiday_id})
+    if not existing:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Holiday not found")
 
+    requested_dates = _record_dates(data)
+    if data.get("employee_id"):
+        bookings = [booking async for booking in scope.holidays.stream()]
+        conflicts = _overlapping_absences(
+            bookings, data["employee_id"], requested_dates,
+            exclude_ids={holiday_id},
+        )
+        if conflicts:
+            raise HTTPException(status.HTTP_409_CONFLICT, _overlap_detail(conflicts))
+
     await scope.holidays.update_one({"holiday_id": holiday_id}, data)
+    old_employee_id = existing.get("employee_id")
+    if old_employee_id and old_employee_id != data.get("employee_id"):
+        await _sync_employee_leave_to_drafts(scope, old_employee_id)
+    if data.get("employee_id"):
+        await _sync_employee_leave_to_drafts(
+            scope, data["employee_id"], replace_dates=requested_dates,
+        )
     return await scope.holidays.find_one({"holiday_id": holiday_id})
 
 
 @router.delete("/holidays/{holiday_id}")
 async def delete_holiday(holiday_id: str, scope: ShopScope = CurrentScope):
+    existing = await scope.holidays.find_one({"holiday_id": holiday_id})
+    if not existing:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Holiday not found")
     if not await scope.holidays.delete_one({"holiday_id": holiday_id}):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Holiday not found")
+    if existing.get("employee_id"):
+        await _sync_employee_leave_to_drafts(scope, existing["employee_id"])
     return {"ok": True}
 
 
