@@ -1,174 +1,200 @@
-import React, { useState } from "react";
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import {
-  Archive, CalendarDays, Clock, Crown, LayoutDashboard, LogOut, Menu,
-  Receipt, Settings, ShieldCheck, ThermometerSnowflake, Upload, Users, Wand2, X, TrendingDown, KeyRound,
-} from "lucide-react";
+import React, { useCallback, useEffect, useState } from "react";
+import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Menu, Wand2, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { api, mondayOf } from "@/lib/api";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
 
 /**
- * App shell. See DESIGN.md — white canvas, hairline chrome, and no emerald
- * anywhere: the sidebar is navigation, and the one green button on screen
- * belongs to whatever the page's primary action is.
+ * App shell (handoff: Sidebar).
+ *
+ * No icons in the nav, by design — the list is short enough to read, and
+ * icons were adding noise the rest of the app does not use. Three hairline
+ * bands, counts on the right where the number stays small and says
+ * something, and the active item as an inset band with a green left bar.
+ *
+ * Counts are fetched once for the shell rather than per page, and refreshed
+ * when the route changes — which is the only mutation signal available
+ * without a shared cache. /rosters is asked for five records rather than its
+ * default two hundred: the flag only needs the current week, and the full
+ * list carries every shift of every roster.
+ *
+ * A zero renders as nothing rather than "0". An empty slot reads as nothing
+ * to see; a zero reads as something broken.
  */
 
-// Grouped so a ten-item list reads as three short ones. The order follows the
-// job: set the shop up, produce a roster, then look back at it.
-const NAV_GROUPS = [
+const GROUPS = [
   {
     label: "Setup",
     items: [
-      { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-      // Reachable after onboarding too: hours, roles and shift limits are
-      // the settings most often got wrong first time, and there was no way
-      // back to them once the wizard had been finished.
-      { to: "/onboarding", label: "Shop Settings", icon: Settings },
-      { to: "/employees", label: "Employees", icon: Users },
-      { to: "/calendar", label: "Holidays", icon: CalendarDays },
-      { to: "/fixed-shifts", label: "Fixed Shifts", icon: Clock },
-      { to: "/rules", label: "AI Rules", icon: ShieldCheck },
+      { to: "/", label: "Dashboard", end: true },
+      // Reachable after onboarding too: hours, roles and shift limits are the
+      // settings most often got wrong first time, and there was no way back
+      // to them once the wizard had been finished.
+      { to: "/onboarding", label: "Shop Settings" },
+      { to: "/employees", label: "Employees", countKey: "employees" },
+      { to: "/calendar", label: "Holidays", countKey: "holidays" },
+      { to: "/fixed-shifts", label: "Fixed Shifts", countKey: "fixedShifts" },
+      { to: "/rules", label: "AI Rules", countKey: "aiRules" },
     ],
   },
   {
     label: "Scheduling",
     items: [
-      { to: "/roster", label: "Roster", icon: Wand2 },
-      { to: "/past", label: "Past Rosters", icon: Archive },
+      { to: "/roster", label: "Roster", flagKey: "roster" },
+      // No count: the archive grows without limit, so the number is noise.
+      { to: "/past", label: "Past Rosters" },
     ],
   },
   {
     label: "Data",
     items: [
-      { to: "/import", label: "Import Rosters", icon: Upload },
-      { to: "/reports/hours", label: "Hours & Wages", icon: Receipt },
-      { to: "/reports/learning", label: "What It Learned", icon: TrendingDown },
-      { to: "/sick-report", label: "Sick Report", icon: ThermometerSnowflake },
+      { to: "/import", label: "Import Rosters" },
+      { to: "/reports/hours", label: "Hours & Wages" },
+      { to: "/reports/learning", label: "What It Learned" },
+      { to: "/sick-report", label: "Sick Report", countKey: "sickOpen", tone: "warn" },
     ],
   },
 ];
 
+const today = () => new Date().toISOString().slice(0, 10);
+
+/** Whether an absence record covers today. */
+const coversToday = (record) => {
+  const day = today();
+  const start = record.date;
+  const end = record.end_date || record.date;
+  return Boolean(start) && start <= day && day <= end;
+};
+
 export default function AppLayout() {
   const { user, logout } = useAuth();
   const [passwordOpen, setPasswordOpen] = useState(false);
-  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [counts, setCounts] = useState({});
+  const [rosterFlag, setRosterFlag] = useState(null);
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+
+  const loadCounts = useCallback(async () => {
+    const [emps, holidays, fixed, rules, rosters] = await Promise.all([
+      api.get("/employees").catch(() => null),
+      api.get("/holidays").catch(() => null),
+      api.get("/fixed-shifts").catch(() => null),
+      api.get("/ai-rules").catch(() => null),
+      api.get("/rosters", { params: { limit: 5 } }).catch(() => null),
+    ]);
+
+    const absences = holidays?.data || [];
+    setCounts({
+      employees: (emps?.data || []).filter((e) => e.is_active !== false && !e.past_staff).length,
+      holidays: absences.filter((h) => h.scope === "employee" && coversToday(h)).length,
+      fixedShifts: (fixed?.data || []).length,
+      aiRules: (rules?.data || []).filter((r) => r.enabled !== false).length,
+      sickOpen: absences.filter((h) => h.scope === "sick" && coversToday(h)).length,
+    });
+
+    if (rosters?.data) {
+      const week = mondayOf();
+      const current = rosters.data.find((r) => r.week_start === week);
+      setRosterFlag(current ? (current.approved ? "approved" : "draft") : null);
+    }
+  }, []);
+
+  useEffect(() => { loadCounts(); }, [loadCounts, pathname]);
+
+  const signOut = async () => {
+    await logout();
+    navigate("/login");
+  };
 
   return (
-    <div className="min-h-screen flex" style={{ background: "var(--canvas)" }}>
-      <aside
-        className={`fixed lg:sticky top-0 left-0 h-screen w-60 z-40 flex flex-col border-r transition-transform ${
-          open ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        }`}
-        style={{ background: "var(--canvas)", borderColor: "var(--hairline)" }}
+    <div className="nv-shell">
+      {open && <div className="nv-backdrop" onClick={() => setOpen(false)} />}
+
+      <button
+        type="button"
+        data-testid="btn-menu"
+        className="nv-burger"
+        aria-label={open ? "Close navigation" : "Open navigation"}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
       >
-        <div className="px-5 py-5 border-b" style={{ borderColor: "var(--hairline-cool)" }}>
-          <div className="flex items-center gap-2.5">
-            <div
-              className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
-              style={{ background: "var(--primary)" }}
-            >
-              <Wand2 size={15} style={{ color: "var(--on-primary)" }} />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-medium leading-tight">Roster</div>
-              <div className="text-[11px]" style={{ color: "var(--ink-mute-2)" }}>
-                Staff scheduling
-              </div>
-            </div>
-          </div>
+        {open ? <X size={17} /> : <Menu size={17} />}
+      </button>
+
+      <aside className="nv-side" data-open={open}>
+        <div className="nv-brand">
+          <span className="nv-mark" aria-hidden="true">
+            <Wand2 size={17} color="#04140c" strokeWidth={1.7} />
+          </span>
+          <span style={{ minWidth: 0 }}>
+            <span className="nv-brand-name" style={{ display: "block" }}>Roster</span>
+            <span className="nv-brand-sub" style={{ display: "block" }}>Staff scheduling</span>
+          </span>
         </div>
 
-        <nav className="flex-1 overflow-y-auto scroll-thin px-3 py-4 space-y-5">
-          {NAV_GROUPS.map((group) => (
-            <div key={group.label}>
-              <div className="eyebrow px-2 mb-1.5">{group.label}</div>
-              <div className="space-y-0.5">
-                {group.items.map(({ to, label, icon: Icon, end }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    end={end}
-                    data-testid={`nav-${label.toLowerCase().replace(/\s+/g, "-")}`}
-                    onClick={() => setOpen(false)}
-                    className={({ isActive }) =>
-                      `flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
-                        isActive ? "font-medium" : ""
-                      }`
-                    }
-                    style={({ isActive }) => ({
-                      // The active row is a filled neutral surface rather than
-                      // a coloured one — colour on screen means "action" or
-                      // "problem", never "you are here".
-                      background: isActive ? "var(--canvas-soft)" : "transparent",
-                      color: isActive ? "var(--ink)" : "var(--ink-mute)",
-                      boxShadow: isActive ? "inset 2px 0 0 var(--ink)" : "none",
-                    })}
-                  >
-                    <Icon size={15} className="shrink-0" />
-                    {label}
-                  </NavLink>
-                ))}
-              </div>
+        <nav className="nv-nav" aria-label="Main">
+          {GROUPS.map((group) => (
+            <div className="nv-group" key={group.label}>
+              <div className="nv-group-label">{group.label}</div>
+              <ul className="nv-list">
+                {group.items.map((item) => {
+                  const count = item.countKey ? counts[item.countKey] : 0;
+                  const flag = item.flagKey === "roster" ? rosterFlag : null;
+                  return (
+                    <li key={item.to}>
+                      <NavLink
+                        to={item.to}
+                        end={item.end}
+                        data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                        className="nv-item"
+                        onClick={() => setOpen(false)}
+                      >
+                        <span>{item.label}</span>
+                        {flag ? (
+                          <span className="nv-flag" data-state={flag}>
+                            {flag === "approved" ? "APPROVED" : "DRAFT"}
+                          </span>
+                        ) : count ? (
+                          <span className="nv-count" data-tone={item.tone}>{count}</span>
+                        ) : null}
+                      </NavLink>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           ))}
         </nav>
 
-        <div className="px-3 py-4 border-t" style={{ borderColor: "var(--hairline-cool)" }}>
-          <div className="flex items-center gap-2.5 px-2 mb-3">
-            <div
-              className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0"
-              style={{ background: "var(--canvas-soft)", border: "1px solid var(--hairline)", color: "var(--ink)" }}
+        <div className="nv-account">
+          <div className="nv-acc-name" title={user?.name}>{user?.name}</div>
+          <div className="nv-acc-mail" title={user?.email}>{user?.email}</div>
+          <div className="nv-acc-acts">
+            <button
+              type="button"
+              data-testid="btn-change-password"
+              className="nv-acc-btn"
+              onClick={() => setPasswordOpen(true)}
             >
-              {user?.name?.[0]?.toUpperCase() || "U"}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px] truncate flex items-center gap-1">
-                {user?.name}
-                {user?.pro && <Crown size={11} style={{ color: "var(--ink-mute-2)" }} />}
-              </div>
-              <div className="text-[11px] truncate" style={{ color: "var(--ink-mute-2)" }}>
-                {user?.email}
-              </div>
-            </div>
+              Change password
+            </button>
+            <button
+              type="button"
+              data-testid="btn-logout"
+              className="nv-acc-btn"
+              data-primary="true"
+              onClick={signOut}
+            >
+              Sign out
+            </button>
           </div>
-          <button
-            data-testid="btn-change-password"
-            onClick={() => setPasswordOpen(true)}
-            className="btn btn-ghost w-full justify-start text-[13px]"
-          >
-            <KeyRound size={14} /> Change password
-          </button>
-          <button
-            data-testid="btn-logout"
-            onClick={async () => { await logout(); navigate("/login"); }}
-            className="btn btn-ghost w-full justify-start text-[13px]"
-          >
-            <LogOut size={14} /> Sign out
-          </button>
-          {passwordOpen && (
-            <ChangePasswordModal onClose={() => setPasswordOpen(false)} />
-          )}
+          {passwordOpen && <ChangePasswordModal onClose={() => setPasswordOpen(false)} />}
         </div>
       </aside>
 
-      {open && (
-        <div
-          className="lg:hidden fixed inset-0 z-30 bg-black/20"
-          onClick={() => setOpen(false)}
-        />
-      )}
-
-      <button
-        data-testid="btn-menu"
-        className="lg:hidden fixed top-4 left-4 z-50 w-9 h-9 rounded-md flex items-center justify-center"
-        style={{ background: "var(--canvas-soft)", border: "1px solid var(--hairline-strong)", color: "var(--ink)" }}
-        onClick={() => setOpen(!open)}
-      >
-        {open ? <X size={16} /> : <Menu size={16} />}
-      </button>
-
-      <main className="flex-1 min-w-0 p-6 lg:p-10">
+      <main className="nv-main">
         <Outlet />
       </main>
     </div>

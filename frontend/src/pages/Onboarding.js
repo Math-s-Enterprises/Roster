@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api, errorMessage, DAY_LABELS, DAYS } from "@/lib/api";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, ChevronLeft, Check, ArrowUp, ArrowDown, Loader2, Plus, X } from "lucide-react";
+import { ChevronRight, ChevronLeft, Check, ArrowUp, ArrowDown, GripVertical, Loader2, Plus, X } from "lucide-react";
 
 export default function Onboarding() {
   const [step, setStep] = useState(0);
@@ -33,6 +33,12 @@ export default function Onboarding() {
   const [observerName, setObserverName] = useState("");
   const [observerEmail, setObserverEmail] = useState("");
   const [saving, setSaving] = useState(false);
+  // Explicit per-role supervisory flags. Seeded from what the server
+  // derives, then editable. See the note by the toggle: the field is sent
+  // on save but PUT /shop does not accept it yet.
+  const [coverRoles, setCoverRoles] = useState(null);
+  const [dragRole, setDragRole] = useState(null);
+  const [overRole, setOverRole] = useState(null);
   const nav = useNavigate();
 
   /**
@@ -66,6 +72,7 @@ export default function Onboarding() {
       // sensible default ladder rather than whatever order roles were added.
       setRoles(h.data.hierarchy);
       setSupervisory(h.data.supervisory);
+      setCoverRoles(h.data.supervisory_roles || h.data.supervisory || []);
       setCounts(h.data.employee_counts || {});
     });
   }, []);
@@ -93,6 +100,18 @@ export default function Onboarding() {
     setRoles(next);
   };
 
+  const dropRole = (target) => {
+    if (!dragRole || dragRole === target) { setDragRole(null); setOverRole(null); return; }
+    const next = [...roles];
+    const from = next.indexOf(dragRole);
+    const to = next.indexOf(target);
+    if (from < 0 || to < 0) { setDragRole(null); setOverRole(null); return; }
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    setRoles(next);
+    setDragRole(null);
+    setOverRole(null);
+  };
+
   const save = async (extra = {}) => {
     await api.put("/shop", {
       name, hours,
@@ -108,6 +127,8 @@ export default function Onboarding() {
       paid_sick_days: Number(paidSickDays) || 0,
       min_rest_hours: Number(minRest) || 0,
       roster_recipients: observers,
+      // Not yet accepted by ShopUpdate — see the note on the toggle.
+      supervisory_roles: coverRoles || [],
       ...extra,
     });
   };
@@ -129,6 +150,550 @@ export default function Onboarding() {
   };
 
   if (!shop) return <div className="text-white/60">Loading…</div>;
+
+  // ---- settings view ------------------------------------------------
+  //
+  // A shop already through setup gets the full settings page. First run
+  // keeps the step-by-step wizard below: it is a different screen, and the
+  // handoff this layout comes from covers settings only.
+
+  /**
+   * Which fields differ from what the server last sent. Drives the green
+   * border on edited inputs, the list in the unsaved panel, and whether
+   * Save is enabled — so all three can never disagree.
+   */
+  const dirty = {};
+  if (shop) {
+    if (name !== (shop.name || "")) dirty.name = "shop name";
+    if (Number(minShift) !== Number(shop.min_shift_hours)) dirty.minShift = "min shift hours";
+    if (Number(maxShift) !== Number(shop.max_shift_hours)) dirty.maxShift = "max shift hours";
+    if (open24h !== !!shop.open_24h) dirty.open24h = "opening hours";
+    if (strictDaysOff !== (shop.strict_days_off !== false)) dirty.strictDaysOff = "preferred days off";
+    if (breaksPaid !== !!shop.breaks_are_paid) dirty.breaksPaid = "breaks are paid";
+    if (Number(minRest) !== Number(shop.min_rest_hours ?? 11)) dirty.minRest = "minimum rest";
+    if (Number(paidSickDays) !== Number(shop.paid_sick_days ?? 5)) dirty.paidSick = "paid sick days";
+    if (JSON.stringify(roles) !== JSON.stringify(shop.role_hierarchy || shop.roles || [])) {
+      dirty.roles = "roles and seniority";
+    }
+    if (JSON.stringify(observers) !== JSON.stringify(shop.roster_recipients || [])) {
+      dirty.observers = "roster recipients";
+    }
+    if (coverRoles && JSON.stringify([...coverRoles].sort()) !== JSON.stringify([...supervisory].sort())) {
+      dirty.cover = "supervisory cover";
+    }
+    if (JSON.stringify(hours) !== JSON.stringify(shop.hours || [])) dirty.hours = "opening hours";
+  }
+  const dirtyNames = [...new Set(Object.values(dirty))];
+  const isDirty = dirtyNames.length > 0;
+
+  // Validated here and re-validated server-side; 12 hours is the legal
+  // ceiling, so a max above it is blocked rather than warned about.
+  const invalid = {};
+  if (Number(minShift) >= Number(maxShift)) {
+    invalid.minShift = "Minimum must be less than the maximum.";
+  }
+  if (Number(maxShift) > 12) {
+    invalid.maxShift = "12 hours is the legal ceiling — this cannot be saved.";
+  }
+  const blocked = Object.keys(invalid).length > 0;
+
+  /**
+   * Whether a role counts as supervisory cover, and why.
+   *
+   * Read-only on purpose. The backend derives this live — a title containing
+   * manager, supervisor, duty, lead, senior, keyholder or charge always
+   * counts, and beyond that the top third of the ladder does. There is no
+   * stored field to write a per-role toggle to, so an editable switch would
+   * click, look right and change nothing. Showing the derived answer with
+   * its reason at least explains a rule that was previously invisible.
+   */
+  const cover = coverRoles || supervisory;
+
+  const toggleCover = (role) => {
+    const on = cover.includes(role);
+    if (on && cover.length === 1) {
+      toast.warning(
+        "No role counts as supervisory cover — the \"manager on every close\" rule cannot be satisfied.",
+      );
+    }
+    setCoverRoles(on ? cover.filter((r) => r !== role) : [...cover, role]);
+  };
+
+  const supervisoryCount = roles.filter((r) => cover.includes(r)).length;
+
+  const addRole = () => {
+    const title = newRole.trim();
+    if (!title) return;
+    if (roles.some((r) => r.toLowerCase() === title.toLowerCase())) {
+      toast.error(`${title} is already on the list`);
+      return;
+    }
+    setRoles([...roles, title]);
+    setNewRole("");
+    toast.success(`Added ${title} — set its cover in the table if it needs it`);
+  };
+
+  const removeRole = (role) => {
+    if (!window.confirm(
+      `Remove ${role} from the ladder?\n\n`
+      + "Nobody loses the title — staff with a role that is not listed simply rank last."
+    )) return;
+    setRoles(roles.filter((r) => r !== role));
+  };
+
+  const removeObserver = (email) => {
+    if (!window.confirm(`Stop sending the roster to ${email}?`)) return;
+    setObservers(observers.filter((o) => o.email !== email));
+  };
+
+  const setDay = (day, patch) =>
+    setHours(hours.map((h) => (h.day === day ? { ...h, ...patch } : h)));
+
+  const FIXED_RULES = [
+    "Nobody works more than 48 hours in a week, averaged over four months.",
+    "Under-16s are never rostered before 08:00 or after 19:00.",
+    "At least one supervisory person is rostered on every close.",
+    "Booked holiday and sick leave are never scheduled over.",
+  ];
+
+  if (editing) {
+    return (
+      <div className="ss-page">
+        <header className="ss-head">
+          <div className="ss-eyebrow">SETUP</div>
+          <h1 className="ss-h1">Shop settings</h1>
+          <p className="ss-sub">
+            Change anything you got wrong first time. Saving applies to the next roster you
+            generate — weeks already approved are untouched.
+          </p>
+        </header>
+
+        <div className="ss-split">
+          <div className="ss-name-cell">
+            <label className="ss-label" htmlFor="ss-name">Shop name</label>
+            <input
+              id="ss-name"
+              data-testid="input-shop-name"
+              className="ss-input"
+              style={{ maxWidth: 520 }}
+              value={name}
+              data-dirty={Boolean(dirty.name)}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="ss-unsaved">
+            <div className="ss-label">Unsaved changes</div>
+            <p className="ss-unsaved-body" data-clean={!isDirty} role="status">
+              {isDirty ? (
+                <>
+                  <strong>{dirtyNames.length} edit{dirtyNames.length === 1 ? "" : "s"}</strong>
+                  {" — "}{dirtyNames.join(", ")}. Regenerate a week afterwards to see the effect.
+                </>
+              ) : "No unsaved changes."}
+            </p>
+          </div>
+        </div>
+
+        <div className="ss-section">
+          <h2 className="ss-h2">Opening hours &amp; shift limits</h2>
+          <p className="ss-section-sub">
+            When the shop is open, and how long a single shift may run.
+          </p>
+        </div>
+        <div className="ss-cells">
+          <div className="ss-cell">
+            <label className="ss-check">
+              <input
+                type="checkbox"
+                data-testid="input-open-24h"
+                checked={open24h}
+                onChange={(e) => setOpen24h(e.target.checked)}
+              />
+              <span className="ss-box" aria-hidden="true">
+                {open24h && <Check size={12} color="#04140c" strokeWidth={3} />}
+              </span>
+              <span className="ss-check-label">Open 24 hours</span>
+            </label>
+            <p className="ss-helper">
+              The shop is treated as open every hour of every day, and at least one person is
+              rostered at all times — including overnight. Individual day times are not used.
+            </p>
+
+            {/* Day times are kept, not cleared, so unticking restores them. */}
+            {!open24h && (
+              <>
+                <div className="ss-days">
+                  {DAYS.map((d) => {
+                    const row = hours.find((h) => h.day === d) || { day: d, open: "09:00", close: "17:00" };
+                    return (
+                      <div className="ss-day" key={d}>
+                        <span className="ss-day-name">{DAY_LABELS[d]}</span>
+                        <span className="ss-day-times">
+                          {row.closed ? (
+                            <span className="ss-day-closed">Closed</span>
+                          ) : (
+                            <>
+                              <input
+                                type="time"
+                                className="ss-time"
+                                value={row.open || "09:00"}
+                                aria-label={`${DAY_LABELS[d]} opening time`}
+                                onChange={(e) => setDay(d, { open: e.target.value })}
+                              />
+                              <span style={{ color: "#6f6f6f" }}>→</span>
+                              <input
+                                type="time"
+                                className="ss-time"
+                                value={row.close || "17:00"}
+                                aria-label={`${DAY_LABELS[d]} closing time`}
+                                onChange={(e) => setDay(d, { close: e.target.value })}
+                              />
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            className="ss-remove"
+                            onClick={() => setDay(d, { closed: !row.closed })}
+                          >
+                            {row.closed ? "Open this day" : "Closed"}
+                          </button>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  data-testid="btn-copy-monday"
+                  className="ss-remove"
+                  style={{ color: "#3ddc91", fontWeight: 700, marginTop: 10 }}
+                  onClick={copyMondayToAll}
+                >
+                  Use Monday's times every day
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="ss-cell">
+            <label className="ss-label ss-label-tight" htmlFor="ss-min">Min shift hours</label>
+            <input
+              id="ss-min"
+              type="number"
+              className="ss-input ss-input-num"
+              value={minShift}
+              data-dirty={Boolean(dirty.minShift)}
+              data-invalid={Boolean(invalid.minShift)}
+              aria-describedby="ss-min-help"
+              onChange={(e) => setMinShift(e.target.value)}
+            />
+            <p id="ss-min-help" className="ss-helper" data-invalid={Boolean(invalid.minShift)}>
+              {invalid.minShift || "Shorter than this is not worth anybody's journey in."}
+            </p>
+          </div>
+
+          <div className="ss-cell">
+            <label className="ss-label ss-label-tight" htmlFor="ss-max">Max shift hours</label>
+            <input
+              id="ss-max"
+              type="number"
+              className="ss-input ss-input-num"
+              value={maxShift}
+              data-dirty={Boolean(dirty.maxShift)}
+              data-invalid={Boolean(invalid.maxShift)}
+              aria-describedby="ss-max-help"
+              onChange={(e) => setMaxShift(e.target.value)}
+            />
+            <p
+              id="ss-max-help"
+              className="ss-helper"
+              data-dirty={Boolean(dirty.maxShift) && !invalid.maxShift}
+              data-invalid={Boolean(invalid.maxShift)}
+            >
+              {invalid.maxShift
+                || (dirty.maxShift ? "Edited · the legal ceiling is 12 hours." : "The legal ceiling is 12 hours.")}
+            </p>
+          </div>
+        </div>
+
+        <div className="ss-section">
+          <h2 className="ss-h2">Roles &amp; seniority <span>({roles.length})</span></h2>
+          <p className="ss-section-sub">
+            The order here is the ladder: hours are handed out from the top down, and the roster grid
+            prints in the same order. Drag a role to move it.
+          </p>
+        </div>
+
+        <div className="ss-table" role="table" aria-label="Roles and seniority">
+          <div className="ss-row ss-colhead" role="row">
+            <span role="columnheader">Rank</span>
+            <span role="columnheader">Role</span>
+            <span className="ss-num" role="columnheader">Staff</span>
+            <span aria-hidden="true" />
+            <span role="columnheader">Cover</span>
+            <span role="columnheader" aria-label="Actions" />
+          </div>
+
+          {roles.map((role, index) => {
+            const on = cover.includes(role);
+            return (
+              <div
+                className="ss-row ss-rolerow"
+                role="row"
+                key={role}
+                data-dragging={dragRole === role}
+                data-dropbefore={overRole === role && dragRole !== role}
+                draggable
+                onDragStart={() => setDragRole(role)}
+                onDragOver={(e) => { if (dragRole) { e.preventDefault(); setOverRole(role); } }}
+                onDragLeave={() => setOverRole((r) => (r === role ? null : r))}
+                onDrop={(e) => { e.preventDefault(); dropRole(role); }}
+                onDragEnd={() => { setDragRole(null); setOverRole(null); }}
+              >
+                <span className="ss-rank" role="cell">{index + 1}</span>
+                <span className="ss-role" role="cell">{role}</span>
+                <span className="ss-num ss-staff" role="cell">{counts[role] ?? 0}</span>
+                <span aria-hidden="true" />
+                <span role="cell">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={on}
+                    className="ss-cover"
+                    data-on={on}
+                    aria-label={`Supervisory cover for ${role}`}
+                    onClick={() => toggleCover(role)}
+                  >
+                    <span className="ss-square" aria-hidden="true" />
+                    Supervisory
+                  </button>
+                </span>
+                <span className="ss-roleacts" role="cell">
+                  <button
+                    type="button"
+                    className="ss-grip"
+                    aria-label={`Reorder ${role}. Rank ${index + 1} of ${roles.length}. Use arrow keys.`}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowUp") { e.preventDefault(); move(index, -1); }
+                      if (e.key === "ArrowDown") { e.preventDefault(); move(index, 1); }
+                    }}
+                  >
+                    <GripVertical size={15} strokeWidth={1.7} />
+                  </button>
+                  <button
+                    type="button"
+                    className="ss-remove"
+                    onClick={() => removeRole(role)}
+                    aria-label={`Remove ${role}`}
+                  >
+                    Remove
+                  </button>
+                </span>
+              </div>
+            );
+          })}
+
+          <div className="ss-addrow">
+            <input
+              className="ss-addinput"
+              style={{ maxWidth: 420 }}
+              value={newRole}
+              placeholder="Add a role"
+              aria-label="Add a role"
+              onChange={(e) => setNewRole(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") addRole(); }}
+            />
+            <button type="button" className="ss-btn" onClick={addRole} disabled={!newRole.trim()}>
+              <Plus size={15} strokeWidth={2} /> Add
+            </button>
+          </div>
+
+          <p className="ss-note">
+            Tap <strong>Supervisory</strong> to set whether a role counts as supervisory cover — green
+            is on, red is off. At least one supervisory person is rostered on every close.{" "}
+            <strong className="ss-warn">
+              This setting is not saved yet: the server derives cover from the job title and the top
+              third of the ladder, and does not accept a per-role flag.
+            </strong>{" "}
+            Until that is added, a change here lasts only until you reload.{" "}
+            <strong>Removing a role does not remove it from anyone</strong> — staff with an unlisted
+            title simply rank last.
+            {supervisoryCount === 0 && (
+              <span className="ss-warn">
+                {" "}No role currently counts as supervisory cover, so the “manager on every close”
+                rule cannot be satisfied.
+              </span>
+            )}
+          </p>
+        </div>
+
+        <div className="ss-section">
+          <h2 className="ss-h2">Scheduling rules</h2>
+          <p className="ss-section-sub">How firmly the roster holds to preferences, and what it pays for.</p>
+        </div>
+
+        <div className="ss-cells ss-cells-wide ss-cells-divide">
+          <div className="ss-cell">
+            <label className="ss-check">
+              <input
+                type="checkbox"
+                data-testid="input-strict-days-off"
+                checked={strictDaysOff}
+                onChange={(e) => setStrictDaysOff(e.target.checked)}
+              />
+              <span className="ss-box" aria-hidden="true">
+                {strictDaysOff && <Check size={12} color="#04140c" strokeWidth={3} />}
+              </span>
+              <span className="ss-check-label">Preferred days off are never overridden</span>
+            </label>
+            <p className="ss-helper">
+              A preferred day off is treated as unavailable rather than as a preference, so nobody is
+              rostered on it even when the shop is short. Turn this off and the solver may use those
+              days when it cannot cover the week any other way.
+            </p>
+          </div>
+
+          <div className="ss-cell">
+            <label className="ss-check">
+              <input
+                type="checkbox"
+                data-testid="input-breaks-paid"
+                checked={breaksPaid}
+                onChange={(e) => setBreaksPaid(e.target.checked)}
+              />
+              <span className="ss-box" aria-hidden="true">
+                {breaksPaid && <Check size={12} color="#04140c" strokeWidth={3} />}
+              </span>
+              <span className="ss-check-label">Breaks are paid</span>
+            </label>
+            <p className="ss-helper">
+              With this off, an 8-hour shift pays 7.5 — the half hour of break is unpaid and comes out
+              of the hours you are billed for. It does not change a full-time contract: the contracted
+              week stays the same, and the difference shows in the Hours and Wages report.
+            </p>
+          </div>
+        </div>
+
+        <div className="ss-cells ss-cells-wide ss-cells-end">
+          <div className="ss-cell">
+            <label className="ss-label ss-label-tight" htmlFor="ss-rest">
+              Minimum rest between shifts (hours)
+            </label>
+            <input
+              id="ss-rest"
+              type="number"
+              className="ss-input ss-input-num"
+              value={minRest}
+              data-dirty={Boolean(dirty.minRest)}
+              aria-describedby="ss-rest-help"
+              onChange={(e) => setMinRest(e.target.value)}
+            />
+            <p id="ss-rest-help" className="ss-helper" data-dirty={Boolean(dirty.minRest)}>
+              The Organisation of Working Time Act sets eleven consecutive hours between shifts.
+              Lowering it below eleven does not make a shorter gap lawful — it only stops the roster
+              flagging one, so raise it if your own agreements are stricter and leave it otherwise.
+            </p>
+          </div>
+
+          <div className="ss-cell">
+            <label className="ss-label ss-label-tight" htmlFor="ss-sick">Paid sick days per year</label>
+            <input
+              id="ss-sick"
+              type="number"
+              className="ss-input ss-input-num"
+              value={paidSickDays}
+              data-dirty={Boolean(dirty.paidSick)}
+              aria-describedby="ss-sick-help"
+              onChange={(e) => setPaidSickDays(e.target.value)}
+            />
+            <p id="ss-sick-help" className="ss-helper" data-dirty={Boolean(dirty.paidSick)}>
+              {dirty.paidSick ? "Edited · " : ""}
+              Irish statutory sick pay is the floor, not a target — you may pay more than the
+              statutory minimum but not less. Days past the allowance are still recorded, as unpaid.
+            </p>
+          </div>
+        </div>
+
+        <div className="ss-section">
+          <h2 className="ss-h2">Also send the roster to <span>({observers.length})</span></h2>
+          <p className="ss-section-sub">
+            People who receive the roster without appearing on it — an area manager, a franchise
+            owner. They are never rostered and never counted as staff.
+          </p>
+        </div>
+
+        <div className="ss-table">
+          {observers.map((o) => (
+            <div className="ss-reciprow" key={o.email}>
+              <span className="ss-recip-name" data-none={!o.name}>{o.name || "No name"}</span>
+              <span className="ss-recip-mail" title={o.email}>{o.email}</span>
+              <span style={{ textAlign: "right" }}>
+                <button
+                  type="button"
+                  className="ss-remove"
+                  onClick={() => removeObserver(o.email)}
+                  aria-label={`Remove ${o.email}`}
+                >
+                  Remove
+                </button>
+              </span>
+            </div>
+          ))}
+
+          <div className="ss-addrow">
+            <input
+              className="ss-addinput"
+              style={{ maxWidth: 240 }}
+              value={observerName}
+              placeholder="Name (optional)"
+              aria-label="Recipient name (optional)"
+              onChange={(e) => setObserverName(e.target.value)}
+            />
+            <input
+              className="ss-addinput"
+              style={{ maxWidth: 360 }}
+              type="email"
+              value={observerEmail}
+              placeholder="name@example.com"
+              aria-label="Recipient email"
+              onChange={(e) => setObserverEmail(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") addObserver(); }}
+            />
+            <button type="button" className="ss-btn" onClick={addObserver} disabled={!observerEmail.trim()}>
+              <Plus size={15} strokeWidth={2} /> Add
+            </button>
+          </div>
+        </div>
+
+        <div className="ss-fixed">
+          <div className="ss-label">Rules that cannot be turned off</div>
+          <div className="ss-fixed-grid">
+            {FIXED_RULES.map((line) => (
+              <span className="ss-fixed-line" key={line}>{line}</span>
+            ))}
+          </div>
+        </div>
+
+        <div className="ss-save">
+          <button
+            type="button"
+            data-testid="btn-save-settings"
+            className="ss-save-btn"
+            disabled={!isDirty || blocked || saving}
+            onClick={saveChanges}
+          >
+            <Check size={15} strokeWidth={2.4} />
+            {saving ? "Saving…" : "Save changes"}
+          </button>
+          <span className="ss-save-note">
+            {blocked
+              ? "Fix the highlighted fields before saving."
+              : "Regenerate a week afterwards to see the effect."}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   const steps = [
     { title: "Shop identity", desc: "Give your shop a name your team will recognize." },
