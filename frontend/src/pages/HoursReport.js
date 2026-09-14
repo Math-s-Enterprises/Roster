@@ -246,7 +246,7 @@ export default function HoursReport() {
           </div>
 
           <div className="hw-range">
-            <Calendar size={14} color="#8c8c8c" strokeWidth={1.6} aria-hidden="true" />
+            <Calendar size={14} color="var(--t-muted)" strokeWidth={1.6} aria-hidden="true" />
             <input
               type="date"
               value={start}
@@ -309,7 +309,7 @@ export default function HoursReport() {
         </h2>
         <div className="hw-controls">
           <div className="hw-search">
-            <Search size={14} color="#6f6f6f" strokeWidth={1.6} aria-hidden="true" />
+            <Search size={14} color="var(--t-faint)" strokeWidth={1.6} aria-hidden="true" />
             <input
               value={query}
               onChange={(e) => { setQuery(e.target.value); setVisible(PAGE); }}
@@ -324,7 +324,7 @@ export default function HoursReport() {
                 aria-label="Clear search"
               >
                 <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-                  <path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4" stroke="#c9c9c9"
+                  <path d="M1.6 1.6l6.8 6.8M8.4 1.6L1.6 8.4" stroke="var(--t-body2)"
                     strokeWidth="1.7" strokeLinecap="round" />
                 </svg>
               </button>

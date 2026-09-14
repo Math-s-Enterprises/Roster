@@ -801,7 +801,7 @@ export default function Employees() {
       <div className="esp-split">
         <div className="esp-left" data-hidden={Boolean(employeeId)}>
           <div className="esp-search">
-            <Search size={14} color="#8c8c8c" strokeWidth={1.8} aria-hidden="true" />
+            <Search size={14} color="var(--t-muted)" strokeWidth={1.8} aria-hidden="true" />
             <input
               value={query}
               onChange={(ev) => setQuery(ev.target.value)}

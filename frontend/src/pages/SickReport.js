@@ -423,7 +423,7 @@ export default function SickReport() {
         </div>
         <div className="sk-actions">
           <label className="sk-picker">
-            <Calendar size={14} color="#8c8c8c" strokeWidth={1.6} aria-hidden="true" />
+            <Calendar size={14} color="var(--t-muted)" strokeWidth={1.6} aria-hidden="true" />
             <select
               value={activeYear}
               onChange={(e) => {

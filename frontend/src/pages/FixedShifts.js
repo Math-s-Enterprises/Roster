@@ -479,7 +479,7 @@ export default function FixedShifts() {
       {/* The alert carries coverage in words, so it never rests on colour. */}
       {!loading && !showList && uncovered.length > 0 && emps.length > 0 && (
         <div className="fx-alert" role="status">
-          <AlertTriangle size={16} color="#ff8f8f" style={{ flex: "none" }} aria-hidden="true" />
+          <AlertTriangle size={16} color="var(--t-danger)" style={{ flex: "none" }} aria-hidden="true" />
           <span className="fx-alert-text">
             <strong>
               {listDays(uncovered)} {uncovered.length === 1 ? "has" : "have"} no pinned cover.

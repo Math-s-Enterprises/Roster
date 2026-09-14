@@ -256,9 +256,9 @@ export default function Dashboard() {
         <div className="db-setup">
           <div className="db-setup-main">
             {setupComplete ? (
-              <CheckCircle2 size={16} color="#3ddc91" strokeWidth={1.8} aria-hidden="true" />
+              <CheckCircle2 size={16} color="var(--t-accent)" strokeWidth={1.8} aria-hidden="true" />
             ) : (
-              <AlertCircle size={16} color="#ffb066" strokeWidth={1.8} aria-hidden="true" />
+              <AlertCircle size={16} color="var(--t-warn)" strokeWidth={1.8} aria-hidden="true" />
             )}
             <span className="db-setup-head" data-state={setupComplete ? "done" : "todo"}>
               {setupComplete ? "Setup complete" : `${stepsLeft} step${stepsLeft === 1 ? "" : "s"} left`}

@@ -916,7 +916,7 @@ export default function RosterView() {
               try { input?.showPicker?.(); } catch { /* not supported here */ }
             }}
           >
-            <Calendar size={14} color="#8c8c8c" strokeWidth={1.6} aria-hidden="true" />
+            <Calendar size={14} color="var(--t-muted)" strokeWidth={1.6} aria-hidden="true" />
             <input
               data-testid="week-picker"
               type="date"

@@ -57,6 +57,18 @@ const GROUPS = [
   },
 ];
 
+const THEME_KEY = "roster_theme";
+
+/**
+ * Applied to <html> so every page, modal and portal follows — including
+ * anything rendered outside this component's tree.
+ */
+function applyTheme(theme) {
+  const root = document.documentElement;
+  if (theme === "light") root.setAttribute("data-theme", "light");
+  else root.removeAttribute("data-theme");
+}
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 /** Whether an absence record covers today. */
@@ -72,6 +84,8 @@ export default function AppLayout() {
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [counts, setCounts] = useState({});
+  // Dark is the default — it is the palette every handoff specified.
+  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || "dark");
   const [rosterFlag, setRosterFlag] = useState(null);
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -103,6 +117,11 @@ export default function AppLayout() {
 
   useEffect(() => { loadCounts(); }, [loadCounts, pathname]);
 
+  useEffect(() => {
+    applyTheme(theme);
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+
   const signOut = async () => {
     await logout();
     navigate("/login");
@@ -126,7 +145,7 @@ export default function AppLayout() {
       <aside className="nv-side" data-open={open}>
         <div className="nv-brand">
           <span className="nv-mark" aria-hidden="true">
-            <Wand2 size={17} color="#04140c" strokeWidth={1.7} />
+            <Wand2 size={17} color="var(--t-on-accent)" strokeWidth={1.7} />
           </span>
           <span style={{ minWidth: 0 }}>
             <span className="nv-brand-name" style={{ display: "block" }}>Roster</span>
@@ -172,6 +191,28 @@ export default function AppLayout() {
           <div className="nv-acc-name" title={user?.name}>{user?.name}</div>
           <div className="nv-acc-mail" title={user?.email}>{user?.email}</div>
           <div className="nv-acc-acts">
+            <button
+              type="button"
+              data-testid="btn-theme"
+              role="switch"
+              aria-checked={theme === "light"}
+              className="nv-theme"
+              data-light={theme === "light"}
+              aria-label="Light mode"
+              onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+              onKeyDown={(e) => {
+                // Arrows pick a side outright rather than toggling, so
+                // pressing right twice cannot land you back on dark.
+                if (e.key === "ArrowRight") { e.preventDefault(); setTheme("light"); }
+                if (e.key === "ArrowLeft") { e.preventDefault(); setTheme("dark"); }
+              }}
+            >
+              <span className="nv-theme-track">
+                <span className="nv-theme-thumb" aria-hidden="true" />
+                <span className="nv-theme-opt" data-on={theme !== "light"}>Dark</span>
+                <span className="nv-theme-opt" data-on={theme === "light"}>Light</span>
+              </span>
+            </button>
             <button
               type="button"
               data-testid="btn-change-password"
