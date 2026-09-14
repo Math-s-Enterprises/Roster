@@ -1,5 +1,7 @@
 from copy import deepcopy
+from datetime import datetime, timezone
 
+from app.services import training_evidence
 from app.services.training_evidence import (
     approval_evidence,
     context,
@@ -26,7 +28,18 @@ def test_context_keeps_constraints_without_contact_details_or_mutable_references
     assert captured["fixed_shifts"][0]["days"] == ["mon"]
 
 
-def test_context_hash_is_stable_across_capture_time_and_database_order():
+def test_context_hash_is_stable_across_capture_time_and_database_order(monkeypatch):
+    times = iter([
+        datetime(2026, 9, 11, 1, 0, tzinfo=timezone.utc),
+        datetime(2026, 9, 11, 1, 1, tzinfo=timezone.utc),
+    ])
+
+    class Clock:
+        @classmethod
+        def now(cls, tz):
+            return next(times)
+
+    monkeypatch.setattr(training_evidence, "datetime", Clock)
     shop = {"shop_id": "s", "min_rest_hours": 10}
     employees = [
         {"employee_id": "b", "max_weekly_hours": 20},

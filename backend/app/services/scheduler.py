@@ -99,6 +99,22 @@ def to_minutes(hhmm: str) -> int:
     return int(hours) * 60 + int(minutes)
 
 
+def covers_closing(start: str, end: str, close_m: int) -> bool:
+    """Whether a shift covers the trading day's closing boundary.
+
+    An overnight close is represented beyond 24:00. Its closing segment may
+    still be written as ``02:00-06:00``, so consider both occurrences of the
+    clock times instead of requiring the shift itself to cross midnight.
+    """
+    start_m, end_m = to_minutes(start), to_minutes(end)
+    if end_m <= start_m:
+        end_m += 24 * 60
+    return any(
+        start_m + offset < close_m <= end_m + offset
+        for offset in (0, 24 * 60)
+    )
+
+
 def to_hhmm(minutes: int) -> str:
     minutes %= 24 * 60
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
@@ -168,7 +184,10 @@ def inactive_rule_titles(ai_rules: List[Dict[str, Any]]) -> List[str]:
         for rule in ai_rules or []
         if not rule.get("locked")
         and rule.get("enabled", True)
-        and not (rule.get("compiled") and rule.get("approved", True))
+        and not (
+            rule.get("approved", True)
+            and rule_parser.is_supported_constraint(rule.get("compiled"))
+        )
     ]
 
 
@@ -634,10 +653,7 @@ class _RosterBuilder:
         # roster page does — one input shape, one answer.
         self.holidays = holidays
         self.fixed_by_employee_day = self._index_fixed_shifts(fixed_shifts)
-        self.custom_constraints = [
-            r["compiled"] for r in ai_rules
-            if r.get("compiled") and r.get("approved", True)
-        ]
+        self.custom_constraints = rule_parser.compiled_constraints(ai_rules)
         self.inactive_rules = inactive_rule_titles(ai_rules)
 
         start_date = datetime.strptime(week_start, "%Y-%m-%d").date()
@@ -1808,6 +1824,7 @@ class _RosterBuilder:
             and not s.get("pinned")
             and not s.get("extra")
             and not s.get("fixed")
+            and not s.get("supervisory_cover")
             and not s.get("paid_holiday")
             and not s.get("unpaid_holiday")
             and not s.get("sick")
@@ -3583,16 +3600,35 @@ class _RosterBuilder:
     def _ensure_supervisory_cover(
         self, trading: List[Tuple[str, str, int, int]]
     ) -> None:
-        """Put a manager or supervisor on any day that has none.
+        """Put a manager or supervisor where the shop requires one.
 
         The check used to be a warning printed after the fact, which told
         the manager about a day with nobody senior on it but did nothing to
         fix it. Senior cover is the kind of thing a shop cannot open
         without, so it is now repaired like any other gap: find the busiest
         slot on that day, and give it to the most senior person available.
+
+        A custom closing rule narrows that slot to one ending at the shop's
+        configured close. `close_m` may be after midnight, so 22:00-06:00 is
+        checked as one trading day rather than against two clock-only times.
         """
         for day, date_iso, open_m, close_m in trading:
-            if self._has_supervisor(day):
+            closing_rules = rule_parser.closing_supervisor_rules(
+                self.custom_constraints, day
+            )
+            closing_required = bool(closing_rules)
+            if closing_required:
+                self.rules_that_fired.update(id(rule) for rule in closing_rules)
+                if self.shop.get("open_24h"):
+                    self.result.issues.append(
+                        f"Your closing role rule cannot apply on {day}: this shop "
+                        f"is configured as open 24 hours and has no closing time."
+                    )
+                    closing_required = False
+
+            if self._has_supervisor(
+                day, close_m=close_m if closing_required else None
+            ):
                 continue
 
             seniors = [
@@ -3600,6 +3636,12 @@ class _RosterBuilder:
                 if hierarchy.is_supervisory(e.get("role"), self.shop)
             ]
             if not seniors:
+                if closing_required:
+                    self.result.issues.append(
+                        f"Your rule requires a manager or supervisor at closing "
+                        f"on {day}, but this shop has no eligible supervisory role."
+                    )
+                    continue
                 return  # the shop has nobody senior at all; nothing to place
 
             # Their usual shapes first, so the fix looks like a normal shift —
@@ -3627,20 +3669,39 @@ class _RosterBuilder:
                 owner = slot_owners.owner_of(
                     self.slot_owners, day, pattern.start, pattern.end,
                 )
+                count = getattr(pattern, "count", 1)
                 if owner in senior_ids:
-                    return (0, -pattern.count)
+                    return (0, -count)
                 if owner is None:
-                    return (1, -pattern.count)
+                    return (1, -count)
                 return (
                     2,
                     slot_owners.ownership_strength(
                         self.slot_owners, day, pattern.start, pattern.end,
                     ),
-                    -pattern.count,
+                    -count,
                 )
 
+            available_patterns = list(
+                self.demand.patterns if self.demand else (
+                    segments_for_day(self.shop, open_m, close_m)
+                    if closing_required else []
+                )
+            )
+            if closing_required:
+                available_patterns = [
+                    pattern for pattern in available_patterns
+                    if covers_closing(pattern.start, pattern.end, close_m)
+                ]
+                if not available_patterns:
+                    available_patterns = [
+                        segment for segment in segments_for_day(
+                            self.shop, open_m, close_m
+                        )
+                        if covers_closing(segment.start, segment.end, close_m)
+                    ]
             patterns = sorted(
-                (p for p in (self.demand.patterns if self.demand else []) if p.covers()),
+                available_patterns,
                 key=placement_rank,
             )
             assigned_today = self.assigned_by_day.setdefault(day, set())
@@ -3660,12 +3721,16 @@ class _RosterBuilder:
                     if not eligible:
                         continue
                     best = eligible[0]  # already in seniority order
-                    finish = self._fit_length_to_contract(
-                        best, day, pattern.start, pattern.end
+                    finish = (
+                        pattern.end if closing_required else
+                        self._fit_length_to_contract(
+                            best, day, pattern.start, pattern.end
+                        )
                     )
                     self._record_shift(
                         best["employee_id"], day, pattern.start, finish,
                         supervisory_cover=True,
+                        **({"closing_cover": True} if closing_required else {}),
                     )
                     assigned_today.add(best["employee_id"])
                     if relax:
@@ -3674,19 +3739,34 @@ class _RosterBuilder:
                     break
 
             if not placed:
-                self.result.issues.append(
-                    f"No manager or supervisor could be rostered on {day}. "
-                    f"Everyone senior is on leave, at their hour limit, or "
-                    f"already working five days."
-                )
+                if closing_required:
+                    self.result.issues.append(
+                        f"Your rule requires a manager or supervisor at closing "
+                        f"on {day}, but none could be rostered. Everyone senior "
+                        f"is on leave, at their hour limit, unavailable for the "
+                        f"closing shift, or already working five days."
+                    )
+                else:
+                    self.result.issues.append(
+                        f"No manager or supervisor could be rostered on {day}. "
+                        f"Everyone senior is on leave, at their hour limit, or "
+                        f"already working five days."
+                    )
 
-    def _has_supervisor(self, day: str) -> bool:
+    def _has_supervisor(self, day: str, close_m: Optional[int] = None) -> bool:
         return any(
             hierarchy.is_supervisory(
                 self.employees_by_id.get(s["employee_id"], {}).get("role"), self.shop
             )
             for s in self.result.shifts
-            if s["day"] == day and not s.get("paid_holiday")
+            if s["day"] == day
+            and not (
+                s.get("paid_holiday") or s.get("unpaid_holiday") or s.get("sick")
+            )
+            and (
+                close_m is None
+                or covers_closing(s["start"], s["end"], close_m)
+            )
         )
 
     def _check_supervisory_cover(self, day: str) -> None:

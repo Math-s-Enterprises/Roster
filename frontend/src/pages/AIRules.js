@@ -83,7 +83,15 @@ const isLive = (rule) =>
 /** Plain-English readback of what the compiler understood. */
 function understood(rule) {
   if (!rule.compiled) return null;
-  const base = rule.compiled.description || rule.compiled.type?.replace(/_/g, " ");
+  const compiled = rule.compiled;
+  const roleRequirement = compiled.rule_type === "ROLE_REQUIREMENT"
+    && compiled.time_slot === "CLOSING"
+    ? `At least ${compiled.min_count} ${compiled.target_roles?.join(" or ")} at closing`
+    : null;
+  const base = roleRequirement
+    || compiled.description
+    || compiled.rule_type?.replace(/_/g, " ")
+    || compiled.type?.replace(/_/g, " ");
   if (!base) return null;
   const days = Array.isArray(rule.compiled.days) && rule.compiled.days.length
     ? ` · ${rule.compiled.days.join(", ")}`

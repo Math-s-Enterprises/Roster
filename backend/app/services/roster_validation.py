@@ -29,6 +29,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 from app.services import availability as avail
+from app.services import compliance
 from app.services.scheduler import (
     ABSOLUTE_MAX_SHIFT_HOURS,
     DAYS,
@@ -147,6 +148,7 @@ def validate_shifts(
     holidays: Optional[List[Dict[str, Any]]] = None,
     week_start: str,
     history_rosters: Optional[List[Dict[str, Any]]] = None,
+    ai_rules: Optional[List[Dict[str, Any]]] = None,
 ) -> Verdict:
     """Check a proposed week of shifts against the same rules the solver uses."""
     verdict = Verdict()
@@ -317,4 +319,10 @@ def validate_shifts(
                 f"Shorten or remove one of their shifts first."
             )
 
+    verdict.blocking.extend(
+        breach["message"] for breach in compliance.closing_role_breaches(
+            shifts, shop=shop, employees=employees, ai_rules=ai_rules,
+            week_start=week_start, holidays=holidays,
+        )
+    )
     return verdict
