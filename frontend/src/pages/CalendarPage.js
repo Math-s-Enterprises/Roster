@@ -1021,26 +1021,24 @@ function DeleteRunDialog({ run, onClose, onDone }) {
 /* -------------------------------------------------------------------------
    Add / edit leave
 
-   The booking form is unchanged — same three types, same per-day paid
-   picker, same balance guard — it has simply moved behind the Add leave
-   button. In EDIT mode the paid-day picker is hidden: an existing record is
-   one already-decided day, and re-running the booking flow over it would
-   rewrite days the manager did not open the dialog to touch.
+   The booking form is shared by Add and Edit. Holiday edits always return to
+   the per-day paid picker, even for a one-day booking, so the manager can
+   change which dates use entitlement without deleting and recreating leave.
 ------------------------------------------------------------------------- */
 function LeaveModal({ employees, run, onClose, onSaved }) {
   const editing = Boolean(run);
-  // A run of ONE record is edited in place. A run stitched from several
-  // day-records is re-booked as a whole, because there is no "edit these
-  // eleven records" endpoint and editing only the first would silently
-  // change one day of an eleven-day holiday.
-  const single = editing && run.entries.length === 1 ? run.entries[0] : null;
+  // Every holiday edit uses the atomic booking endpoint. It releases the
+  // exact records being edited before checking entitlement, and it is the
+  // only edit path that can change a day between paid Holiday and N/A.
+  const rebook = editing && run.family === "holiday";
+  const single = editing && !rebook && run.entries.length === 1
+    ? run.entries[0] : null;
   const wholeAbsence = editing && !single;
   // Only a HOLIDAY absence can be re-booked through /holidays/leave, which
   // writes paid and unpaid days. Sending a multi-day SICK run through it
   // would rewrite every one of those days as holiday — silently, and against
   // the employee's entitlement. Those collapse into a single range record
   // instead, keeping their own scope.
-  const rebook = wholeAbsence && run.family === "holiday";
   const collapse = wholeAbsence && !rebook;
 
   const [scope, setScope] = useState(
@@ -1279,11 +1277,18 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
           {(scope === "leave-week" || rebook) && balance && (
             <div className="hol-surface" style={{ padding: 12, fontSize: 11 }}>
               <div className="flex justify-between">
-                <span className="hol-muted">Holiday available</span>
+                <span className="hol-muted">
+                  {rebook ? "Available for this edit" : "Available to book"}
+                </span>
                 <span className="font-mono" style={{ color: "var(--primary)" }}>
                   {balance.available_hours}h
                 </span>
               </div>
+              {rebook && (
+                <div className="hol-muted" style={{ marginTop: 3 }}>
+                  Includes the paid hours released from this booking.
+                </div>
+              )}
               <div className="flex justify-between" style={{ marginTop: 4 }}>
                 <span className="hol-muted">Covers</span>
                 <span className="font-mono">
@@ -1293,8 +1298,14 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
               </div>
               {balance.booked_hours > 0 && (
                 <div className="flex justify-between" style={{ marginTop: 4 }}>
-                  <span className="hol-muted">Already booked</span>
+                  <span className="hol-muted">Other paid leave booked</span>
                   <span className="font-mono">{balance.booked_hours}h</span>
+                </div>
+              )}
+              {requestedHours != null && (
+                <div className="flex justify-between" style={{ marginTop: 4 }}>
+                  <span className="hol-muted">Used by this {rebook ? "edit" : "booking"}</span>
+                  <span className="font-mono">{requestedHours}h</span>
                 </div>
               )}
             </div>

@@ -2297,22 +2297,33 @@ class TestLeave:
         }, headers=auth(token))
         assert response.status_code == 400
 
-    def test_rebooking_replaces_rather_than_duplicates(self, client):
+    def test_new_booking_cannot_overlap_existing_leave(self, client):
         token = register(client)
         employee_id = self._employee(client, token)
         base = {
             "employee_id": employee_id,
             "start_date": "2026-08-10", "end_date": "2026-08-16",
         }
-        client.post("/api/holidays/leave", json={**base, "paid_dates": ["2026-08-10"]},
-                    headers=auth(token))
-        client.post("/api/holidays/leave", json={**base, "paid_dates": ["2026-08-12"]},
-                    headers=auth(token))
+        first = client.post(
+            "/api/holidays/leave",
+            json={**base, "paid_dates": ["2026-08-10"]},
+            headers=auth(token),
+        )
+        duplicate = client.post(
+            "/api/holidays/leave",
+            json={**base, "paid_dates": ["2026-08-12"]},
+            headers=auth(token),
+        )
+
+        assert first.status_code == 201
+        assert duplicate.status_code == 409
+        assert "already booked" in duplicate.json()["detail"]
+        assert "use Edit" in duplicate.json()["detail"]
 
         holidays = client.get("/api/holidays", headers=auth(token)).json()
-        assert len(holidays) == 7, "correcting a booking must not double it up"
+        assert len(holidays) == 7, "a rejected duplicate must leave the original intact"
         paid = [h for h in holidays if h["scope"] == "employee"]
-        assert {h["date"] for h in paid} == {"2026-08-12"}
+        assert {h["date"] for h in paid} == {"2026-08-10"}
 
     def test_each_booking_immediately_reduces_what_the_next_can_spend(self, client):
         """Two future bookings must not spend the same entitlement."""
@@ -2425,6 +2436,38 @@ class TestLeave:
         }
         assert all(not s.get("start") and not s.get("end") for s in mine)
         assert all(s.get("paid_hours") == 0 for s in mine if s.get("unpaid_holiday"))
+
+    def test_booking_leave_updates_an_existing_draft_with_holiday_and_na(self, client):
+        """Leave booked after generation must change the open roster at once."""
+        token = register(client)
+        employee_id = self._employee(client, token, hours=20)
+        self._cover(client, token)
+        roster_id = client.post(
+            "/api/roster/generate",
+            json={"week_start": "2026-08-10"},
+            headers=auth(token),
+        ).json()["roster_id"]
+
+        booked = client.post("/api/holidays/leave", json={
+            "employee_id": employee_id,
+            "start_date": "2026-08-10",
+            "end_date": "2026-08-11",
+            "paid_dates": ["2026-08-10"],
+        }, headers=auth(token))
+        assert booked.status_code == 201, booked.text
+
+        roster = client.get(
+            f"/api/rosters/{roster_id}", headers=auth(token),
+        ).json()
+        mine = {
+            shift["day"]: shift
+            for shift in roster["shifts"]
+            if shift["employee_id"] == employee_id
+        }
+        assert mine["mon"]["paid_holiday"] is True
+        assert mine["mon"]["start"] == mine["mon"]["end"] == ""
+        assert mine["tue"]["unpaid_holiday"] is True
+        assert mine["tue"]["paid_hours"] == 0
 
     def test_holiday_hours_draw_down_the_balance(self, client):
         token = register(client)

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api, errorMessage, refusalReasons, availabilityConflict, leaveConflict, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, shiftHours, shiftPaidHours, dateForDay, fmtDayDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import RosterPrintSheet from "@/components/RosterPrintSheet";
+import ShiftWarningModal from "@/components/ShiftWarningModal";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
@@ -84,6 +85,7 @@ export default function RosterView() {
   // A refused change gets a dialog rather than a toast: it needs reading and
   // acting on, and a toast that has already faded is no help.
   const [refused, setRefused] = useState(null);
+  const [shiftWarning, setShiftWarning] = useState(null);
   const [confirmUnapprove, setConfirmUnapprove] = useState(false);
   const [sickShift, setSickShift] = useState(null);
   const [extraOpen, setExtraOpen] = useState(false);
@@ -425,7 +427,7 @@ export default function RosterView() {
       || (roster?.shifts || []).some((s) => s.employee_id === e.employee_id)
   ), [emps, roster]);
 
-  const saveShift = async (payload) => {
+  const saveShift = async (payload, confirmed = false) => {
     if (payload && shiftHours(payload.start, payload.end) > 11) {
       toast.error("Shift exceeds 11h limit"); return;
     }
@@ -434,9 +436,14 @@ export default function RosterView() {
       leaveConflict(holidays, employee, roster.week_start, payload.day),
       availabilityConflict(employee, payload.day, payload.start, payload.end),
     ].filter(Boolean);
-    if (warnings?.length && !window.confirm(
-      `${warnings.join("\n")}\n\nAre you sure you want to save this shift?`,
-    )) return;
+    if (warnings?.length && !confirmed) {
+      setShiftWarning({
+        warnings,
+        confirmLabel: "Save shift anyway",
+        action: () => saveShift(payload, true),
+      });
+      return;
+    }
     const shifts = (roster.shifts || []).filter((s) => s.shift_id !== editShift.shift_id);
     if (payload) {
       const dup = shifts.find((s) => s.employee_id === payload.employee_id && s.day === payload.day);
@@ -480,7 +487,7 @@ export default function RosterView() {
    * disagree about, and it does not depend on shift_id surviving a round trip
    * that strips it (`clean` below drops it before every PUT).
    */
-  const moveShift = async (shift, toEmpId, toDay) => {
+  const moveShift = async (shift, toEmpId, toDay, confirmed = false) => {
     if (shift.employee_id === toEmpId && shift.day === toDay) return;
 
     const at = (s, employeeId, day) => s.employee_id === employeeId && s.day === day;
@@ -508,9 +515,14 @@ export default function RosterView() {
         empMap[shift.employee_id], shift.day, occupant.start, occupant.end,
       ),
     ].filter(Boolean);
-    if (moveWarnings.length && !window.confirm(
-      `${moveWarnings.join("\n")}\n\n${occupant ? "Swap" : "Move"} anyway?`,
-    )) return;
+    if (moveWarnings.length && !confirmed) {
+      setShiftWarning({
+        warnings: moveWarnings,
+        confirmLabel: occupant ? "Swap anyway" : "Move anyway",
+        action: () => moveShift(shift, toEmpId, toDay, true),
+      });
+      return;
+    }
 
     const shifts = (roster.shifts || []).map((s) => {
       if (at(s, shift.employee_id, shift.day)) {
@@ -1367,6 +1379,19 @@ export default function RosterView() {
           onDelete={() => saveShift(null)}
           onUnpin={unpin}
           isNew={editShift.shift_id?.startsWith("new_")}
+        />
+      )}
+
+      {shiftWarning && (
+        <ShiftWarningModal
+          warnings={shiftWarning.warnings}
+          confirmLabel={shiftWarning.confirmLabel}
+          onClose={() => setShiftWarning(null)}
+          onConfirm={() => {
+            const action = shiftWarning.action;
+            setShiftWarning(null);
+            action();
+          }}
         />
       )}
 
