@@ -52,6 +52,30 @@ def test_leave_overlapping_week_still_skips_both_contract_passes(start, end):
     assert fitting.span_used["e"] == 32
 
 
+def test_final_tidy_removes_a_contract_extension_made_redundant_by_coverage():
+    fitting = builder()
+    fitting.span_bands["e"] = (41, 42.5)
+    for day, start, end in (
+        ("sun", "16:00", "00:00"),
+        ("mon", "09:00", "17:00"),
+        ("tue", "09:00", "17:00"),
+        ("wed", "07:30", "16:00"),
+        ("thu", "09:00", "17:00"),
+    ):
+        fitting._record_shift("e", day, start, end)
+
+    fitting._fit_contract_hours()
+    sunday = next(s for s in fitting.result.shifts if s["day"] == "sun")
+    assert sunday["end"] == "00:30"  # the contract initially needed 0.5h
+
+    tuesday = next(s for s in fitting.result.shifts if s["day"] == "tue")
+    fitting._reshape_shift(tuesday, "18:00")  # later coverage supplied 1h
+    fitting._trim_redundant_contract_extensions()
+
+    assert sunday["end"] == "00:00"
+    assert fitting.span_used["e"] == 41.5
+
+
 def night(**extra):
     return {"employee_id": "e", "day": "sun", "start": "22:00", "end": "06:00", **extra}
 

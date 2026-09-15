@@ -718,6 +718,10 @@ class _RosterBuilder:
         self.result = SolveResult()
         self.hours_used: Dict[str, float] = {e["employee_id"]: 0.0 for e in employees}
         self.span_used: Dict[str, float] = {e["employee_id"]: 0.0 for e in employees}
+        # Original finishes extended solely to reach a salaried contract.
+        # A later coverage stretch can make that extra time redundant, so a
+        # final cheap pass gets one chance to put the historical finish back.
+        self._contract_extended_from: Dict[Tuple[str, str], str] = {}
         self.days_worked: Dict[str, Set[str]] = {
             e["employee_id"]: set() for e in employees
         }
@@ -3531,6 +3535,10 @@ class _RosterBuilder:
         # are answering harder questions.
         if self.demand is not None:
             self._rebalance_hours()
+            # Coverage can add hours after contract fitting. Give back any
+            # earlier contract-only extension that is no longer needed,
+            # without changing coverage or dropping below the contract band.
+            self._trim_redundant_contract_extensions()
 
         # A settled shift that changed hands for no reason is a fault, and
         # every one found so far was found by the manager rather than by the
@@ -4638,12 +4646,55 @@ class _RosterBuilder:
                     ) is not None:
                         continue
 
+                    if delta > 0:
+                        self._contract_extended_from.setdefault(
+                            (employee_id, shift["day"]), shift["end"]
+                        )
                     self._reshape_shift(shift, new_end)
                     moved = True
                     break
 
                 if not moved:
                     break
+
+    def _trim_redundant_contract_extensions(self) -> None:
+        """Undo contract-only finish extensions made redundant later.
+
+        This is a final tidy, not another solve: it only shortens toward the
+        finish the generated shift originally had, and only when the employee
+        stays in band and every required coverage hour remains staffed.
+        """
+        if not self._contract_extended_from:
+            return
+
+        min_shift = float(self.shop.get("min_shift_hours") or 0)
+
+        for key, original_end in self._contract_extended_from.items():
+            employee_id, day = key
+            band = self.span_bands.get(employee_id)
+            if not band:
+                continue
+            shift = next((
+                s for s in self.result.shifts
+                if s.get("employee_id") == employee_id and s.get("day") == day
+                and s.get("start") and s.get("end")
+            ), None)
+            if not shift:
+                continue
+
+            original_span = shift_duration_minutes(shift["start"], original_end)
+            current_span = shift_duration_minutes(shift["start"], shift["end"])
+            reduction = (current_span - original_span) / 60
+            if reduction <= 0:
+                continue
+            minimum = band[0]
+            if self.span_used.get(employee_id, 0.0) - reduction < minimum - 0.01:
+                continue
+            if original_span / 60 < min_shift:
+                continue
+            if not self._can_shorten_to(shift, original_end):
+                continue
+            self._reshape_shift(shift, original_end)
 
     def _report_thin_days(self) -> None:
         """Flag a day staffed by fewer people than the shop normally uses.
