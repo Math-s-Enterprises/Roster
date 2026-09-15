@@ -245,8 +245,14 @@ async def get_role_hierarchy(scope: ShopScope = CurrentScope):
         "employee_counts": counts,
         "supervisory": [
             role for role in hierarchy
-            if hierarchy_service.is_supervisory(role, {"role_hierarchy": hierarchy})
+            if hierarchy_service.is_supervisory(
+                role, {**scope.shop, "role_hierarchy": hierarchy}
+            )
         ],
+        "supervisory_roles": (
+            scope.shop.get("supervisory_roles")
+            if "supervisory_roles" in scope.shop else None
+        ),
     }
 
 

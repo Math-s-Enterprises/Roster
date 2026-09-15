@@ -1790,6 +1790,24 @@ def test_custom_hierarchy_is_honoured(client):
     assert [e["name"] for e in listed] == ["Ben", "Ann"]
 
 
+def test_shop_can_choose_exact_supervisory_roles(client):
+    token = register(client)
+    response = client.put(
+        "/api/shop",
+        json={
+            "role_hierarchy": ["Captain", "Crew"],
+            "supervisory_roles": ["Captain"],
+        },
+        headers=auth(token),
+    )
+    assert response.status_code == 200
+    assert response.json()["supervisory_roles"] == ["Captain"]
+
+    hierarchy = client.get("/api/shop/hierarchy", headers=auth(token)).json()
+    assert hierarchy["supervisory_roles"] == ["Captain"]
+    assert hierarchy["supervisory"] == ["Captain"]
+
+
 def test_underage_employee_is_rejected(client):
     token = register(client)
     response = client.post(

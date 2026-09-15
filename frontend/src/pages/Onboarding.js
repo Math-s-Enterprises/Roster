@@ -33,9 +33,8 @@ export default function Onboarding() {
   const [observerName, setObserverName] = useState("");
   const [observerEmail, setObserverEmail] = useState("");
   const [saving, setSaving] = useState(false);
-  // Explicit per-role supervisory flags. Seeded from what the server
-  // derives, then editable. See the note by the toggle: the field is sent
-  // on save but PUT /shop does not accept it yet.
+  // Explicit per-role supervisory flags. Seeded from the server's legacy
+  // fallback for old shops, then saved as this shop's own choice.
   const [coverRoles, setCoverRoles] = useState(null);
   const [dragRole, setDragRole] = useState(null);
   const [overRole, setOverRole] = useState(null);
@@ -127,7 +126,6 @@ export default function Onboarding() {
       paid_sick_days: Number(paidSickDays) || 0,
       min_rest_hours: Number(minRest) || 0,
       roster_recipients: observers,
-      // Not yet accepted by ShopUpdate — see the note on the toggle.
       supervisory_roles: coverRoles || [],
       ...extra,
     });
@@ -197,16 +195,7 @@ export default function Onboarding() {
   }
   const blocked = Object.keys(invalid).length > 0;
 
-  /**
-   * Whether a role counts as supervisory cover, and why.
-   *
-   * Read-only on purpose. The backend derives this live — a title containing
-   * manager, supervisor, duty, lead, senior, keyholder or charge always
-   * counts, and beyond that the top third of the ladder does. There is no
-   * stored field to write a per-role toggle to, so an editable switch would
-   * click, look right and change nothing. Showing the derived answer with
-   * its reason at least explains a rule that was previously invisible.
-   */
+  /** Whether a role counts as supervisory cover for this shop. */
   const cover = coverRoles || supervisory;
 
   const toggleCover = (role) => {
@@ -239,6 +228,7 @@ export default function Onboarding() {
       + "Nobody loses the title — staff with a role that is not listed simply rank last."
     )) return;
     setRoles(roles.filter((r) => r !== role));
+    setCoverRoles((current) => current?.filter((r) => r !== role) || []);
   };
 
   const removeObserver = (email) => {
@@ -510,12 +500,9 @@ export default function Onboarding() {
 
           <p className="ss-note">
             Tap <strong>Supervisory</strong> to set whether a role counts as supervisory cover — green
-            is on, red is off. At least one supervisory person is rostered on every close.{" "}
-            <strong className="ss-warn">
-              This setting is not saved yet: the server derives cover from the job title and the top
-              third of the ladder, and does not accept a per-role flag.
-            </strong>{" "}
-            Until that is added, a change here lasts only until you reload.{" "}
+            is on, red is off. At least one supervisory person is rostered on every close. The
+            scheduler also uses this shop's approved rosters to learn when supervisory cover is
+            normally present.{" "}
             <strong>Removing a role does not remove it from anyone</strong> — staff with an unlisted
             title simply rank last.
             {supervisoryCount === 0 && (
@@ -849,7 +836,10 @@ export default function Onboarding() {
                     <ArrowDown size={13} />
                   </button>
                   <button type="button" title="Remove"
-                    onClick={() => setRoles(roles.filter((x) => x !== r))}
+                    onClick={() => {
+                      setRoles(roles.filter((x) => x !== r));
+                      setCoverRoles((current) => current?.filter((role) => role !== r) || []);
+                    }}
                     className="p-1 rounded text-white/30 hover:text-red-400">
                     <X size={13} />
                   </button>

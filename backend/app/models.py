@@ -110,6 +110,10 @@ class ShopUpdate(BaseModel):
     # Ordered most senior first. Drives who is considered first when
     # allocating hours — one of the rules that cannot be overridden.
     role_hierarchy: Optional[List[str]] = None
+    # Roles that count as supervisory cover. Presence of this field is
+    # deliberate: an explicit empty list means the shop has chosen none,
+    # while older shops with no field retain the title/ladder fallback.
+    supervisory_roles: Optional[List[str]] = None
     # What a roster file's wording means in this shop's own vocabulary:
     # {"Shop Floor": "Floor Assistant", "Ass Manager": "Assistant Manager"}.
     # Imports match loosely enough to forgive "Mgr" for "Manager", but an
