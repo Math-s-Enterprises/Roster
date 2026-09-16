@@ -11,9 +11,12 @@ from app import db
 from app.models import (
     ContactApply, EmployeeIn, FixedShiftIn, HolidayIn, LeaveRequest, ShopUpdate,
 )
-from app.services.scheduler import DAYS, shift_paid_hours, shop_breaks_paid
+from app.services.scheduler import (
+    DAYS, shift_paid_hours, shop_breaks_paid, violates_minor_curfew,
+)
 from app.services import availability as avail
 from app.services import contact_import
+from app.services import demand as demand_service
 from app.services import holiday_balance
 from app.services import hierarchy as hierarchy_service
 from app.services import payroll_report
@@ -65,6 +68,110 @@ def _overlap_detail(conflicts: List[Dict]) -> str:
         f"Leave is already booked for this employee on {shown}. "
         "Open the existing booking and use Edit instead."
     )
+
+
+def _monday(on: date) -> date:
+    return on - timedelta(days=on.weekday())
+
+
+def _leave_staffing_warnings(
+    shop: Dict,
+    employees: List[Dict],
+    approved_rosters: List[Dict],
+    bookings: List[Dict],
+    employee_id: str,
+    requested_dates: Set[str],
+    *,
+    replace_ids: Set[str] | None = None,
+) -> List[str]:
+    """Warn only when this booking creates or worsens a daily shortage."""
+    replacement_ids = replace_ids or set()
+    active = [employee for employee in employees if avail.is_active(employee)]
+    roles = {employee["employee_id"]: employee.get("role", "") for employee in active}
+
+    currently_off: Dict[str, Set[str]] = {}
+    proposed_off: Dict[str, Set[str]] = {}
+    for booking in bookings:
+        if booking.get("scope") not in ("employee", "unavailable", "sick"):
+            continue
+        booked_employee = booking.get("employee_id")
+        if not booked_employee:
+            continue
+        for day_iso in _record_dates(booking):
+            currently_off.setdefault(day_iso, set()).add(booked_employee)
+            if booking.get("holiday_id") not in replacement_ids:
+                proposed_off.setdefault(day_iso, set()).add(booked_employee)
+    for day_iso in requested_dates:
+        proposed_off.setdefault(day_iso, set()).add(employee_id)
+
+    profile_cache: Dict[str, object] = {}
+    history_cache: Dict[str, Dict] = {}
+    warnings: List[str] = []
+    for day_iso in sorted(requested_dates):
+        on = date.fromisoformat(day_iso)
+        day = DAYS[on.weekday()]
+        week = _monday(on).isoformat()
+        if week not in profile_cache:
+            earlier = [
+                roster for roster in approved_rosters
+                if str(roster.get("week_start") or "") < week
+            ]
+            profile_cache[week] = demand_service.build_profile(
+                shop, earlier, roles, for_week=week,
+            )
+            history_cache[week] = avail.build_shift_history(earlier)
+        profile = profile_cache[week]
+        slots = profile.slots_for(day)
+        target = profile.staff_target(day)
+        if target <= 0 or not slots:
+            continue
+
+        history = history_cache[week]
+
+        def can_work(employee: Dict, off: Set[str]) -> bool:
+            if employee["employee_id"] in off:
+                return False
+            if shop.get("strict_days_off", True) and day in (
+                employee.get("preferred_days_off") or []
+            ):
+                return False
+            cap = avail.weekly_hour_cap(employee, week)
+            for start, end in slots:
+                if not avail.check_availability(employee, day, start, end).allowed:
+                    continue
+                if avail.check_familiarity(employee, start, end, history).warning:
+                    continue
+                if violates_minor_curfew(employee, start, end):
+                    continue
+                if shift_paid_hours(
+                    {"start": start, "end": end},
+                    breaks_paid=shop_breaks_paid(shop),
+                ) > cap + 1e-6:
+                    continue
+                return True
+            return False
+
+        before = sum(can_work(employee, currently_off.get(day_iso, set())) for employee in active)
+        after = sum(can_work(employee, proposed_off.get(day_iso, set())) for employee in active)
+        before_short = max(0, target - before)
+        after_short = max(0, target - after)
+        if after_short <= before_short:
+            continue
+        label = on.strftime("%A %d %B").replace(" 0", " ")
+        warnings.append(
+            f"{label}: {after} eligible staff would remain, but the roster "
+            f"normally needs {target} ({after_short} short)."
+        )
+    return warnings
+
+
+def _raise_staffing_warning(warnings: List[str]) -> None:
+    if warnings:
+        raise HTTPException(status.HTTP_409_CONFLICT, {
+            "code": "leave_staffing_shortage",
+            "message": "This holiday would leave too few staff to generate the usual roster.",
+            "warnings": warnings,
+        })
 
 
 async def _sync_employee_leave_to_drafts(
@@ -414,6 +521,7 @@ async def list_holidays(scope: ShopScope = CurrentScope):
 @router.post("/holidays", status_code=status.HTTP_201_CREATED)
 async def create_holiday(payload: HolidayIn, scope: ShopScope = CurrentScope):
     data = payload.model_dump()
+    confirmed_shortage = data.pop("confirm_staffing_shortage")
     if data["scope"] in ("employee", "unavailable", "sick") and not data.get("employee_id"):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
@@ -430,6 +538,15 @@ async def create_holiday(payload: HolidayIn, scope: ShopScope = CurrentScope):
         )
         if conflicts:
             raise HTTPException(status.HTTP_409_CONFLICT, _overlap_detail(conflicts))
+        if data["scope"] in ("employee", "unavailable") and not confirmed_shortage:
+            _raise_staffing_warning(_leave_staffing_warnings(
+                scope.shop,
+                await scope.employees.find(limit=1000),
+                [roster async for roster in scope.rosters.stream({"approved": True})],
+                bookings,
+                data["employee_id"],
+                requested_dates,
+            ))
 
     created = await scope.holidays.insert({
         "holiday_id": f"hol_{uuid.uuid4().hex[:10]}", **data
@@ -554,6 +671,17 @@ async def book_leave(payload: LeaveRequest, scope: ShopScope = CurrentScope):
             f"unpaid, or adjust their balance.",
         )
 
+    if not payload.confirm_staffing_shortage:
+        _raise_staffing_warning(_leave_staffing_warnings(
+            scope.shop,
+            await scope.employees.find(limit=1000),
+            approved,
+            bookings,
+            payload.employee_id,
+            date_set,
+            replace_ids=replace_ids,
+        ))
+
     # Replace only the exact records named by Edit, including old dates outside
     # the new range. Add never supplies these ids, so it can never overwrite a
     # booking merely because the dates happen to match.
@@ -613,6 +741,7 @@ async def update_holiday(
     could not be created should not be reachable by editing into it.
     """
     data = payload.model_dump()
+    confirmed_shortage = data.pop("confirm_staffing_shortage")
     if data["scope"] in ("employee", "unavailable", "sick") and not data.get("employee_id"):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
@@ -642,6 +771,16 @@ async def update_holiday(
         )
         if conflicts:
             raise HTTPException(status.HTTP_409_CONFLICT, _overlap_detail(conflicts))
+        if data["scope"] in ("employee", "unavailable") and not confirmed_shortage:
+            _raise_staffing_warning(_leave_staffing_warnings(
+                scope.shop,
+                await scope.employees.find(limit=1000),
+                [roster async for roster in scope.rosters.stream({"approved": True})],
+                bookings,
+                data["employee_id"],
+                requested_dates,
+                replace_ids={holiday_id},
+            ))
 
     await scope.holidays.update_one({"holiday_id": holiday_id}, data)
     old_employee_id = existing.get("employee_id")

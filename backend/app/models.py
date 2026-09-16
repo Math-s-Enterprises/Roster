@@ -291,6 +291,7 @@ class HolidayIn(BaseModel):
     # "sick"        -> paid or not per policy, never used as training signal
     scope: Literal["shop", "employee", "unavailable", "sick"] = "shop"
     employee_id: Optional[str] = None
+    confirm_staffing_shortage: bool = False
 
 
 class SickReport(BaseModel):
@@ -344,6 +345,7 @@ class LeaveRequest(BaseModel):
             "reserved hours are released before the replacement is checked."
         ),
     )
+    confirm_staffing_shortage: bool = False
 
 
 class FixedShiftIn(BaseModel):
