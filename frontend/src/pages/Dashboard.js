@@ -38,6 +38,20 @@ import { CheckCircle2, AlertCircle, Wand2, Sparkles } from "lucide-react";
  *    leave the empty state with no way forward but manual entry.
  */
 
+/**
+ * Rows per column, chosen so the two columns come out the same height.
+ *
+ * They are not the same number because the rows are not the same height. A
+ * roster row is two short lines and runs about 69px; an activity entry is a
+ * sentence that usually wraps in a ~300px column plus a timestamp, about
+ * 95px. Six entries is roughly 568px, which is eight roster rows.
+ *
+ * Both footers are pinned to the bottom of their column, so an uneven count
+ * only shows as a gap above one of them — these numbers keep that gap small.
+ */
+const ACTIVITY_ROWS = 6;
+const ROSTER_ROWS = 8;
+
 const iso = (d) => d.toISOString().slice(0, 10);
 
 /** Where an activity entry should take you, by action. */
@@ -156,7 +170,7 @@ export default function Dashboard() {
   /** Approved rosters plus this week's drafts, newest first, capped at five. */
   const recent = useMemo(() => {
     const list = rosters.filter((r) => r.approved || r.week_start === thisWeek);
-    return list.slice(0, 5);
+    return list.slice(0, ROSTER_ROWS);
   }, [rosters, thisWeek]);
 
   const peakCost = useMemo(
@@ -359,7 +373,7 @@ export default function Dashboard() {
               </button>
             </div>
           ) : (
-            <div role="table" aria-label="Recent rosters">
+            <div className="db-tablewrap" role="table" aria-label="Recent rosters">
               <div className="db-row db-colhead" role="row">
                 <span role="columnheader">Week · version</span>
                 <span className="db-num" role="columnheader">Hours</span>
@@ -435,7 +449,7 @@ export default function Dashboard() {
           ) : (
             <>
               <ol className="db-feed">
-                {activity.slice(0, 8).map((a) => {
+                {activity.slice(0, ACTIVITY_ROWS).map((a) => {
                   const parts = entryParts(a.detail);
                   const stamp = fmtStamp(a.created_at);
                   return (
@@ -458,7 +472,11 @@ export default function Dashboard() {
                 })}
               </ol>
               <div className="db-listfoot">
-                <span>{activity.length > 8 ? `Showing 8 of ${activity.length}` : `${activity.length} recent`}</span>
+                <span>
+                  {activity.length > ACTIVITY_ROWS
+                    ? `Showing ${ACTIVITY_ROWS} of ${activity.length}`
+                    : `${activity.length} recent`}
+                </span>
                 <button type="button" className="db-link" onClick={() => navigate("/roster")}>
                   Show everything
                 </button>

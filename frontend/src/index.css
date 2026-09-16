@@ -225,7 +225,7 @@ input::placeholder, textarea::placeholder { color: var(--ink-faint) !important; 
 input:focus, textarea:focus, select:focus {
   outline: none !important;
   border-color: var(--primary) !important;
-  box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.2) !important;
+  box-shadow: 0 0 0 3px var(--t-focus) !important;
 }
 input[type="checkbox"] { min-height: 0; accent-color: var(--primary); }
 
@@ -747,6 +747,32 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 
   --t-onsurf: 255, 255, 255;
   --t-focus: rgba(61, 220, 145, .35);
+
+  /* Translucent tints. These were literal rgba, so they stayed
+     dark-theme red/amber/green on a beige canvas. */
+  --t-danger-wash: rgba(255, 143, 143, .06);
+  --t-danger-wash-2: rgba(255, 143, 143, .12);
+  --t-danger-ring: rgba(255, 143, 143, .18);
+  --t-warn-ring: rgba(255, 176, 102, .35);
+  --t-accent-flash: rgba(61, 220, 145, .18);
+  --t-on-accent-soft: rgba(4, 20, 12, .6);
+  --t-fx-glow: rgba(47, 224, 143, .2);
+  --t-fx-select: rgba(47, 224, 143, .25);
+  --t-fx-hint: rgba(47, 224, 143, .55);
+
+  /* Roster grid fills. Three steps that must stay clearly apart from
+     each other — they carry which shifts came from a template, which the
+     solver placed, and which run unsocial hours. */
+  --t-shift-fixed: #3ddc91;
+  --t-shift-fixed-ink: #04140c;
+  --t-shift-solver: #2b8f63;
+  --t-shift-solver-ink: #eafff4;
+  --t-shift-night: #1f6647;
+  --t-shift-night-ink: #eafff4;
+  /* The narrow day list prints these as text on the page rather than as a
+     fill, so the fill tones are far too dark to read there. */
+  --t-shift-solver-text: #4fb98a;
+  --t-shift-night-text: #9ad9ba;
 }
 
 [data-theme="light"] {
@@ -801,6 +827,33 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   --t-onsurf: 0, 0, 0;
   --t-focus: rgba(184, 74, 23, .35);
 
+  /* The same tints in origami: terracotta, ochre and burnt orange.
+     Alphas run a little higher — a wash that reads on black disappears
+     on beige. */
+  --t-danger-wash: rgba(154, 43, 30, .08);
+  --t-danger-wash-2: rgba(154, 43, 30, .14);
+  --t-danger-ring: rgba(154, 43, 30, .28);
+  --t-warn-ring: rgba(138, 90, 18, .40);
+  --t-accent-flash: rgba(184, 74, 23, .16);
+  --t-on-accent-soft: rgba(255, 246, 236, .72);
+  --t-fx-glow: rgba(184, 74, 23, .18);
+  --t-fx-select: rgba(184, 74, 23, .22);
+  --t-fx-hint: rgba(184, 74, 23, .55);
+
+  /* The same three steps in origami. The ramp is inverted the way the
+     canvas is: the brightest fill takes dark ink, exactly as the bright
+     green does on black. Separation between steps is 2.19 / 2.02 / 4.43,
+     against dark's 2.27 / 1.71 / 3.88 — so the three read as distinctly
+     apart here as they do there. */
+  --t-shift-fixed: #f0913f;
+  --t-shift-fixed-ink: #241c11;
+  --t-shift-solver: #b84a17;
+  --t-shift-solver-ink: #fff6ec;
+  --t-shift-night: #5f3418;
+  --t-shift-night-ink: #fff6ec;
+  --t-shift-solver-text: #b84a17;
+  --t-shift-night-text: #5f3418;
+
   /* The pages that were not redesigned read the original tokens, so
      those flip too — otherwise half the app would stay dark. */
   --canvas: #f7f1e6;
@@ -854,7 +907,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   .fx-page { margin: -2.5rem; }
 }
 
-.fx-page ::selection { background: rgba(47, 224, 143, .25); }
+.fx-page ::selection { background: var(--t-fx-select); }
 
 /* Focus ring, from the handoff's accessibility note. */
 .fx-page :focus-visible {
@@ -1028,6 +1081,18 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   -webkit-appearance: none;
 }
 .fx-time input[type="time"] { -webkit-appearance: none; appearance: none; }
+/* No ring on the time field. A 3px halo around a control that already
+   highlights the segment you are editing reads as an error state, and the
+   browser's own highlight on the hour or minute is the clearer signal.
+   The field's border picks up the accent instead, so focus is still shown
+   without the box — and the ring stays everywhere else on the page. */
+.fx-time input:focus,
+.fx-time input:focus-visible {
+  box-shadow: none !important;
+  border-color: transparent !important;
+  outline: none !important;
+}
+.fx-field.fx-time:focus-within { border-color: var(--t-fx-accent); }
 .fx-time-arrow { color: rgba(var(--t-onsurf), .3); font-weight: 400; }
 
 .fx-spacer { flex: 1; min-width: 0; }
@@ -1046,7 +1111,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   font-size: 13.5px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 8px 22px rgba(47, 224, 143, .2);
+  box-shadow: 0 8px 22px var(--t-fx-glow);
   transition: filter 140ms ease-out;
 }
 .fx-pin:hover:not(:disabled) { filter: brightness(1.06); }
@@ -1159,7 +1224,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 .fx-cell-empty:hover {
   border-color: var(--t-focus);
-  color: rgba(47, 224, 143, .55);
+  color: var(--t-fx-hint);
 }
 .fx-cell-time { font: 700 11px 'JetBrains Mono', monospace; }
 .fx-cell-hours { font-size: 9.5px; font-weight: 600; opacity: .6; }
@@ -1210,8 +1275,8 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   margin-top: 18px;
   padding: 14px 18px;
   border-radius: 13px;
-  background: rgba(255, 143, 143, .06);
-  border: 1px solid rgba(255, 143, 143, .18);
+  background: var(--t-danger-wash);
+  border: 1px solid var(--t-danger-ring);
 }
 .fx-alert-text { font-size: 13px; color: rgba(var(--t-onsurf), .68); }
 .fx-alert-text strong { font-weight: 700; color: var(--t-danger); }
@@ -1263,7 +1328,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   cursor: pointer;
   transition: background 140ms ease-out;
 }
-.fx-del:hover { background: rgba(255, 143, 143, .12); }
+.fx-del:hover { background: var(--t-danger-wash-2); }
 
 /* Responsive ----------------------------------------------------- */
 @media (max-width: 1200px) {
@@ -1278,6 +1343,29 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   .fx-day { flex: 1; }
   .fx-spacer { display: none; }
   .fx-pin { width: 100%; justify-content: center; }
+}
+
+/* The employee modals reuse the original form components, which were
+   written with Tailwind's dark-only colour utilities — white text over
+   whatever surface happened to be behind it. On beige that left light
+   text on light panels. These read the theme instead. */
+.esp-modal-scrim { background: rgba(0, 0, 0, .6); }
+.esp-modal-panel { background: var(--t-canvas); color: var(--t-ink); }
+.esp-line { border-color: var(--t-hairline) !important; }
+.esp-line-soft { border-color: var(--t-divider) !important; }
+.esp-ink { color: var(--t-ink); }
+.esp-ink-body { color: var(--t-body2); }
+.esp-ink-mute { color: var(--t-muted); }
+.esp-ink-faint { color: var(--t-faint); }
+.esp-ink-accent { color: var(--t-accent); }
+.esp-hover:hover { background: var(--t-hover); }
+.esp-hover-ink:hover { color: var(--t-ink); }
+/* Chips and panels inside the modals. */
+.esp-modal-panel .glass-solid,
+.esp-modal-panel .glass {
+  background: var(--t-inset);
+  border-color: var(--t-hairline);
+  color: var(--t-body);
 }
 
 /* ------------------------------------------------------------------
@@ -1523,16 +1611,35 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   display: grid;
   grid-template-columns: minmax(240px, 340px) minmax(0, 1fr);
   border-top: 1px solid var(--t-hairline);
-  align-items: start;
 }
+/* Stretch, not start: the divider has to run the full height of the taller
+   column, and the sticky pane needs a tall column to travel inside. */
 .esp-left { border-right: 1px solid var(--t-hairline); }
 .esp-right { min-width: 0; }
+/* The list is long and the record is short, so scrolling down to pick
+   somebody used to leave their details off-screen above. The pane rides
+   down with the scroll instead; it scrolls internally when a record is
+   taller than the viewport. */
+.esp-sticky {
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
 
 /* Left pane ------------------------------------------------------- */
 .esp-search {
   display: flex; align-items: center; gap: 10px;
   padding: 16px 22px; border-bottom: 1px solid var(--t-divider);
 }
+.esp-search input:focus,
+.esp-search input:focus-visible {
+  box-shadow: none !important;
+  border-color: transparent !important;
+  outline: none !important;
+}
+.esp-search:focus-within { border-bottom-color: var(--t-accent); }
 .esp-search input {
   flex: 1; min-width: 0;
   align-self: stretch; height: auto;
@@ -1653,7 +1760,11 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   gap: 2px;
 }
 .esp-block[data-kind="fixed"] { background: var(--t-accent); color: var(--t-on-accent); }
-.esp-block[data-kind="ai"] { background: #2b8f63; color: #eafff4; }
+/* Same fill as a template shift. These were a second, literal green, so
+   the strip showed two different greens in dark mode and — being literal —
+   stayed green in light mode while the themed blocks beside them went
+   orange. A worked shift now looks like a worked shift. */
+.esp-block[data-kind="ai"] { background: var(--t-accent); color: var(--t-on-accent); }
 .esp-block[data-kind="leave"] { border: 1px solid var(--t-offborder); color: var(--t-body3); }
 .esp-block[data-kind="off"] { border: 1px solid var(--t-chip); color: var(--t-faint); }
 .esp-block-time { font-size: 13px; font-weight: 800; }
@@ -1783,6 +1894,16 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   display: none; -webkit-appearance: none;
 }
 .par-range input[type="date"] { -webkit-appearance: none; appearance: none; }
+/* Both the query field and the two date fields sit inside the one bordered
+   control, so the global !important ring drew a box around each of them
+   within it. The outer border carries focus for all three instead. */
+.par-search input:focus,
+.par-search input:focus-visible {
+  box-shadow: none !important;
+  border-color: transparent !important;
+  outline: none !important;
+}
+.par-search:focus-within { border-color: var(--t-accent); }
 .par-range-arrow { color: var(--t-faint); }
 /* Two independent clears: the circle wipes the typed query, the green
    text wipes the date range. Each renders only when it has something to
@@ -1997,6 +2118,18 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   -webkit-appearance: none;
 }
 .wr-picker input[type="date"] { -webkit-appearance: none; appearance: none; }
+/* The global input:focus rule is !important, so it drew its ring around the
+   input nested inside this control — a box within a box. The picker's own
+   border takes the accent instead, which shows focus without the halo. */
+.wr-picker input:focus,
+.wr-picker input:focus-visible,
+.wr-picker select:focus,
+.wr-picker select:focus-visible {
+  box-shadow: none !important;
+  border-color: transparent !important;
+  outline: none !important;
+}
+.wr-picker:focus-within { border-color: var(--t-accent); }
 .wr-btn {
   display: inline-flex; align-items: center; gap: 9px;
   height: 44px; padding: 0 18px; border: 0; border-radius: 6px;
@@ -2034,7 +2167,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 /* One treatment for every count, whatever the section. Colouring them
    by severity made each tab look like a different component. */
 .wr-tab-count { color: var(--t-muted); }
-.wr-tab[aria-selected="true"] .wr-tab-count { color: rgba(4, 20, 12, .6); }
+.wr-tab[aria-selected="true"] .wr-tab-count { color: var(--t-on-accent-soft); }
 
 /* Panel ----------------------------------------------------------- */
 .wr-panel { padding: 22px 28px 24px; }
@@ -2147,9 +2280,9 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   transition: filter 120ms ease-out, border-color 120ms ease-out;
   position: relative; overflow: hidden;
 }
-.wr-cell[data-kind="template"] { background: var(--t-accent); color: var(--t-on-accent); }
-.wr-cell[data-kind="ai"] { background: #2b8f63; color: #eafff4; }
-.wr-cell[data-kind="unsocial"] { background: #1f6647; color: #eafff4; }
+.wr-cell[data-kind="template"] { background: var(--t-shift-fixed); color: var(--t-shift-fixed-ink); }
+.wr-cell[data-kind="ai"] { background: var(--t-shift-solver); color: var(--t-shift-solver-ink); }
+.wr-cell[data-kind="unsocial"] { background: var(--t-shift-night); color: var(--t-shift-night-ink); }
 .wr-cell[data-kind="leave"] { border: 1px solid var(--t-input); color: var(--t-muted); background: transparent; }
 .wr-cell[data-kind="empty"] { border: 1px dashed var(--t-hairline); background: transparent; color: var(--t-faint); }
 .wr-cell[data-kind="empty"]:hover { border-color: var(--t-focus); color: var(--t-accent); }
@@ -2185,9 +2318,11 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 .wr-dayline-name { font-size: 14.5px; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wr-dayline-time { font-size: 13.5px; font-weight: 700; flex: none; }
+/* Text, not a fill, so each needs to read against the page rather than
+   against its own block — night borrows the solver tone for that reason. */
 .wr-dayline-time[data-kind="template"] { color: var(--t-accent); }
-.wr-dayline-time[data-kind="ai"] { color: #2b8f63; }
-.wr-dayline-time[data-kind="unsocial"] { color: #eafff4; }
+.wr-dayline-time[data-kind="ai"] { color: var(--t-shift-solver-text); }
+.wr-dayline-time[data-kind="unsocial"] { color: var(--t-shift-night-text); }
 .wr-dayline-time[data-kind="leave"] { color: var(--t-muted); }
 
 /* Share + versions ------------------------------------------------ */
@@ -2277,6 +2412,17 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   color: var(--t-body) !important; font-family: inherit; font-size: 15px; font-weight: 600;
   text-align: center; cursor: pointer;
 }
+/* The global input:focus rule is !important, so it ringed the select nested
+   inside this control. The control's own border carries focus instead. The
+   date fields in the Record illness drawer are standalone, so they keep the
+   ring — there is no outer box for it to collide with. */
+.sk-picker select:focus,
+.sk-picker select:focus-visible {
+  box-shadow: none !important;
+  border-color: transparent !important;
+  outline: none !important;
+}
+.sk-picker:focus-within { border-color: var(--t-accent); }
 .sk-btn {
   display: inline-flex; align-items: center; gap: 9px;
   height: 44px; padding: 0 18px; border: 0; border-radius: 6px;
@@ -2422,7 +2568,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   font-size: 14px; line-height: 1.55; color: var(--t-body2); margin-bottom: 20px;
 }
 .sk-computed strong { color: var(--t-strong); font-weight: 700; }
-.sk-computed[data-warn="true"] { border-color: rgba(255, 176, 102, .35); }
+.sk-computed[data-warn="true"] { border-color: var(--t-warn-ring); }
 .sk-drawer-acts { display: flex; gap: 16px; align-items: center; margin-top: 22px; }
 
 @media (max-width: 900px) {
@@ -2502,6 +2648,18 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 .hw-range input[type="date"]::-webkit-calendar-picker-indicator { display: none; -webkit-appearance: none; }
 .hw-range input[type="date"] { -webkit-appearance: none; appearance: none; }
+/* The global input:focus rule is !important, so it ringed the field nested
+   inside each of these controls. The control's own border carries focus. */
+.hw-range input:focus,
+.hw-range input:focus-visible,
+.hw-search input:focus,
+.hw-search input:focus-visible {
+  box-shadow: none !important;
+  border-color: transparent !important;
+  outline: none !important;
+}
+.hw-range:focus-within,
+.hw-search:focus-within { border-color: var(--t-accent); }
 .hw-range-arrow { color: var(--t-faint); }
 .hw-range-clear {
   display: flex; align-items: center; height: 34px; padding: 0 12px; flex: none;
@@ -2643,7 +2801,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .hw-dl-value[data-accent="true"] { color: var(--t-accent); }
 .hw-drawer-flag {
   margin-top: 20px; padding: 14px 16px; border-radius: 6px;
-  background: var(--t-inset); border: 1px solid rgba(255, 176, 102, .35);
+  background: var(--t-inset); border: 1px solid var(--t-warn-ring);
   font-size: 14px; line-height: 1.55; color: var(--t-body2);
 }
 .hw-drawer-flag strong { color: var(--t-warn); font-weight: 700; }
@@ -2706,7 +2864,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .db-btn-2 { background: var(--t-btn2); color: var(--t-ink); font-weight: 600; }
 /* Destructive but quiet: outlined, never a filled red block. */
 .db-btn-danger { background: none; border: 1px solid var(--t-danger-line); color: var(--t-danger); font-weight: 600; }
-.db-btn-danger:hover { background: rgba(255, 143, 143, .06); }
+.db-btn-danger:hover { background: var(--t-danger-wash); }
 .db-btn:disabled { opacity: .45; cursor: not-allowed; }
 
 /* Setup line ------------------------------------------------------ */
@@ -2729,10 +2887,10 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 /* Stats ----------------------------------------------------------- */
 .db-stats {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1px; background: var(--t-hairline);
   border-top: 1px solid var(--t-hairline);
 }
-.db-stat { padding: 22px 26px 24px; border-right: 1px solid var(--t-hairline); }
-.db-stat:last-child { border-right: 0; }
+.db-stat { padding: 22px 26px 24px; background: var(--t-canvas); }
 .db-stat-label { font-size: 11px; font-weight: 700; letter-spacing: .14em; color: var(--t-muted); text-transform: uppercase; }
 .db-stat-value {
   font-size: 34px; font-weight: 800; letter-spacing: -.035em; margin-top: 8px;
@@ -2761,12 +2919,20 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .db-forced-acts { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
 
 /* Split ------------------------------------------------------------ */
+/* align-items defaults to stretch: with `start` each column was only as
+   tall as its own content, so the divider between Recent rosters and
+   Activity stopped partway down whichever side was shorter. */
 .db-split {
   display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr);
-  align-items: start; border-top: 1px solid var(--t-hairline);
+  border-top: 1px solid var(--t-hairline);
 }
-.db-left { border-right: 1px solid var(--t-hairline); min-width: 0; }
-.db-right { min-width: 0; }
+.db-left, .db-right { display: flex; flex-direction: column; min-width: 0; }
+/* The rosters footer lives inside the table wrapper, so margin-top:auto on
+   it had no flex parent to push against and the rule sat directly under the
+   last row — while the activity footer, a direct child of its column, was
+   pinned to the bottom. The two rules then closed at different heights. */
+.db-tablewrap { flex: 1; display: flex; flex-direction: column; }
+.db-left { border-right: 1px solid var(--t-hairline); }
 .db-colhead-wrap {
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 14px; padding: 24px 28px 16px;
@@ -2796,7 +2962,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .db-rosterrow:hover { background: var(--t-hover); }
 .db-rosterrow[data-fresh="true"] { animation: db-flash 160ms ease-out; }
 @keyframes db-flash {
-  from { background: rgba(61, 220, 145, .18); }
+  from { background: var(--t-accent-flash); }
   to { background: transparent; }
 }
 @media (prefers-reduced-motion: reduce) { .db-rosterrow[data-fresh="true"] { animation: none; } }
@@ -2814,6 +2980,8 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 14px; padding: 16px 28px 24px;
   font-size: 14.5px; color: var(--t-muted);
+  margin-top: auto;
+  border-top: 1px solid var(--t-hairline);
 }
 .db-empty { padding: 22px 28px 24px; font-size: 15px; color: var(--t-muted); display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 
@@ -2821,6 +2989,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .db-feed { margin: 0; padding: 0; list-style: none; }
 .db-entry { border-bottom: 1px solid var(--t-divider); }
 .db-entry:first-child { border-top: 1px solid var(--t-hairline); }
+
 .db-entry-btn {
   display: block; width: 100%; text-align: left;
   border: 0; background: none; color: inherit; font-family: inherit;
@@ -3113,6 +3282,38 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .im-drop-head { font-size: 30px; font-weight: 800; letter-spacing: -.03em; line-height: 1.06; margin: 0; }
 .im-drop-sub { font-size: 15px; color: var(--t-muted); margin: 0; }
 .im-drop-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.im-week {
+  display: flex; align-items: center; gap: 10px;
+  height: 48px; padding: 0 14px;
+  border: 1px solid var(--t-input); border-radius: 6px;
+}
+.im-week > svg { flex: none; }
+.im-week-label { font-size: 15px; color: var(--t-faint); white-space: nowrap; }
+.im-week-label span { color: var(--t-disabled); }
+.im-week input {
+  align-self: stretch; height: auto;
+  background: transparent !important;
+  border: 0 !important; border-radius: 0 !important; min-height: 0 !important;
+  padding: 0; margin: 0; line-height: normal;
+  color: var(--t-body) !important;
+  font-family: inherit; font-size: 15px; font-weight: 600;
+  width: 118px; text-align: center; cursor: pointer;
+}
+.im-week input[type="date"]::-webkit-calendar-picker-indicator { display: none; -webkit-appearance: none; }
+.im-week input[type="date"] { -webkit-appearance: none; appearance: none; }
+/* The global input:focus rule is !important, so it ringed the field nested
+   inside each of these controls. The control's own border carries focus. */
+.im-week input:focus,
+.im-week input:focus-visible,
+.im-search input:focus,
+.im-search input:focus-visible {
+  box-shadow: none !important;
+  border-color: transparent !important;
+  outline: none !important;
+}
+.im-week:focus-within,
+.im-search:focus-within { border-color: var(--t-accent); }
+
 .im-drop-note { font-size: 14px; line-height: 1.55; color: var(--t-muted); max-width: 560px; margin: 0; }
 
 .im-summary {
@@ -3331,12 +3532,17 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .ss-h2 span { color: var(--t-muted); }
 .ss-section-sub { font-size: 14.5px; line-height: 1.55; color: var(--t-muted); margin: 8px 0 0; max-width: 900px; text-wrap: pretty; }
 
-.ss-cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-.ss-cell { padding: 22px 26px 24px; border-right: 1px solid var(--t-hairline); min-width: 0; }
-.ss-cell:last-child { border-right: 0; }
+/* The band needs a rule across its top or it never closes under the
+   section description — the gap-lines only draw between cells, so there
+   was nothing along the top edge. The band below is closed by the next
+   section's own border-top. */
+.ss-cells {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1px; background: var(--t-hairline);
+  border-top: 1px solid var(--t-hairline);
+}
+.ss-cell { padding: 22px 26px 24px; background: var(--t-canvas); min-width: 0; }
 .ss-cells-wide { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
-.ss-cells-divide { border-bottom: 1px solid var(--t-divider); }
-.ss-cells-end { border-bottom: 1px solid var(--t-hairline); }
 
 /* Checkbox --------------------------------------------------------- */
 .ss-check { display: flex; align-items: center; gap: 12px; cursor: pointer; min-height: 44px; }
@@ -3377,7 +3583,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   display: grid;
   grid-template-columns:
     minmax(44px, 56px) minmax(0, 1fr) minmax(74px, 96px) 32px
-    minmax(110px, 140px) minmax(110px, 140px);
+    minmax(130px, 160px) minmax(110px, 140px);
   gap: 14px; align-items: center;
 }
 .ss-colhead {
@@ -3399,11 +3605,15 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .ss-cover {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 6px 11px 6px 8px; border-radius: 6px;
-  border: 1px solid var(--t-offborder); background: none;
-  font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--t-muted);
-  white-space: nowrap;
+  border: 1px solid var(--t-chip); background: none;
+  font-family: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--t-muted); white-space: nowrap; cursor: pointer;
+  transition: border-color 120ms ease-out, color 120ms ease-out;
 }
+.ss-cover:hover { border-color: var(--t-offborder); color: var(--t-body2); }
 .ss-cover[data-on="true"] { border-color: var(--t-accent); color: var(--t-accent); font-weight: 700; }
+/* The square states on or off at a glance; the word beside it never
+   changes, so colour is not carrying the meaning by itself. */
 .ss-square { width: 12px; height: 12px; border-radius: 3px; background: var(--t-danger); flex: none; }
 .ss-cover[data-on="true"] .ss-square { background: var(--t-accent); }
 .ss-roleacts { display: flex; gap: 12px; align-items: center; justify-content: flex-end; }
@@ -3419,6 +3629,12 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   color: var(--t-muted); cursor: pointer; min-height: 32px;
 }
 .ss-remove:hover { color: var(--t-danger); }
+.ss-note {
+  font-size: 14px; line-height: 1.6; color: var(--t-muted);
+  max-width: 1040px; padding: 4px 0 0; text-wrap: pretty;
+}
+.ss-note strong { color: var(--t-body); font-weight: 700; }
+.ss-warn { color: var(--t-warn); }
 .ss-addrow { display: flex; gap: 12px; flex-wrap: wrap; padding: 16px 0 12px; }
 .ss-addinput {
   height: 46px; flex: 1; min-width: 180px;
@@ -3435,12 +3651,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   background: var(--t-btn2); color: var(--t-ink); cursor: pointer; white-space: nowrap;
 }
 .ss-btn:disabled { opacity: .45; cursor: not-allowed; }
-.ss-note {
-  font-size: 14px; line-height: 1.6; color: var(--t-muted);
-  max-width: 1040px; padding: 4px 0 22px; text-wrap: pretty;
-}
-.ss-note strong { color: var(--t-body); font-weight: 700; }
-.ss-warn { color: var(--t-warn); }
+
 
 /* Recipients ------------------------------------------------------- */
 .ss-reciprow {
@@ -3489,11 +3700,6 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 @media (max-width: 760px) {
   .ss-row { grid-template-columns: minmax(36px, 44px) minmax(0, 1fr) 26px; gap: 10px; }
   .ss-colhead { display: none; }
-  .ss-row-rest {
-    grid-column: 2 / -1;
-    display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
-    margin-top: 8px;
-  }
   .ss-num { text-align: left; }
   .ss-reciprow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 }

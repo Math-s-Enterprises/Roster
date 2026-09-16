@@ -43,8 +43,8 @@ import { Plus, Search, ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Sun,
  *    mean scanning every roster in the shop.
  *
  * 6. HISTORY is composed from the holiday balance — hours worked, accrued,
- *    booked, taken, and any manual adjustments — because no narrative
- *    history is recorded anywhere.
+ *    taken, and any manual adjustments — because no narrative history is
+ *    recorded anywhere.
  */
 
 const SORTS = [
@@ -70,7 +70,7 @@ const edge = (t) => (typeof t === "string" && t.endsWith(":00") ? t.slice(0, 2) 
 const isLeave = (shift) => Boolean(shift.paid_holiday || shift.unpaid_holiday || shift.sick);
 
 const leaveWord = (shift) =>
-  shift.sick ? "Sick" : shift.unpaid_holiday ? "N/A" : "Holiday";
+  shift.sick ? "Sick" : shift.unpaid_holiday ? "Unpaid" : "Holiday";
 
 /** Tags for the identity block, at most four. */
 function tagsFor(employee, balance, overBy) {
@@ -652,9 +652,10 @@ export default function Employees() {
                 })}
               </div>
               <p className="esp-caption">
-                Bright green came from a fixed template, darker green was placed by the solver, an outline
-                is a day off and a bordered block is booked leave. Fixed is matched on day and times, so a
-                template edited after this roster was generated may read as solver-placed.
+                A filled block is a worked shift, an outline is a day off and a bordered block is booked
+                leave. Hover a block to see whether it came from a fixed template or was placed by the
+                solver — that is matched on day and times, so a template edited after this roster was
+                generated may read as solver-placed.
               </p>
             </>
           ) : (
@@ -703,8 +704,7 @@ export default function Employees() {
               <>
                 {selected.name} has worked <strong>{fmtHours(balance.hours_worked || 0)}</strong> on record,
                 accruing <strong>{fmtHours(balance.accrued_hours || 0)}</strong> of holiday.{" "}
-                <strong>{fmtHours(balance.used_hours || 0)}</strong> has been taken
-                {balance.booked_hours ? <>, and <strong>{fmtHours(balance.booked_hours)}</strong> is booked</> : null}, leaving{" "}
+                <strong>{fmtHours(balance.used_hours || 0)}</strong> has been taken, leaving{" "}
                 <strong>{fmtHours(balance.available_hours || 0)}</strong> available
                 {balance.opening_hours ? <> on top of an opening balance of {fmtHours(balance.opening_hours)}</> : null}.
                 {balance.adjustments?.length > 0 && (
@@ -857,6 +857,7 @@ export default function Employees() {
         </div>
 
         <div className="esp-right" data-hidden={!employeeId}>
+          <div className="esp-sticky">
           {employeeId && (
             <div className="esp-back">
               <button type="button" className="esp-link" onClick={() => navigate("/employees")}>
@@ -865,6 +866,7 @@ export default function Employees() {
             </div>
           )}
           {loading ? <div className="esp-empty">Loading…</div> : detail()}
+          </div>
         </div>
       </div>
 
@@ -925,7 +927,7 @@ export default function Employees() {
                   className="w-full px-3 py-2.5 rounded-lg font-mono" />
               </Field>
             </div>
-            <p className="text-[11px] text-white/40 -mt-1">
+            <p className="text-[11px] esp-ink-faint -mt-1">
               Contracted hours are paid hours. Unpaid breaks sit on top, so a
               40h contract is rostered as roughly 44–45h of shift time.
             </p>
@@ -942,7 +944,7 @@ export default function Employees() {
                           ? form.preferred_days_off.filter((x) => x !== d)
                           : [...form.preferred_days_off, d],
                       })}
-                      className={`px-3 py-1.5 rounded-full text-xs ${on ? "neon-btn" : "glass-solid text-white/70"}`}
+                      className={`px-3 py-1.5 rounded-full text-xs ${on ? "neon-btn" : "glass-solid esp-ink-body"}`}
                     >
                       {DAY_SHORT[d]}
                     </button>
@@ -984,7 +986,7 @@ export default function Employees() {
                   <option value="evening">Evening</option>
                 </select>
               </Field>
-              <p className="text-[11px] text-white/40 -mt-2">
+              <p className="text-[11px] esp-ink-faint -mt-2">
                 A preference, not a limit — it is followed where possible but
                 will not be allowed to leave the shop unattended.
               </p>
@@ -1008,7 +1010,7 @@ export default function Employees() {
                             available_days: next.length === 7 ? null : next,
                           });
                         }}
-                        className={`px-3 py-1.5 rounded-full text-xs ${on ? "neon-btn" : "glass-solid text-white/30 line-through"}`}
+                        className={`px-3 py-1.5 rounded-full text-xs ${on ? "neon-btn" : "glass-solid esp-ink-faint line-through"}`}
                       >
                         {DAY_SHORT[d]}
                       </button>
@@ -1016,7 +1018,7 @@ export default function Employees() {
                   })}
                 </div>
               </Field>
-              <p className="text-[11px] text-white/40 -mt-2">
+              <p className="text-[11px] esp-ink-faint -mt-2">
                 Unlike preferred days off, a day switched off here is a hard
                 no — they are never rostered on it.
               </p>
@@ -1128,8 +1130,8 @@ export default function Employees() {
                       className="w-full px-3 py-2.5 rounded-lg font-mono" />
                   </Field>
 
-                  <div className="pt-2 border-t border-white/5">
-                    <div className="text-[11px] text-white/60 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <div className="pt-2 border-t esp-line-soft">
+                    <div className="text-[11px] esp-ink-mute uppercase tracking-wider mb-3 flex items-center gap-1.5">
                       <Sun size={12} /> Summer break availability
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -1153,7 +1155,7 @@ export default function Employees() {
                         placeholder="e.g. 40"
                         className="w-full px-3 py-2.5 rounded-lg font-mono" />
                     </Field>
-                    <p className="text-[11px] text-white/40">
+                    <p className="text-[11px] esp-ink-faint">
                       Inside these dates the term-time cap lifts and this
                       figure applies instead.
                     </p>
@@ -1176,7 +1178,7 @@ export default function Employees() {
                   placeholder="0"
                   className="w-full px-3 py-2.5 rounded-lg font-mono" />
               </Field>
-              <p className="text-[11px] text-white/40">
+              <p className="text-[11px] esp-ink-faint">
                 Set this once, when you first add someone. From then on the
                 balance is earned from hours actually worked, at 12.07%.
                 Later corrections belong in Adjust, which records a reason.
@@ -1239,7 +1241,7 @@ function AdjustModal({ employee, balance, onClose, onSaved }) {
     <Modal onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <h2 className="text-2xl font-light">Adjust holiday</h2>
-        <div className="text-sm text-white/60">{employee.name}</div>
+        <div className="text-sm esp-ink-mute">{employee.name}</div>
 
         <div className="glass-solid rounded-xl p-4 space-y-1.5 text-xs">
           <Row label="Carried in" value={`${balance.opening_hours}h`} />
@@ -1248,10 +1250,7 @@ function AdjustModal({ employee, balance, onClose, onSaved }) {
             <Row label="Previous adjustments" value={`${balance.adjustment_hours > 0 ? "+" : ""}${balance.adjustment_hours}h`} />
           )}
           <Row label="Paid holiday taken" value={`−${balance.used_hours}h`} />
-          {balance.booked_hours > 0 && (
-            <Row label="Paid holiday booked" value={`−${balance.booked_hours}h`} />
-          )}
-          <div className="pt-1.5 border-t border-white/10">
+          <div className="pt-1.5 border-t esp-line">
             <Row label="Available" value={`${balance.available_hours}h`} strong />
           </div>
         </div>
@@ -1278,14 +1277,14 @@ function AdjustModal({ employee, balance, onClose, onSaved }) {
 
 const Row = ({ label, value, strong }) => (
   <div className="flex justify-between">
-    <span className="text-white/50">{label}</span>
-    <span className={`font-mono ${strong ? "text-cyan-400" : "text-white/80"}`}>{value}</span>
+    <span className="esp-ink-mute">{label}</span>
+    <span className={`font-mono ${strong ? "esp-ink-accent" : "esp-ink-body"}`}>{value}</span>
   </div>
 );
 
 const Field = ({ label, children }) => (
   <label className="block">
-    <div className="text-[11px] text-white/50 mb-1">{label}</div>
+    <div className="text-[11px] esp-ink-mute mb-1">{label}</div>
     {children}
   </label>
 );
@@ -1294,21 +1293,21 @@ const Field = ({ label, children }) => (
 function Section({ title, subtitle, badge, icon: Icon, testId, children }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="border border-white/10 rounded-xl overflow-hidden">
+    <div className="border esp-line rounded-xl overflow-hidden">
       <button
         type="button"
         data-testid={testId}
         onClick={() => setOpen((o) => !o)}
-        className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/5"
+        className="w-full px-4 py-3 flex items-center gap-3 text-left esp-hover"
       >
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        {Icon && <Icon size={14} className="text-white/50" />}
+        {Icon && <Icon size={14} className="esp-ink-mute" />}
         <div className="flex-1 min-w-0">
           <div className="text-sm">{title}</div>
-          <div className="text-[11px] text-white/40 truncate">{subtitle}</div>
+          <div className="text-[11px] esp-ink-faint truncate">{subtitle}</div>
         </div>
         {badge && !open && (
-          <span className="text-[10px] px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shrink-0">
+          <span className="text-[10px] px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/30 esp-ink-accent shrink-0">
             {badge}
           </span>
         )}
@@ -1329,7 +1328,7 @@ function Toggle({ checked, onChange, label, hint, testId }) {
       />
       <span className="min-w-0">
         <span className="text-sm block">{label}</span>
-        {hint && <span className="text-[11px] text-white/40 block">{hint}</span>}
+        {hint && <span className="text-[11px] esp-ink-faint block">{hint}</span>}
       </span>
     </label>
   );
@@ -1337,9 +1336,9 @@ function Toggle({ checked, onChange, label, hint, testId }) {
 
 function Modal({ children, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <div className="max-w-lg w-full my-8 bg-[#0A0B10] border border-white/10 rounded-3xl p-8 relative" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onClose} className="absolute top-4 right-4 text-white/40 hover:text-white z-10">
+    <div className="fixed inset-0 z-50 esp-modal-scrim backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div className="max-w-lg w-full my-8 esp-modal-panel border esp-line rounded-3xl p-8 relative" onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute top-4 right-4 esp-ink-faint esp-hover-ink z-10">
           <X size={16} />
         </button>
         {children}

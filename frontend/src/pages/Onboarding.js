@@ -33,9 +33,9 @@ export default function Onboarding() {
   const [observerName, setObserverName] = useState("");
   const [observerEmail, setObserverEmail] = useState("");
   const [saving, setSaving] = useState(false);
-  // Explicit per-role supervisory flags. Seeded from what the server
-  // derives, then editable. See the note by the toggle: the field is sent
-  // on save but PUT /shop does not accept it yet.
+  // Explicit per-role supervisory flags, seeded from what the server
+  // derives. See the note under the table: the value is sent on save but
+  // PUT /shop does not accept it yet.
   const [coverRoles, setCoverRoles] = useState(null);
   const [dragRole, setDragRole] = useState(null);
   const [overRole, setOverRole] = useState(null);
@@ -127,7 +127,6 @@ export default function Onboarding() {
       paid_sick_days: Number(paidSickDays) || 0,
       min_rest_hours: Number(minRest) || 0,
       roster_recipients: observers,
-      // Not yet accepted by ShopUpdate — see the note on the toggle.
       supervisory_roles: coverRoles || [],
       ...extra,
     });
@@ -197,16 +196,6 @@ export default function Onboarding() {
   }
   const blocked = Object.keys(invalid).length > 0;
 
-  /**
-   * Whether a role counts as supervisory cover, and why.
-   *
-   * Read-only on purpose. The backend derives this live — a title containing
-   * manager, supervisor, duty, lead, senior, keyholder or charge always
-   * counts, and beyond that the top third of the ladder does. There is no
-   * stored field to write a per-role toggle to, so an editable switch would
-   * click, look right and change nothing. Showing the derived answer with
-   * its reason at least explains a rule that was previously invisible.
-   */
   const cover = coverRoles || supervisory;
 
   const toggleCover = (role) => {
@@ -219,8 +208,6 @@ export default function Onboarding() {
     setCoverRoles(on ? cover.filter((r) => r !== role) : [...cover, role]);
   };
 
-  const supervisoryCount = roles.filter((r) => cover.includes(r)).length;
-
   const addRole = () => {
     const title = newRole.trim();
     if (!title) return;
@@ -230,7 +217,7 @@ export default function Onboarding() {
     }
     setRoles([...roles, title]);
     setNewRole("");
-    toast.success(`Added ${title} — set its cover in the table if it needs it`);
+    toast.success(`Added ${title}`);
   };
 
   const removeRole = (role) => {
@@ -340,7 +327,7 @@ export default function Onboarding() {
                                 aria-label={`${DAY_LABELS[d]} opening time`}
                                 onChange={(e) => setDay(d, { open: e.target.value })}
                               />
-                              <span style={{ color: "#6f6f6f" }}>→</span>
+                              <span style={{ color: "var(--t-faint)" }}>→</span>
                               <input
                                 type="time"
                                 className="ss-time"
@@ -366,7 +353,7 @@ export default function Onboarding() {
                   type="button"
                   data-testid="btn-copy-monday"
                   className="ss-remove"
-                  style={{ color: "#3ddc91", fontWeight: 700, marginTop: 10 }}
+                  style={{ color: "var(--t-accent)", fontWeight: 700, marginTop: 10 }}
                   onClick={copyMondayToAll}
                 >
                   Use Monday's times every day
@@ -493,6 +480,16 @@ export default function Onboarding() {
             );
           })}
 
+          <p className="ss-note">
+            <strong>Supervisory</strong> marks a role as counting for cover — at least one such person
+            is rostered on every close.{" "}
+            <strong className="ss-warn">
+              It is not saved yet: the server works cover out from the job title and the top third of
+              the ladder, and does not accept a per-role flag.
+            </strong>{" "}
+            Until that is added, a change here lasts until you reload.
+          </p>
+
           <div className="ss-addrow">
             <input
               className="ss-addinput"
@@ -508,23 +505,6 @@ export default function Onboarding() {
             </button>
           </div>
 
-          <p className="ss-note">
-            Tap <strong>Supervisory</strong> to set whether a role counts as supervisory cover — green
-            is on, red is off. At least one supervisory person is rostered on every close.{" "}
-            <strong className="ss-warn">
-              This setting is not saved yet: the server derives cover from the job title and the top
-              third of the ladder, and does not accept a per-role flag.
-            </strong>{" "}
-            Until that is added, a change here lasts only until you reload.{" "}
-            <strong>Removing a role does not remove it from anyone</strong> — staff with an unlisted
-            title simply rank last.
-            {supervisoryCount === 0 && (
-              <span className="ss-warn">
-                {" "}No role currently counts as supervisory cover, so the “manager on every close”
-                rule cannot be satisfied.
-              </span>
-            )}
-          </p>
         </div>
 
         <div className="ss-section">
@@ -532,7 +512,7 @@ export default function Onboarding() {
           <p className="ss-section-sub">How firmly the roster holds to preferences, and what it pays for.</p>
         </div>
 
-        <div className="ss-cells ss-cells-wide ss-cells-divide">
+        <div className="ss-cells ss-cells-wide">
           <div className="ss-cell">
             <label className="ss-check">
               <input
@@ -574,7 +554,7 @@ export default function Onboarding() {
           </div>
         </div>
 
-        <div className="ss-cells ss-cells-wide ss-cells-end">
+        <div className="ss-cells ss-cells-wide">
           <div className="ss-cell">
             <label className="ss-label ss-label-tight" htmlFor="ss-rest">
               Minimum rest between shifts (hours)
