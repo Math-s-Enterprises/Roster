@@ -197,6 +197,7 @@ export default function Onboarding() {
 
   /** Whether a role counts as supervisory cover for this shop. */
   const cover = coverRoles || supervisory;
+     const supervisoryCount = roles.filter((r) => cover.includes(r)).length;
 
   const toggleCover = (role) => {
     const on = cover.includes(role);
