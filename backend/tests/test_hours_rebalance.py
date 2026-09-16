@@ -158,6 +158,27 @@ class TestTheAccountingStaysExact:
         assert "mon" in builder.days_worked["a"]
 
 
+def test_an_unrostered_employee_gets_an_existing_minimum_length_shift():
+    shop = make_shop(min_shift_hours=4)
+    team = [person("donor"), person("new")]
+    builder = _RosterBuilder(
+        shop, team, [], [], [], WEEK, {}, None, history_rosters=[]
+    )
+    for day in ("mon", "tue"):
+        builder._record_shift("donor", day, "09:00", "17:00")
+        builder.assigned_by_day.setdefault(day, set()).add("donor")
+
+    before = len(builder.result.shifts)
+    builder._include_unrostered()
+
+    assert len(builder.result.shifts) == before
+    assert {s["employee_id"] for s in builder.result.shifts} == {"donor", "new"}
+    assert all(
+        s["span_hours"] >= shop["min_shift_hours"]
+        for s in builder.result.shifts
+    )
+
+
 class TestItActuallyEvensThemOut:
     def _lopsided(self):
         """`hog` has been working four days, `spare` one — and the shop runs

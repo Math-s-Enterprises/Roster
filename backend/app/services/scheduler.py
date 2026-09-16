@@ -1907,8 +1907,74 @@ class _RosterBuilder:
             ),
         )
 
+    def _include_unrostered(self) -> None:
+        """Try to share one existing shift with every eligible active person."""
+        if self.only_day is not None:
+            return
+
+        min_shift = float(self.shop.get("min_shift_hours") or 0)
+        rostered = {
+            s["employee_id"] for s in self.result.shifts
+            if s.get("start") and s.get("end")
+            and not (
+                s.get("paid_holiday") or s.get("unpaid_holiday") or s.get("sick")
+            )
+        }
+        trading_dates = [date_iso for _, date_iso, _, _ in self._trading_days()]
+
+        for receiver in hierarchy.sort_employees(self.employees, self.shop):
+            receiver_id = receiver["employee_id"]
+            if receiver_id in rostered or not avail.is_active(receiver):
+                continue
+            if trading_dates and all(
+                date_iso in self.employee_off_dates.get(receiver_id, set())
+                for date_iso in trading_dates
+            ):
+                continue
+
+            role = str(receiver.get("role") or "").strip().casefold()
+            donors = sorted(
+                (
+                    employee for employee in self.employees
+                    if employee["employee_id"] != receiver_id
+                    and str(employee.get("role") or "").strip().casefold() == role
+                ),
+                key=lambda employee: -self.span_used.get(
+                    employee["employee_id"], 0.0
+                ),
+            )
+            moved = False
+            for donor in donors:
+                donor_id = donor["employee_id"]
+                for shift in sorted(
+                    self._rebalanceable_shifts(donor_id),
+                    key=lambda item: shift_duration_minutes(
+                        item["start"], item["end"]
+                    ),
+                ):
+                    span = shift_duration_minutes(shift["start"], shift["end"]) / 60
+                    if span < min_shift or self.span_used[donor_id] - span < min_shift:
+                        continue
+                    band = self.span_bands.get(donor_id)
+                    if band and self.span_used[donor_id] - span < band[0] - 0.01:
+                        continue
+                    if slot_owners.regulars_of(
+                        self.slot_owners, shift["day"], shift["start"], shift["end"]
+                    ):
+                        continue
+                    if self._try_move_shift(
+                        shift, receiver,
+                        reason="so every eligible active employee gets a shift.",
+                    ):
+                        rostered.add(receiver_id)
+                        moved = True
+                        break
+                if moved:
+                    break
+
     def _try_move_shift(
-        self, shift: Dict[str, Any], receiver: Dict[str, Any]
+        self, shift: Dict[str, Any], receiver: Dict[str, Any],
+        *, reason: str = "closer to the hours they have each been working lately.",
     ) -> bool:
         """Hand one shift to somebody else, or leave everything untouched.
 
@@ -1942,8 +2008,7 @@ class _RosterBuilder:
         self.result.issues.append(
             f"{day} {shift['start']}-{shift['end']} moved from "
             f"{self.employees_by_id.get(donor_id, {}).get('name', donor_id)} "
-            f"to {receiver.get('name', receiver['employee_id'])} — closer to "
-            f"the hours they have each been working lately."
+            f"to {receiver.get('name', receiver['employee_id'])} — {reason}"
         )
         return True
 
@@ -3535,6 +3600,8 @@ class _RosterBuilder:
         # are answering harder questions.
         if self.demand is not None:
             self._rebalance_hours()
+        self._include_unrostered()
+        if self.demand is not None:
             # Coverage can add hours after contract fitting. Give back any
             # earlier contract-only extension that is no longer needed,
             # without changing coverage or dropping below the contract band.
