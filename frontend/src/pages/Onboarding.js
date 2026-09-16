@@ -208,8 +208,6 @@ export default function Onboarding() {
     setCoverRoles(on ? cover.filter((r) => r !== role) : [...cover, role]);
   };
 
-  const supervisoryCount = roles.filter((r) => cover.includes(r)).length;
-
   const addRole = () => {
     const title = newRole.trim();
     if (!title) return;
@@ -219,7 +217,7 @@ export default function Onboarding() {
     }
     setRoles([...roles, title]);
     setNewRole("");
-    toast.success(`Added ${title} — set its cover in the table if it needs it`);
+    toast.success(`Added ${title}`);
   };
 
   const removeRole = (role) => {
@@ -330,7 +328,7 @@ export default function Onboarding() {
                                 aria-label={`${DAY_LABELS[d]} opening time`}
                                 onChange={(e) => setDay(d, { open: e.target.value })}
                               />
-                              <span style={{ color: "#6f6f6f" }}>→</span>
+                              <span style={{ color: "var(--t-faint)" }}>→</span>
                               <input
                                 type="time"
                                 className="ss-time"
@@ -356,7 +354,7 @@ export default function Onboarding() {
                   type="button"
                   data-testid="btn-copy-monday"
                   className="ss-remove"
-                  style={{ color: "#3ddc91", fontWeight: 700, marginTop: 10 }}
+                  style={{ color: "var(--t-accent)", fontWeight: 700, marginTop: 10 }}
                   onClick={copyMondayToAll}
                 >
                   Use Monday's times every day
@@ -483,6 +481,16 @@ export default function Onboarding() {
             );
           })}
 
+          <p className="ss-note">
+            <strong>Supervisory</strong> marks a role as counting for cover — at least one such person
+            is rostered on every close.{" "}
+            <strong className="ss-warn">
+              It is not saved yet: the server works cover out from the job title and the top third of
+              the ladder, and does not accept a per-role flag.
+            </strong>{" "}
+            Until that is added, a change here lasts until you reload.
+          </p>
+
           <div className="ss-addrow">
             <input
               className="ss-addinput"
@@ -519,7 +527,7 @@ export default function Onboarding() {
           <p className="ss-section-sub">How firmly the roster holds to preferences, and what it pays for.</p>
         </div>
 
-        <div className="ss-cells ss-cells-wide ss-cells-divide">
+        <div className="ss-cells ss-cells-wide">
           <div className="ss-cell">
             <label className="ss-check">
               <input
@@ -561,7 +569,7 @@ export default function Onboarding() {
           </div>
         </div>
 
-        <div className="ss-cells ss-cells-wide ss-cells-end">
+        <div className="ss-cells ss-cells-wide">
           <div className="ss-cell">
             <label className="ss-label ss-label-tight" htmlFor="ss-rest">
               Minimum rest between shifts (hours)

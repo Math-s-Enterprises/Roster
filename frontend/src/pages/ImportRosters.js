@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  AlertTriangle, CheckCircle2, FileSpreadsheet, FileText,
+  AlertTriangle, Calendar, CheckCircle2, FileSpreadsheet, FileText,
   Image as ImageIcon, Loader2, Search, Trash2, Upload, X,
 } from "lucide-react";
 
@@ -108,6 +108,7 @@ export default function ImportRosters() {
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [preview, setPreview] = useState(null);
+  const [weekHint, setWeekHint] = useState("");
   const [reading, setReading] = useState("");
 
   // What this deployment can actually read. Checked up front so an
@@ -175,6 +176,10 @@ export default function ImportRosters() {
     try {
       const form = new FormData();
       form.append("file", file);
+      // Multi-sheet workbooks name their own weeks; a CSV export or a photo
+      // of the wall sheet usually carries no date at all, so this dates
+      // anything the file leaves undated.
+      if (weekHint) form.append("week_start", weekHint);
       const [{ data }, staff] = await Promise.all([
         api.post("/imports", form, { headers: { "Content-Type": "multipart/form-data" } }),
         api.get("/employees"),
@@ -339,12 +344,25 @@ export default function ImportRosters() {
                 >
                   <Upload size={16} strokeWidth={1.8} /> Choose a file
                 </button>
+
+                <label className="im-week">
+                  <Calendar size={14} color="var(--t-faint)" strokeWidth={1.6} aria-hidden="true" />
+                  <span className="im-week-label">
+                    Week beginning <span>(optional)</span>
+                  </span>
+                  <input
+                    type="date"
+                    value={weekHint}
+                    onChange={(e) => setWeekHint(e.target.value)}
+                    onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* unsupported */ } }}
+                    aria-label="Week beginning (optional)"
+                  />
+                </label>
               </div>
 
               <p className="im-drop-note">
-                Files are dated from what is inside them — an Excel sheet named for its week, or a
-                date in the file itself. A CSV or photo that carries no date is rejected with the
-                reason, rather than guessed at.
+                Set the week for a CSV or photo, which rarely say which week they cover. Excel files
+                with dated sheet names work without it.
               </p>
             </>
           )}
@@ -562,7 +580,7 @@ function ImportedWeeks({ refreshKey, summary, onChange, onReplace }) {
           {removed.map((w) => (
             <div className="im-removed-row" key={`${w.import_id}-${w.week_start}`}>
               <span style={{ fontWeight: 700 }}>{fmtWeek(w.week_start)}</span>
-              <span style={{ color: "#8c8c8c" }}>
+              <span style={{ color: "var(--t-muted)" }}>
                 {w.shifts} shift{w.shifts === 1 ? "" : "s"}
                 {w.filename ? ` · from ${w.filename}` : ""}
               </span>
