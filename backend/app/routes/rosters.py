@@ -17,6 +17,7 @@ from app.models import (
     RosterUpdate,
     SickReport,
 )
+from app.services import availability as avail
 from app.services import compliance, corrections, llm, mailer, sick_cover
 from app.services import demand as demand_service
 from app.services import training_evidence
@@ -94,6 +95,19 @@ def _with_current_break_setting(
         "shifts": shifts,
         "total_hours": round(total, 1),
         "labor_cost": round(labor, 2),
+        # Derived for this roster's week by the same function the scheduler
+        # uses. A student's term-time/summer limit can differ from the base
+        # employee field, so the browser must not guess which one applies.
+        "active_hour_caps": {
+            employee["employee_id"]: {
+                "hours": cap,
+                "source": source,
+            }
+            for employee in employees
+            for cap, source in [avail.weekly_hour_cap_explained(
+                employee, roster.get("week_start") or "",
+            )]
+        },
         "per_employee_hours": {
             employee_id: round(hours, 1)
             for employee_id, hours in per_employee.items()
@@ -365,7 +379,7 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
         scope.shop_id, "roster_generated",
         f"Generated {roster['version']} for week of {payload.week_start}",
     )
-    return roster
+    return _with_current_break_setting(roster, shop, employees)
 
 
 # ---------------------------------------------------------------------------

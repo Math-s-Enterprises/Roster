@@ -21,6 +21,7 @@ bug that did not exist.
 is true and useless. Which 20h is the whole question.
 """
 from app.services import availability as avail, compliance
+from app.routes.rosters import _with_current_break_setting
 
 WEEK = "2026-09-07"          # a Monday
 
@@ -53,6 +54,23 @@ def messages(employee):
 
 
 class TestTheCapKnowsWhereItCameFrom:
+    def test_roster_response_uses_the_cap_for_that_calendar_week(self):
+        who = student(
+            term_time_max_hours=32.0,
+            summer_break={"start_date": "2026-06-01", "end_date": "2026-09-07",
+                          "max_weekly_hours": 40.0},
+        )
+
+        summer = _with_current_break_setting(
+            {"week_start": "2026-09-07", "shifts": []}, {}, [who],
+        )["active_hour_caps"]["e1"]
+        term = _with_current_break_setting(
+            {"week_start": "2026-09-14", "shifts": []}, {}, [who],
+        )["active_hour_caps"]["e1"]
+
+        assert summer == {"hours": 40.0, "source": "their summer-break limit"}
+        assert term == {"hours": 32.0, "source": "their term-time limit"}
+
     def test_a_summer_break_limit_is_named_as_one(self):
         who = student(summer_break={
             "start_date": "2026-06-01", "end_date": "2026-09-30",

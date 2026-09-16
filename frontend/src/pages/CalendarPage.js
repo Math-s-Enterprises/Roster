@@ -54,6 +54,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api, errorMessage, DAYS, DAY_SHORT, mondayOf } from "@/lib/api";
 import { toast } from "sonner";
 import { CalendarPlus, Download, Plus, X } from "lucide-react";
+import ShiftWarningModal from "@/components/ShiftWarningModal";
 
 /* -------------------------------------------------------------------------
    Dates. Local, never UTC: `toISOString()` shifts across midnight depending
@@ -1051,6 +1052,7 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
   const [label, setLabel] = useState(
     single?.label || run?.entries?.[0]?.label || "");
   const [busy, setBusy] = useState(false);
+  const [staffingWarning, setStaffingWarning] = useState(null);
 
   // The paid-day picker: used when booking new leave, and when re-booking a
   // whole absence, which is the same operation with the dates filled in.
@@ -1142,14 +1144,15 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
     setPaidDates(allLeaveDates.slice(0, limit));
   };
 
-  const submit = async (e) => {
-    e.preventDefault();
+  const submit = async (e, confirmedShortage = false) => {
+    e?.preventDefault();
     setBusy(true);
     try {
       if (single) {
         await api.put(`/holidays/${single.holiday_id}`, {
           date, end_date: endDate || null, label,
           scope, employee_id: scope === "shop" ? null : empId,
+          confirm_staffing_shortage: confirmedShortage,
         });
         toast.success("Leave updated");
       } else if (rebook) {
@@ -1161,6 +1164,7 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
           employee_id: empId, start_date: leaveFrom, end_date: leaveTo,
           paid_dates: paidDates, label: label || "Holiday",
           replace_holiday_ids: run.entries.map((entry) => entry.holiday_id).filter(Boolean),
+          confirm_staffing_shortage: confirmedShortage,
         });
         toast.success(
           `${r.data.employee}: ${r.data.paid_days} paid day(s) = ${r.data.paid_hours_total}h` +
@@ -1185,6 +1189,7 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
         const r = await api.post("/holidays/leave", {
           employee_id: empId, start_date: leaveFrom, end_date: leaveTo,
           paid_dates: paidDates, label: label || "Holiday",
+          confirm_staffing_shortage: confirmedShortage,
         });
         toast.success(
           `${r.data.employee}: ${r.data.paid_days} paid day(s) = ${r.data.paid_hours_total}h` +
@@ -1194,11 +1199,17 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
         await api.post("/holidays", {
           date, end_date: endDate || null, label, scope,
           employee_id: scope === "sick" ? empId : null,
+          confirm_staffing_shortage: confirmedShortage,
         });
         toast.success("Added");
       }
       onSaved();
     } catch (err) {
+      const detail = err.response?.data?.detail;
+      if (!confirmedShortage && detail?.code === "leave_staffing_shortage") {
+        setStaffingWarning(detail);
+        return;
+      }
       toast.error(errorMessage(err, "Could not save"));
     } finally {
       setBusy(false);
@@ -1436,6 +1447,19 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
           </div>
         </div>
       </form>
+      {staffingWarning && (
+        <ShiftWarningModal
+          title="Confirm this holiday?"
+          description={staffingWarning.message}
+          warnings={staffingWarning.warnings || []}
+          confirmLabel="Give holiday anyway"
+          onClose={() => setStaffingWarning(null)}
+          onConfirm={() => {
+            setStaffingWarning(null);
+            submit(null, true);
+          }}
+        />
+      )}
     </div>
   );
 }

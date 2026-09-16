@@ -111,6 +111,66 @@ class TestTheShapeIsReproduced:
         assert len(sunday) == len(profile.slots_for("sun"))
         assert len(sunday) < len(profile.slots_for("mon"))
 
+    def test_supervisory_roles_follow_the_shops_hourly_pattern(self):
+        shop = make_shop(
+            hours=[
+                {"day": day, "open": "06:00", "close": "22:00",
+                 "closed": day != "mon"}
+                for day in DAYS
+            ],
+            role_hierarchy=["Captain", "Keyholder", "Lead", "Crew"],
+            supervisory_roles=["Captain", "Keyholder", "Lead"],
+            open_24h=False,
+        )
+        team = make_team(9)
+        for employee, role in zip(
+            team, ["Captain", "Keyholder", "Lead"] + ["Crew"] * 6
+        ):
+            employee["role"] = role
+        for employee in team[:3]:
+            employee["employment_type"] = "full_time_contract"
+            employee["contract_span_hours"] = 8
+
+        hist = []
+        early_crews = [("e3", "e4"), ("e5", "e6"), ("e7", "e8")]
+        late_crews = ["e5", "e7", "e3", "e6", "e8", "e4"]
+        for week in range(6):
+            early = f"e{week % 3}"
+            late = [f"e{index}" for index in range(3) if index != week % 3]
+            early_crew = early_crews[week % len(early_crews)]
+            hist.append({
+                "week_start": (date(2026, 6, 1) + timedelta(weeks=week)).isoformat(),
+                "approved": True,
+                "shifts": [
+                    {"employee_id": early, "day": "mon", "start": "06:00", "end": "14:00"},
+                    {"employee_id": early_crew[0], "day": "mon", "start": "06:00", "end": "14:00"},
+                    {"employee_id": early_crew[1], "day": "mon", "start": "06:00", "end": "14:00"},
+                    {"employee_id": late[0], "day": "mon", "start": "14:00", "end": "22:00"},
+                    {"employee_id": late[1], "day": "mon", "start": "14:00", "end": "22:00"},
+                    {"employee_id": late_crews[week], "day": "mon", "start": "14:00", "end": "22:00"},
+                ],
+            })
+
+        profile = build_profile(
+            shop, hist, {employee["employee_id"]: employee["role"] for employee in team},
+            for_week=WEEK,
+        )
+        result = solve_roster(
+            shop, team, [], [], [], WEEK, None, profile, history_rosters=hist,
+        )
+        roles = {employee["employee_id"]: employee["role"] for employee in team}
+        supervisory = [
+            shift for shift in result["shifts"]
+            if roles[shift["employee_id"]] in shop["supervisory_roles"]
+        ]
+
+        assert sum(shift["start"] == "06:00" for shift in supervisory) == 1
+        assert sum(shift["start"] == "14:00" for shift in supervisory) == 2
+        assert any(shift["end"] == "22:00" for shift in supervisory), [
+            (shift["employee_id"], shift["start"], shift["end"], shift)
+            for shift in supervisory
+        ]
+
     def test_the_changeover_hour_is_not_double_counted(self):
         """The reported bug. At 06:00 the outgoing night worker is still
         there, which the learned curve already counts — so the roster must

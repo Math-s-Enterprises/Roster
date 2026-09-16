@@ -718,6 +718,10 @@ class _RosterBuilder:
         self.result = SolveResult()
         self.hours_used: Dict[str, float] = {e["employee_id"]: 0.0 for e in employees}
         self.span_used: Dict[str, float] = {e["employee_id"]: 0.0 for e in employees}
+        # Original finishes extended solely to reach a salaried contract.
+        # A later coverage stretch can make that extra time redundant, so a
+        # final cheap pass gets one chance to put the historical finish back.
+        self._contract_extended_from: Dict[Tuple[str, str], str] = {}
         self.days_worked: Dict[str, Set[str]] = {
             e["employee_id"]: set() for e in employees
         }
@@ -956,6 +960,28 @@ class _RosterBuilder:
         if not self.demand or not role:
             return 0.0
 
+        # Supervisory roles are alternatives, not separate quotas. If a shop
+        # marks both "Captain" and "Keyholder", one of either satisfies one
+        # learned supervisory place. Scoring them separately stacked both on
+        # the morning while leaving the later shift without either.
+        if ("supervisory_roles" in self.shop
+                and hierarchy.is_supervisory(role, self.shop)):
+            deficit = 0.0
+            counted = 0
+            roles = self.demand.role_mix.get(day, {})
+            for hour in hours:
+                target = sum(
+                    values[hour] for candidate, values in roles.items()
+                    if hierarchy.is_supervisory(candidate, self.shop)
+                )
+                if target <= 0:
+                    continue
+                counted += 1
+                deficit += (
+                    target - self._supervisors_on_duty(day, hour)
+                ) / target
+            return deficit / max(1, counted)
+
         # Measured as a FRACTION of the role's target, not as a raw count.
         #
         # Raw counts hand every slot to whichever role has the most people.
@@ -976,6 +1002,25 @@ class _RosterBuilder:
             counted += 1
             deficit += (target - self.role_on_duty[day][role][hour]) / target
         return deficit / max(1, counted)
+
+    def _supervisory_over_target(
+        self, employee: Dict[str, Any], day: str, hours: List[int]
+    ) -> int:
+        """Keep another supervisor for later once this band has enough."""
+        role = employee.get("role") or ""
+        if ("supervisory_roles" not in self.shop or not self.demand
+                or not getattr(self.demand, "is_usable", False)
+                or not hierarchy.is_supervisory(role, self.shop)):
+            return 0
+        roles = self.demand.role_mix.get(day, {})
+        for hour in hours:
+            target = sum(
+                values[hour] for candidate, values in roles.items()
+                if hierarchy.is_supervisory(candidate, self.shop)
+            )
+            if self._supervisors_on_duty(day, hour) < target:
+                return 0
+        return 1
 
     # -- eligibility ------------------------------------------------------
     def _is_eligible(
@@ -1862,8 +1907,74 @@ class _RosterBuilder:
             ),
         )
 
+    def _include_unrostered(self) -> None:
+        """Try to share one existing shift with every eligible active person."""
+        if self.only_day is not None:
+            return
+
+        min_shift = float(self.shop.get("min_shift_hours") or 0)
+        rostered = {
+            s["employee_id"] for s in self.result.shifts
+            if s.get("start") and s.get("end")
+            and not (
+                s.get("paid_holiday") or s.get("unpaid_holiday") or s.get("sick")
+            )
+        }
+        trading_dates = [date_iso for _, date_iso, _, _ in self._trading_days()]
+
+        for receiver in hierarchy.sort_employees(self.employees, self.shop):
+            receiver_id = receiver["employee_id"]
+            if receiver_id in rostered or not avail.is_active(receiver):
+                continue
+            if trading_dates and all(
+                date_iso in self.employee_off_dates.get(receiver_id, set())
+                for date_iso in trading_dates
+            ):
+                continue
+
+            role = str(receiver.get("role") or "").strip().casefold()
+            donors = sorted(
+                (
+                    employee for employee in self.employees
+                    if employee["employee_id"] != receiver_id
+                    and str(employee.get("role") or "").strip().casefold() == role
+                ),
+                key=lambda employee: -self.span_used.get(
+                    employee["employee_id"], 0.0
+                ),
+            )
+            moved = False
+            for donor in donors:
+                donor_id = donor["employee_id"]
+                for shift in sorted(
+                    self._rebalanceable_shifts(donor_id),
+                    key=lambda item: shift_duration_minutes(
+                        item["start"], item["end"]
+                    ),
+                ):
+                    span = shift_duration_minutes(shift["start"], shift["end"]) / 60
+                    if span < min_shift or self.span_used[donor_id] - span < min_shift:
+                        continue
+                    band = self.span_bands.get(donor_id)
+                    if band and self.span_used[donor_id] - span < band[0] - 0.01:
+                        continue
+                    if slot_owners.regulars_of(
+                        self.slot_owners, shift["day"], shift["start"], shift["end"]
+                    ):
+                        continue
+                    if self._try_move_shift(
+                        shift, receiver,
+                        reason="so every eligible active employee gets a shift.",
+                    ):
+                        rostered.add(receiver_id)
+                        moved = True
+                        break
+                if moved:
+                    break
+
     def _try_move_shift(
-        self, shift: Dict[str, Any], receiver: Dict[str, Any]
+        self, shift: Dict[str, Any], receiver: Dict[str, Any],
+        *, reason: str = "closer to the hours they have each been working lately.",
     ) -> bool:
         """Hand one shift to somebody else, or leave everything untouched.
 
@@ -1897,8 +2008,7 @@ class _RosterBuilder:
         self.result.issues.append(
             f"{day} {shift['start']}-{shift['end']} moved from "
             f"{self.employees_by_id.get(donor_id, {}).get('name', donor_id)} "
-            f"to {receiver.get('name', receiver['employee_id'])} — closer to "
-            f"the hours they have each been working lately."
+            f"to {receiver.get('name', receiver['employee_id'])} — {reason}"
         )
         return True
 
@@ -2775,6 +2885,7 @@ class _RosterBuilder:
                                 self.OWNER_BEATS_CONTRACT
                                 and history_rank.get(e["employee_id"]) == 0
                             ) else 1,
+                            self._supervisory_over_target(e, day, hours),
                             self._contract_need(e, span),
                             # UNRANKED, not len(ranks): with one ranked person
                             # len() is 1, which tied them with everybody who
@@ -2858,11 +2969,11 @@ class _RosterBuilder:
             return ordered[0]
 
         top = rank_of(ordered[0])
-        # Same owner-tier and same contract need — anything else is not an
-        # equal alternative, whatever its preference rank.
+        # Same owner tier, supervisory need and contract need — anything else
+        # is not an equal alternative, whatever its preference rank.
         pool = [
             e for e in ordered
-            if rank_of(e)[:2] == top[:2]
+            if rank_of(e)[:3] == top[:3]
             and rank_of(e)[2] - top[2] <= self.VARIATION_DEPTH
         ]
         if len(pool) < 2:
@@ -3489,6 +3600,12 @@ class _RosterBuilder:
         # are answering harder questions.
         if self.demand is not None:
             self._rebalance_hours()
+        self._include_unrostered()
+        if self.demand is not None:
+            # Coverage can add hours after contract fitting. Give back any
+            # earlier contract-only extension that is no longer needed,
+            # without changing coverage or dropping below the contract band.
+            self._trim_redundant_contract_extensions()
 
         # A settled shift that changed hands for no reason is a fault, and
         # every one found so far was found by the manager rather than by the
@@ -3617,23 +3734,20 @@ class _RosterBuilder:
     def _ensure_supervisory_cover(
         self, trading: List[Tuple[str, str, int, int]]
     ) -> None:
-        """Put a manager or supervisor where the shop requires one.
+        """Place this shop's supervisors where its own history puts them.
 
-        The check used to be a warning printed after the fact, which told
-        the manager about a day with nobody senior on it but did nothing to
-        fix it. Senior cover is the kind of thing a shop cannot open
-        without, so it is now repaired like any other gap: find the busiest
-        slot on that day, and give it to the most senior person available.
-
-        A custom closing rule narrows that slot to one ending at the shop's
-        configured close. `close_m` may be after midnight, so 22:00-06:00 is
-        checked as one trading day rather than against two clock-only times.
+        Saved supervisory roles make closing cover mandatory. With enough
+        approved history, the existing hourly role mix also says whether the
+        shop normally has one or two supervisory people through each part of
+        the day. Those are soft targets; ownership and every eligibility rule
+        still win. Closing is the hard floor and is placed first.
         """
         for day, date_iso, open_m, close_m in trading:
             closing_rules = rule_parser.closing_supervisor_rules(
                 self.custom_constraints, day
             )
-            closing_required = bool(closing_rules)
+            configured = "supervisory_roles" in self.shop
+            closing_required = configured or bool(closing_rules)
             if closing_required:
                 self.rules_that_fired.update(id(rule) for rule in closing_rules)
                 if self.shop.get("open_24h"):
@@ -3643,11 +3757,6 @@ class _RosterBuilder:
                     )
                     closing_required = False
 
-            if self._has_supervisor(
-                day, close_m=close_m if closing_required else None
-            ):
-                continue
-
             seniors = [
                 e for e in hierarchy.sort_employees(self.employees, self.shop)
                 if hierarchy.is_supervisory(e.get("role"), self.shop)
@@ -3656,119 +3765,149 @@ class _RosterBuilder:
                 if closing_required:
                     self.result.issues.append(
                         f"Your rule requires a manager or supervisor at closing "
-                        f"on {day}, but this shop has no eligible supervisory role."
+                        f"on {day}, but this shop has no employee in a role "
+                        f"marked Supervisory."
                     )
                     continue
-                return  # the shop has nobody senior at all; nothing to place
+                continue
 
-            # Their usual shapes first, so the fix looks like a normal shift —
-            # but a shape somebody else OWNS is tried last.
-            #
-            # This pass runs before the slot fill, so without that a manager
-            # would be dropped straight onto the opening that a floor
-            # assistant has worked every week for months, and ownership would
-            # never get a say. Senior cover is still guaranteed: an owned
-            # shape is only skipped while an unowned one will do.
-            # Where to put them, best first:
-            #
-            #   0  a shape one of the seniors already owns — their own shift
-            #   1  a shape nobody owns
-            #   2  somebody else's shift, weakest claim first
-            #
-            # This pass runs before the slot fill, so without an ordering a
-            # manager would be dropped onto whichever shape is most common —
-            # usually the opening that a floor assistant has worked every
-            # week for months. Senior cover is still guaranteed; it just
-            # takes the least disruptive place to stand.
             senior_ids = {e["employee_id"] for e in seniors}
+            patterns = self._unfilled_supervisory_patterns(day)
 
-            def placement_rank(pattern):
-                owner = slot_owners.owner_of(
-                    self.slot_owners, day, pattern.start, pattern.end,
-                )
-                count = getattr(pattern, "count", 1)
-                if owner in senior_ids:
-                    return (0, -count)
-                if owner is None:
-                    return (1, -count)
-                return (
-                    2,
-                    slot_owners.ownership_strength(
-                        self.slot_owners, day, pattern.start, pattern.end,
-                    ),
-                    -count,
-                )
-
-            available_patterns = list(
-                self.demand.patterns if self.demand else (
-                    segments_for_day(self.shop, open_m, close_m)
-                    if closing_required else []
-                )
-            )
-            if closing_required:
-                available_patterns = [
-                    pattern for pattern in available_patterns
-                    if covers_closing(pattern.start, pattern.end, close_m)
+            # Closing is non-negotiable, so reserve it before soft historical
+            # targets can spend the last eligible supervisor on a morning.
+            if closing_required and not self._has_supervisor(day, close_m=close_m):
+                closing_patterns = [
+                    pattern for pattern in patterns
+                    if covers_closing(pattern[0], pattern[1], close_m)
                 ]
-                if not available_patterns:
-                    available_patterns = [
-                        segment for segment in segments_for_day(
-                            self.shop, open_m, close_m
-                        )
+                if not closing_patterns and self.demand:
+                    closing_patterns = [
+                        (pattern.start, pattern.end)
+                        for pattern in self.demand.patterns
+                        if covers_closing(pattern.start, pattern.end, close_m)
+                    ]
+                if not closing_patterns:
+                    closing_patterns = [
+                        (segment.start, segment.end)
+                        for segment in segments_for_day(self.shop, open_m, close_m)
                         if covers_closing(segment.start, segment.end, close_m)
                     ]
-            patterns = sorted(
-                available_patterns,
-                key=placement_rank,
-            )
-            assigned_today = self.assigned_by_day.setdefault(day, set())
-            placed = False
-            for pattern in patterns:
-                if placed:
-                    break
-                segment = Segment(start=pattern.start, end=pattern.end, min_staff=1)
-                for relax in (False, True):
-                    eligible = [
-                        e for e in seniors
-                        if self._is_eligible(
-                            e, segment, day, date_iso, assigned_today,
-                            open_m, close_m, relax_preferences=relax,
-                        )
-                    ]
-                    if not eligible:
-                        continue
-                    best = eligible[0]  # already in seniority order
-                    finish = (
-                        pattern.end if closing_required else
-                        self._fit_length_to_contract(
-                            best, day, pattern.start, pattern.end
-                        )
-                    )
-                    self._record_shift(
-                        best["employee_id"], day, pattern.start, finish,
-                        supervisory_cover=True,
-                        **({"closing_cover": True} if closing_required else {}),
-                    )
-                    assigned_today.add(best["employee_id"])
-                    if relax:
-                        self._note_relaxed_preference(best, day)
-                    placed = True
-                    break
-
-            if not placed:
-                if closing_required:
+                placed = self._place_supervisory_pattern(
+                    day, date_iso, open_m, close_m, seniors, senior_ids,
+                    closing_patterns, closing=True,
+                )
+                if placed is None:
                     self.result.issues.append(
                         f"Your rule requires a manager or supervisor at closing "
                         f"on {day}, but none could be rostered. Everyone senior "
                         f"is on leave, at their hour limit, unavailable for the "
                         f"closing shift, or already working five days."
                     )
-                else:
+
+            # Legacy shops have not saved the new setting yet. Preserve their
+            # old one-senior-somewhere behaviour until they make that choice.
+            if (not configured and not closing_rules
+                    and not self._has_supervisor(day)):
+                placed = self._place_supervisory_pattern(
+                    day, date_iso, open_m, close_m, seniors, senior_ids,
+                    patterns, closing=False,
+                )
+                if placed is None:
                     self.result.issues.append(
                         f"No manager or supervisor could be rostered on {day}. "
                         f"Everyone senior is on leave, at their hour limit, or "
                         f"already working five days."
                     )
+
+    def _supervisors_on_duty(self, day: str, hour: int) -> int:
+        return sum(
+            hours[hour] for role, hours in self.role_on_duty[day].items()
+            if hierarchy.is_supervisory(role, self.shop)
+        )
+
+    def _unfilled_supervisory_patterns(self, day: str) -> List[Tuple[str, str]]:
+        """Normal day slots not already answered by fixed or pinned work."""
+        patterns = list(self._slots_for_day(day))
+        placed = [
+            shift for shift in self.result.shifts
+            if shift.get("day") == day and shift.get("start") and shift.get("end")
+            and not shift.get("extra")
+        ]
+        for shift in placed:
+            candidates = [
+                (index, pattern) for index, pattern in enumerate(patterns)
+                if abs(to_minutes(pattern[0]) - to_minutes(shift["start"]))
+                <= self.SLOT_MATCH_TOLERANCE_MINUTES
+            ]
+            if candidates:
+                index, _ = min(candidates, key=lambda item: (
+                    abs(to_minutes(item[1][0]) - to_minutes(shift["start"])),
+                    abs(to_minutes(item[1][1]) - to_minutes(shift["end"])),
+                ))
+                patterns.pop(index)
+        return patterns
+
+    def _place_supervisory_pattern(
+        self, day: str, date_iso: str, open_m: int, close_m: int,
+        seniors: List[Dict[str, Any]], senior_ids: Set[str],
+        patterns: List[Tuple[str, str]], *, closing: bool,
+    ) -> Optional[Tuple[str, str]]:
+        """Place the best legal supervisory person/shift pair."""
+        choices = []
+        for start, end in patterns:
+            regulars = slot_owners.regulars_of(
+                self.slot_owners, day, start, end
+            )
+            hours = [
+                hour for covered_day, hour in self.hours_covered(day, start, end)
+                if covered_day == day
+            ]
+            segment = Segment(start=start, end=end, min_staff=1)
+            for relax in (False, True):
+                eligible = [
+                    employee for employee in seniors
+                    if self._is_eligible(
+                        employee, segment, day, date_iso,
+                        self.assigned_by_day.setdefault(day, set()),
+                        open_m, close_m, relax_preferences=relax,
+                    )
+                ]
+                if not eligible:
+                    continue
+                history_rank = self._history_rank(eligible, day, start, end)
+                ownership = (
+                    0 if regulars & senior_ids else 1 if not regulars else 2
+                )
+                span = shift_duration_minutes(start, end) / 60
+                for employee in eligible:
+                    choices.append((
+                        relax,
+                        ownership,
+                        history_rank.get(employee["employee_id"], _UNRANKED_FOR_SLOT),
+                        self._contract_need(employee, span),
+                        self._rank_for_demand(
+                            employee, f"{start}-{end}", day, hours
+                        ),
+                        employee,
+                        (start, end),
+                    ))
+                break
+        if not choices:
+            return None
+
+        winner = min(choices, key=lambda choice: choice[:-2])
+        *_, employee, pattern = winner
+        start, end = pattern
+        self._record_shift(
+            employee["employee_id"], day, start, end,
+            supervisory_cover=True,
+            **({"closing_cover": True} if closing else {}),
+        )
+        self.assigned_by_day.setdefault(day, set()).add(employee["employee_id"])
+        if winner[0]:
+            self._note_relaxed_preference(employee, day)
+        return pattern
 
     def _has_supervisor(self, day: str, close_m: Optional[int] = None) -> bool:
         return any(
@@ -4574,12 +4713,55 @@ class _RosterBuilder:
                     ) is not None:
                         continue
 
+                    if delta > 0:
+                        self._contract_extended_from.setdefault(
+                            (employee_id, shift["day"]), shift["end"]
+                        )
                     self._reshape_shift(shift, new_end)
                     moved = True
                     break
 
                 if not moved:
                     break
+
+    def _trim_redundant_contract_extensions(self) -> None:
+        """Undo contract-only finish extensions made redundant later.
+
+        This is a final tidy, not another solve: it only shortens toward the
+        finish the generated shift originally had, and only when the employee
+        stays in band and every required coverage hour remains staffed.
+        """
+        if not self._contract_extended_from:
+            return
+
+        min_shift = float(self.shop.get("min_shift_hours") or 0)
+
+        for key, original_end in self._contract_extended_from.items():
+            employee_id, day = key
+            band = self.span_bands.get(employee_id)
+            if not band:
+                continue
+            shift = next((
+                s for s in self.result.shifts
+                if s.get("employee_id") == employee_id and s.get("day") == day
+                and s.get("start") and s.get("end")
+            ), None)
+            if not shift:
+                continue
+
+            original_span = shift_duration_minutes(shift["start"], original_end)
+            current_span = shift_duration_minutes(shift["start"], shift["end"])
+            reduction = (current_span - original_span) / 60
+            if reduction <= 0:
+                continue
+            minimum = band[0]
+            if self.span_used.get(employee_id, 0.0) - reduction < minimum - 0.01:
+                continue
+            if original_span / 60 < min_shift:
+                continue
+            if not self._can_shorten_to(shift, original_end):
+                continue
+            self._reshape_shift(shift, original_end)
 
     def _report_thin_days(self) -> None:
         """Flag a day staffed by fewer people than the shop normally uses.

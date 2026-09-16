@@ -89,6 +89,32 @@ class TestTheMessagesAreReadable:
         assert len(people[0]["breaches"]) > 1
 
 
+def test_saved_supervisory_roles_are_checked_without_an_ai_rule():
+    shop = {
+        **SHOP,
+        "supervisory_roles": ["Captain"],
+        "hours": [
+            {"day": day, "open": "09:00", "close": "21:00",
+             "closed": day != "mon"}
+            for day in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+        ],
+    }
+    employees = [
+        {**_team()[0], "employee_id": "captain", "name": "Alex", "role": "Captain"},
+        {**_team()[0], "employee_id": "crew", "role": "Crew"},
+    ]
+    shifts = [{"employee_id": "crew", "day": "mon", "start": "09:00", "end": "21:00"}]
+
+    missing = audit(shifts, shop=shop, employees=employees, week_start=WEEK)
+    assert any(breach["rule"] == "closing_role_requirement" for breach in missing)
+
+    shifts.append({
+        "employee_id": "captain", "day": "mon", "start": "13:00", "end": "21:00"
+    })
+    covered = audit(shifts, shop=shop, employees=employees, week_start=WEEK)
+    assert not [breach for breach in covered if breach["rule"] == "closing_role_requirement"]
+
+
 class TestRealTimeNotClockTime:
     def test_an_overnight_turnaround_is_measured_correctly(self):
         """23:30 Monday to 07:00 Tuesday is 7.5 hours, not 16.5 backwards."""

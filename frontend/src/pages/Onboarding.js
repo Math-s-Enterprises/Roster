@@ -33,9 +33,8 @@ export default function Onboarding() {
   const [observerName, setObserverName] = useState("");
   const [observerEmail, setObserverEmail] = useState("");
   const [saving, setSaving] = useState(false);
-  // Explicit per-role supervisory flags, seeded from what the server
-  // derives. See the note under the table: the value is sent on save but
-  // PUT /shop does not accept it yet.
+  // Explicit per-role supervisory flags. Seeded from the server's legacy
+  // fallback for old shops, then saved as this shop's own choice.
   const [coverRoles, setCoverRoles] = useState(null);
   const [dragRole, setDragRole] = useState(null);
   const [overRole, setOverRole] = useState(null);
@@ -196,6 +195,7 @@ export default function Onboarding() {
   }
   const blocked = Object.keys(invalid).length > 0;
 
+  /** Whether a role counts as supervisory cover for this shop. */
   const cover = coverRoles || supervisory;
 
   const toggleCover = (role) => {
@@ -226,6 +226,7 @@ export default function Onboarding() {
       + "Nobody loses the title — staff with a role that is not listed simply rank last."
     )) return;
     setRoles(roles.filter((r) => r !== role));
+    setCoverRoles((current) => current?.filter((r) => r !== role) || []);
   };
 
   const removeObserver = (email) => {
@@ -505,6 +506,20 @@ export default function Onboarding() {
             </button>
           </div>
 
+          <p className="ss-note">
+            Tap <strong>Supervisory</strong> to set whether a role counts as supervisory cover — green
+            is on, red is off. At least one supervisory person is rostered on every close. The
+            scheduler also uses this shop's approved rosters to learn when supervisory cover is
+            normally present.{" "}
+            <strong>Removing a role does not remove it from anyone</strong> — staff with an unlisted
+            title simply rank last.
+            {supervisoryCount === 0 && (
+              <span className="ss-warn">
+                {" "}No role currently counts as supervisory cover, so the “manager on every close”
+                rule cannot be satisfied.
+              </span>
+            )}
+          </p>
         </div>
 
         <div className="ss-section">
@@ -829,7 +844,10 @@ export default function Onboarding() {
                     <ArrowDown size={13} />
                   </button>
                   <button type="button" title="Remove"
-                    onClick={() => setRoles(roles.filter((x) => x !== r))}
+                    onClick={() => {
+                      setRoles(roles.filter((x) => x !== r));
+                      setCoverRoles((current) => current?.filter((role) => role !== r) || []);
+                    }}
                     className="p-1 rounded text-white/30 hover:text-red-400">
                     <X size={13} />
                   </button>

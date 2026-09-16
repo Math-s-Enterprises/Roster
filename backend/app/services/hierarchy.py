@@ -211,11 +211,18 @@ SUPERVISORY_WORDS = (
 def is_supervisory(role: Optional[str], shop: Optional[Dict[str, Any]] = None) -> bool:
     """Whether a role counts as management cover for a shift.
 
-    Two ways to qualify. A title that says so — anything containing
-    "manager", "supervisor", "duty", "lead" and so on — always counts. Beyond
-    that, position in the ladder still applies, so a shop using its own
-    vocabulary ("Shift Captain") keeps working without configuring anything.
+    Once a shop saves its supervisory roles, that explicit choice wins.
+    Older shops without the field retain the title/ladder fallback so their
+    existing rosters do not change merely because this setting was added.
     """
+    if shop is not None and "supervisory_roles" in shop:
+        configured = {
+            str(item).strip().casefold()
+            for item in (shop.get("supervisory_roles") or [])
+            if str(item).strip()
+        }
+        return bool(role) and role.strip().casefold() in configured
+
     if role:
         lowered = role.lower()
         if any(word in lowered for word in SUPERVISORY_WORDS):

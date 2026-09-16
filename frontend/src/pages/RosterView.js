@@ -1146,8 +1146,11 @@ export default function RosterView() {
               {shownPeople.map((e, rowIndex) => {
                 const empHours = hoursFor(e.employee_id);
                 const trouble = breachesFor(e.employee_id);
-                const max = Number(e.max_weekly_hours) || 0;
+                const activeCap = roster.active_hour_caps?.[e.employee_id];
+                const max = Number(activeCap?.hours ?? e.max_weekly_hours) || 0;
                 const over = max > 0 && empHours > max;
+                const capChanged = max !== Number(e.max_weekly_hours);
+                const capSource = activeCap?.source?.replace(/^their /, "");
                 return (
                   <div
                     className="wr-row wr-personrow"
@@ -1172,7 +1175,10 @@ export default function RosterView() {
                           <div className="wr-name">{e.name}</div>
                         )}
                         <div className="wr-namesub" data-over={over} title={e.role}>
-                          {e.role} · {over ? `${empHours.toFixed(1)}h of ${max}h` : `${empHours.toFixed(1)}h`}
+                          {e.role} · {over || capChanged
+                            ? `${empHours.toFixed(1)}h of ${max}h`
+                            : `${empHours.toFixed(1)}h`}
+                          {capChanged && capSource ? ` · ${capSource}` : ""}
                         </div>
                       </div>
                       <div className="wr-nudge">
