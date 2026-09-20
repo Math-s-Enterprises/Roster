@@ -340,6 +340,16 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 
   .no-print, aside, nav { display: none !important; }
   main { padding: 0 !important; }
+  /* The shell is a two-column grid. Hiding the sidebar takes it out of the
+     flow, which drops <main> into the first track — the 258px sidebar
+     column — and the sheet prints squeezed into it with the right-hand
+     columns clipped off. Collapsing the grid gives main the full page. */
+  .nv-shell {
+    display: block !important;
+    min-height: 0 !important;
+    background: #ffffff !important;
+  }
+  .nv-main { padding: 0 !important; }
   html, body, #root { background: #ffffff !important; color: #111111 !important; }
 
   #roster-print {
@@ -878,6 +888,21 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   --warn-soft: #f7eeda;
   --warn-hairline: #e0cda0;
 }
+
+/* Sign-in, forgot password, reset password.
+   ------------------------------------------------------------------
+   These pages predate the theme and were written white-on-black, so in
+   light mode their text sat on beige and disappeared. They are reached
+   while signed out, which is exactly when the theme is most likely to
+   be light — the stored choice is applied before the app renders. */
+.auth-scrim { background: rgba(0, 0, 0, .8); }
+.auth-ink { color: var(--t-ink); }
+.auth-ink-body { color: var(--t-body2); }
+.auth-ink-mute { color: var(--t-muted); }
+.auth-ink-faint { color: var(--t-faint); }
+.auth-surface { background: var(--t-inset); }
+.auth-surface-soft { background: var(--t-hover); }
+.auth-hover-ink:hover { color: var(--t-ink); }
 
 /* ------------------------------------------------------------------
    Fixed Shifts — week grid (handoff 1b)
@@ -3498,6 +3523,19 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 
 .ss-label { font-size: 11px; font-weight: 700; letter-spacing: .16em; color: var(--t-muted); text-transform: uppercase; }
 .ss-label-tight { letter-spacing: .14em; }
+/* Field labels match the value they sit beside — 11px against a 17px
+   number read as a caption rather than the name of the thing. The element
+   selector keeps the section eyebrows, which share the class on a div,
+   at their original size. Tracking comes down as the size goes up: .16em
+   is set for small caps and sprawls badly at 17px. */
+label.ss-label {
+  display: block;
+  font-size: 17px;
+  letter-spacing: .04em;
+  color: var(--t-body2);
+  margin-bottom: 4px;
+}
+label.ss-label-tight { letter-spacing: .04em; }
 
 /* Name + unsaved split -------------------------------------------- */
 .ss-split {
@@ -3517,11 +3555,15 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   border: 1px solid var(--t-input) !important; border-radius: 6px !important;
   min-height: 0 !important;
   color: var(--t-ink) !important; font-family: inherit; font-size: 17px; font-weight: 600;
-  padding: 0 15px; margin-top: 10px;
+  padding: 0 15px; margin-top: 12px;
 }
 .ss-input[data-dirty="true"] { border-color: var(--t-accent) !important; }
 .ss-input[data-invalid="true"] { border-color: var(--t-danger) !important; }
-.ss-input-num { max-width: 140px; font-weight: 700; }
+.ss-input-num {
+  width: 92px; max-width: 92px;
+  height: 44px; padding: 0 12px;
+  font-weight: 700; text-align: center;
+}
 .ss-helper { font-size: 14px; line-height: 1.55; color: var(--t-muted); margin: 10px 0 0; }
 .ss-helper[data-dirty="true"] { color: var(--t-accent); }
 .ss-helper[data-invalid="true"] { color: var(--t-danger); }

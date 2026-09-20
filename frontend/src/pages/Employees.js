@@ -916,7 +916,7 @@ export default function Employees() {
                   className="w-full px-3 py-2.5 rounded-lg font-mono" />
               </Field>
               <Field label={`Hourly rate (${CURRENCY})`}>
-                <input data-testid="emp-rate" type="number" step="0.5" required value={form.hourly_rate}
+                <input data-testid="emp-rate" type="number" min={0} step="0.5" required value={form.hourly_rate}
                   onChange={(e) => set({ hourly_rate: Number(e.target.value) })}
                   className="w-full px-3 py-2.5 rounded-lg font-mono" />
               </Field>

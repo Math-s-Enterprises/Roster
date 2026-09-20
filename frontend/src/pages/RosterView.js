@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { api, errorMessage, refusalReasons, availabilityConflict, leaveConflict, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, shiftHours, shiftPaidHours, dateForDay, fmtDayDate } from "@/lib/api";
+import { api, errorMessage, refusalReasons, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, shiftHours, shiftPaidHours, dateForDay, fmtDayDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import RosterPrintSheet from "@/components/RosterPrintSheet";
-import ShiftWarningModal from "@/components/ShiftWarningModal";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
@@ -70,7 +69,6 @@ export default function RosterView() {
   };
   const [roster, setRoster] = useState(null);
   const [emps, setEmps] = useState([]);
-  const [holidays, setHolidays] = useState([]);
   const [shop, setShop] = useState(null);
   const [department, setDepartment] = useState(null);
   const [generating, setGenerating] = useState(false);
@@ -85,7 +83,6 @@ export default function RosterView() {
   // A refused change gets a dialog rather than a toast: it needs reading and
   // acting on, and a toast that has already faded is no help.
   const [refused, setRefused] = useState(null);
-  const [shiftWarning, setShiftWarning] = useState(null);
   const [confirmUnapprove, setConfirmUnapprove] = useState(false);
   const [sickShift, setSickShift] = useState(null);
   const [extraOpen, setExtraOpen] = useState(false);
@@ -118,10 +115,8 @@ export default function RosterView() {
   const [highlight, setHighlight] = useState(null);
 
   const load = async () => {
-    const [e, r, s, h] = await Promise.all([
-      api.get("/employees"), api.get("/rosters"), api.get("/shop"), api.get("/holidays"),
-    ]);
-    setEmps(e.data); setRosters(r.data); setShop(s.data); setHolidays(h.data);
+    const [e, r, s] = await Promise.all([api.get("/employees"), api.get("/rosters"), api.get("/shop")]);
+    setEmps(e.data); setRosters(r.data); setShop(s.data);
     // An explicit ?roster= wins over the week lookup. Past Rosters links a
     // specific version, and matching on week alone would open whichever
     // roster for that week came back first — usually the approved one,
@@ -427,21 +422,27 @@ export default function RosterView() {
       || (roster?.shifts || []).some((s) => s.employee_id === e.employee_id)
   ), [emps, roster]);
 
-  const saveShift = async (payload, confirmed = false) => {
-    if (payload && shiftHours(payload.start, payload.end) > 11) {
-      toast.error("Shift exceeds 11h limit"); return;
-    }
-    const employee = payload && empMap[payload.employee_id];
-    const warnings = payload && [
-      leaveConflict(holidays, employee, roster.week_start, payload.day),
-      availabilityConflict(employee, payload.day, payload.start, payload.end),
-    ].filter(Boolean);
-    if (warnings?.length && !confirmed) {
-      setShiftWarning({
-        warnings,
-        confirmLabel: "Save shift anyway",
-        action: () => saveShift(payload, true),
-      });
+  /**
+   * The longest shift this shop allows: its own max_shift_hours, capped at
+   * the 12h absolute maximum the server enforces.
+   *
+   * This was hardcoded to 11, which refused anything longer no matter what
+   * the shop had set — a manager who set 12 in Shop Settings watched an
+   * 11.5h shift bounce with a message naming a limit they had already
+   * changed. 11 also looks like it came from the 11-hour rest entitlement,
+   * which is a different quantity: 11 hours off implies up to 13 worked.
+   */
+  const maxShiftHours = Math.min(Number(shop?.max_shift_hours) || 12, 12);
+
+  const saveShift = async (payload) => {
+    // Tolerance because these are floats: 11.5 can arrive as 11.500000001
+    // and a shift exactly on the limit must be allowed.
+    if (payload && shiftHours(payload.start, payload.end) > maxShiftHours + 0.01) {
+      const length = shiftHours(payload.start, payload.end);
+      toast.error(
+        `That shift is ${length.toFixed(1)}h — over this shop's ${maxShiftHours}h maximum. `
+        + "Change it in Shop Settings if it should be longer.",
+      );
       return;
     }
     const shifts = (roster.shifts || []).filter((s) => s.shift_id !== editShift.shift_id);
@@ -487,7 +488,7 @@ export default function RosterView() {
    * disagree about, and it does not depend on shift_id surviving a round trip
    * that strips it (`clean` below drops it before every PUT).
    */
-  const moveShift = async (shift, toEmpId, toDay, confirmed = false) => {
+  const moveShift = async (shift, toEmpId, toDay) => {
     if (shift.employee_id === toEmpId && shift.day === toDay) return;
 
     const at = (s, employeeId, day) => s.employee_id === employeeId && s.day === day;
@@ -502,25 +503,6 @@ export default function RosterView() {
     // other way.
     if (occupant && (occupant.paid_holiday || occupant.unpaid_holiday || occupant.sick)) {
       toast.error(`${empMap[toEmpId]?.name || "They"} are on leave that day`);
-      return;
-    }
-
-    const moveWarnings = [
-      leaveConflict(holidays, empMap[toEmpId], roster.week_start, toDay),
-      availabilityConflict(empMap[toEmpId], toDay, shift.start, shift.end),
-      occupant && leaveConflict(
-        holidays, empMap[shift.employee_id], roster.week_start, shift.day,
-      ),
-      occupant && availabilityConflict(
-        empMap[shift.employee_id], shift.day, occupant.start, occupant.end,
-      ),
-    ].filter(Boolean);
-    if (moveWarnings.length && !confirmed) {
-      setShiftWarning({
-        warnings: moveWarnings,
-        confirmLabel: occupant ? "Swap anyway" : "Move anyway",
-        action: () => moveShift(shift, toEmpId, toDay, true),
-      });
       return;
     }
 
@@ -561,12 +543,12 @@ export default function RosterView() {
     (roster.shifts || []).forEach((s) => {
       const e = empMap[s.employee_id] || {};
       const d = dateForDay(roster.week_start, s.day);
-      const label = s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "N/A" : s.sick ? "Sick" : "";
+      const label = s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "Unpaid" : s.sick ? "Sick" : "";
       rows.push([
         e.name, e.role, (e.departments || []).join("/"), DAY_LABELS[s.day],
         d.toISOString().slice(0, 10),
         s.start || label, s.end || label,
-        shiftPaidHours(s, !!shop?.breaks_are_paid).toFixed(1),
+        shiftPaidHours(s).toFixed(1),
       ]);
     });
     const csv = rows.map((r) => r.join(",")).join("\n");
@@ -597,13 +579,13 @@ export default function RosterView() {
     sorted.forEach((s) => {
       const e = empMap[s.employee_id] || {};
       const d = dateForDay(roster.week_start, s.day);
-      const label = s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "N/A" : s.sick ? "Sick" : "";
+      const label = s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "Unpaid leave" : s.sick ? "Sick" : "";
       pdf.text(String(e.name || "").slice(0, 24), colX[0], y);
       pdf.text(String(e.role || ""), colX[1], y);
       pdf.text(DAY_LABELS[s.day], colX[2], y);
       pdf.text(fmtDayDate(d), colX[3], y);
       pdf.text(s.start && s.end ? `${s.start} – ${s.end}` : label, colX[4], y);
-      pdf.text(`${shiftPaidHours(s, !!shop?.breaks_are_paid).toFixed(1)}h`, colX[5], y);
+      pdf.text(`${shiftPaidHours(s).toFixed(1)}h`, colX[5], y);
       y += 6; if (y > 195) { pdf.addPage(); y = 20; }
     });
     // Footer
@@ -705,7 +687,7 @@ export default function RosterView() {
   };
 
   const leaveLabel = (s) =>
-    s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "N/A" : "Sick";
+    s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "Unpaid" : "Sick";
 
   /** The click behaviour is unchanged from the previous layout — an
    *  approved week only accepts a sick report, everything else asks you
@@ -750,9 +732,8 @@ export default function RosterView() {
   const shownPeople = gridPeople.slice(0, visiblePeople);
 
   const hoursFor = (id) => (roster?.shifts || [])
-    .filter((s) => s.employee_id === id && s.start && s.end
-      && !s.paid_holiday && !s.unpaid_holiday && !s.sick)
-    .reduce((a, s) => a + shiftPaidHours(s, !!shop?.breaks_are_paid), 0);
+    .filter((s) => s.employee_id === id)
+    .reduce((a, s) => a + shiftPaidHours(s), 0);
 
   const headcount = (day) =>
     (shiftsByDay[day] || []).filter((s) => s.start && !s.paid_holiday && !s.unpaid_holiday && !s.sick).length;
@@ -1016,7 +997,7 @@ export default function RosterView() {
       </header>
 
       {overLimit && (
-        <div className="wr-panel no-print" style={{ borderTop: "1px solid #262626" }}>
+        <div className="wr-panel no-print" style={{ borderTop: "1px solid var(--t-hairline)" }}>
           <div className="wr-panel-label">FREE PLAN LIMIT REACHED ({freeLimit} ROSTERS)</div>
           <p className="wr-panel-say">
             Upgrade to Pro for unlimited generations, AI learning and multi-department.{" "}
@@ -1146,11 +1127,8 @@ export default function RosterView() {
               {shownPeople.map((e, rowIndex) => {
                 const empHours = hoursFor(e.employee_id);
                 const trouble = breachesFor(e.employee_id);
-                const activeCap = roster.active_hour_caps?.[e.employee_id];
-                const max = Number(activeCap?.hours ?? e.max_weekly_hours) || 0;
+                const max = Number(e.max_weekly_hours) || 0;
                 const over = max > 0 && empHours > max;
-                const capChanged = max !== Number(e.max_weekly_hours);
-                const capSource = activeCap?.source?.replace(/^their /, "");
                 return (
                   <div
                     className="wr-row wr-personrow"
@@ -1175,10 +1153,7 @@ export default function RosterView() {
                           <div className="wr-name">{e.name}</div>
                         )}
                         <div className="wr-namesub" data-over={over} title={e.role}>
-                          {e.role} · {over || capChanged
-                            ? `${empHours.toFixed(1)}h of ${max}h`
-                            : `${empHours.toFixed(1)}h`}
-                          {capChanged && capSource ? ` · ${capSource}` : ""}
+                          {e.role} · {over ? `${empHours.toFixed(1)}h of ${max}h` : `${empHours.toFixed(1)}h`}
                         </div>
                       </div>
                       <div className="wr-nudge">
@@ -1385,19 +1360,6 @@ export default function RosterView() {
           onDelete={() => saveShift(null)}
           onUnpin={unpin}
           isNew={editShift.shift_id?.startsWith("new_")}
-        />
-      )}
-
-      {shiftWarning && (
-        <ShiftWarningModal
-          warnings={shiftWarning.warnings}
-          confirmLabel={shiftWarning.confirmLabel}
-          onClose={() => setShiftWarning(null)}
-          onConfirm={() => {
-            const action = shiftWarning.action;
-            setShiftWarning(null);
-            action();
-          }}
         />
       )}
 
@@ -1884,7 +1846,7 @@ function Modal({ children, onClose }) {
 
 const LEAVE_LABELS = {
   paid_holiday: "Paid holiday",
-  unpaid_holiday: "N/A — unpaid leave",
+  unpaid_holiday: "Unpaid leave",
   sick: "Sick leave",
 };
 
@@ -1910,7 +1872,6 @@ function ShiftModal({ shift, employee, onClose, onSave, onDelete, onUnpin, isNew
 
   const under16 = employee?.age < 16;
   const conflict = under16 && (start < "08:00" || end > "19:00");
-  const availability = availabilityConflict(employee, shift.day, start, end);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4" onClick={onClose}>
@@ -1983,12 +1944,6 @@ function ShiftModal({ shift, employee, onClose, onSave, onDelete, onUnpin, isNew
             {conflict && (
               <div className="status-danger mt-4 p-3 text-[13px] flex items-center gap-2">
                 <AlertTriangle size={13} /> Under-16 curfew: shift must be within 08:00–19:00.
-              </div>
-            )}
-
-            {availability && (
-              <div className="status-warn mt-4 p-3 text-[13px] flex items-center gap-2">
-                <AlertTriangle size={13} /> {availability} You will be asked to confirm before saving.
               </div>
             )}
 
