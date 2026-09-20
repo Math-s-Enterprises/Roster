@@ -33,8 +33,9 @@ export default function Onboarding() {
   const [observerName, setObserverName] = useState("");
   const [observerEmail, setObserverEmail] = useState("");
   const [saving, setSaving] = useState(false);
-  // Explicit per-role supervisory flags. Seeded from the server's legacy
-  // fallback for old shops, then saved as this shop's own choice.
+  // Explicit per-role supervisory flags, seeded from what the server
+  // derives. See the note under the table: the value is sent on save but
+  // PUT /shop does not accept it yet.
   const [coverRoles, setCoverRoles] = useState(null);
   const [dragRole, setDragRole] = useState(null);
   const [overRole, setOverRole] = useState(null);
@@ -187,17 +188,31 @@ export default function Onboarding() {
   // Validated here and re-validated server-side; 12 hours is the legal
   // ceiling, so a max above it is blocked rather than warned about.
   const invalid = {};
-  if (Number(minShift) >= Number(maxShift)) {
+  // The min/max attributes only bound the steppers — a negative can still be
+  // typed, and this page saves from a button rather than a form, so nothing
+  // else would catch it.
+  if (Number(minShift) < 1) {
+    invalid.minShift = "A shift has to be at least an hour.";
+  } else if (Number(minShift) >= Number(maxShift)) {
     invalid.minShift = "Minimum must be less than the maximum.";
+  }
+  if (Number(paidSickDays) < 0) {
+    invalid.paidSick = "Paid sick days cannot be negative.";
   }
   if (Number(maxShift) > 12) {
     invalid.maxShift = "12 hours is the legal ceiling — this cannot be saved.";
   }
+  // Eleven is the statutory floor, so anything under it is refused rather
+  // than warned about. Twenty is the practical ceiling: past that the gap
+  // stops being rest and starts making the week impossible to cover.
+  if (Number(minRest) < 11) {
+    invalid.minRest = "Eleven hours is the legal minimum between shifts — this cannot be saved.";
+  } else if (Number(minRest) > 20) {
+    invalid.minRest = "Twenty hours is the most that is useful — a longer gap leaves too little of the day to roster.";
+  }
   const blocked = Object.keys(invalid).length > 0;
 
-  /** Whether a role counts as supervisory cover for this shop. */
   const cover = coverRoles || supervisory;
-     const supervisoryCount = roles.filter((r) => cover.includes(r)).length;
 
   const toggleCover = (role) => {
     const on = cover.includes(role);
@@ -227,7 +242,6 @@ export default function Onboarding() {
       + "Nobody loses the title — staff with a role that is not listed simply rank last."
     )) return;
     setRoles(roles.filter((r) => r !== role));
-    setCoverRoles((current) => current?.filter((r) => r !== role) || []);
   };
 
   const removeObserver = (email) => {
@@ -369,6 +383,8 @@ export default function Onboarding() {
             <input
               id="ss-min"
               type="number"
+              min={1}
+              max={12}
               className="ss-input ss-input-num"
               value={minShift}
               data-dirty={Boolean(dirty.minShift)}
@@ -386,6 +402,8 @@ export default function Onboarding() {
             <input
               id="ss-max"
               type="number"
+              min={1}
+              max={12}
               className="ss-input ss-input-num"
               value={maxShift}
               data-dirty={Boolean(dirty.maxShift)}
@@ -507,20 +525,6 @@ export default function Onboarding() {
             </button>
           </div>
 
-          <p className="ss-note">
-            Tap <strong>Supervisory</strong> to set whether a role counts as supervisory cover — green
-            is on, red is off. At least one supervisory person is rostered on every close. The
-            scheduler also uses this shop's approved rosters to learn when supervisory cover is
-            normally present.{" "}
-            <strong>Removing a role does not remove it from anyone</strong> — staff with an unlisted
-            title simply rank last.
-            {supervisoryCount === 0 && (
-              <span className="ss-warn">
-                {" "}No role currently counts as supervisory cover, so the “manager on every close”
-                rule cannot be satisfied.
-              </span>
-            )}
-          </p>
         </div>
 
         <div className="ss-section">
@@ -578,16 +582,30 @@ export default function Onboarding() {
             <input
               id="ss-rest"
               type="number"
+              min={11}
+              max={20}
               className="ss-input ss-input-num"
               value={minRest}
               data-dirty={Boolean(dirty.minRest)}
+              data-invalid={Boolean(invalid.minRest)}
               aria-describedby="ss-rest-help"
+              aria-invalid={Boolean(invalid.minRest)}
               onChange={(e) => setMinRest(e.target.value)}
             />
-            <p id="ss-rest-help" className="ss-helper" data-dirty={Boolean(dirty.minRest)}>
-              The Organisation of Working Time Act sets eleven consecutive hours between shifts.
-              Lowering it below eleven does not make a shorter gap lawful — it only stops the roster
-              flagging one, so raise it if your own agreements are stricter and leave it otherwise.
+            <p
+              id="ss-rest-help"
+              className="ss-helper"
+              data-dirty={Boolean(dirty.minRest) && !invalid.minRest}
+              data-invalid={Boolean(invalid.minRest)}
+            >
+              {invalid.minRest || (
+                <>
+                  The Organisation of Working Time Act sets eleven consecutive hours between shifts,
+                  so eleven is the lowest this accepts — a shorter gap is not lawful and the roster
+                  would be building one. Raise it if your own agreements are stricter; twenty is the
+                  most that is useful.
+                </>
+              )}
             </p>
           </div>
 
@@ -596,14 +614,23 @@ export default function Onboarding() {
             <input
               id="ss-sick"
               type="number"
+              min={0}
+              max={365}
               className="ss-input ss-input-num"
               value={paidSickDays}
               data-dirty={Boolean(dirty.paidSick)}
+              data-invalid={Boolean(invalid.paidSick)}
+              aria-invalid={Boolean(invalid.paidSick)}
               aria-describedby="ss-sick-help"
               onChange={(e) => setPaidSickDays(e.target.value)}
             />
-            <p id="ss-sick-help" className="ss-helper" data-dirty={Boolean(dirty.paidSick)}>
-              {dirty.paidSick ? "Edited · " : ""}
+            <p
+              id="ss-sick-help"
+              className="ss-helper"
+              data-dirty={Boolean(dirty.paidSick) && !invalid.paidSick}
+              data-invalid={Boolean(invalid.paidSick)}
+            >
+              {invalid.paidSick ? `${invalid.paidSick} ` : dirty.paidSick ? "Edited · " : ""}
               Irish statutory sick pay is the floor, not a target — you may pay more than the
               statutory minimum but not less. Days past the allowance are still recorded, as unpaid.
             </p>
@@ -845,10 +872,7 @@ export default function Onboarding() {
                     <ArrowDown size={13} />
                   </button>
                   <button type="button" title="Remove"
-                    onClick={() => {
-                      setRoles(roles.filter((x) => x !== r));
-                      setCoverRoles((current) => current?.filter((role) => role !== r) || []);
-                    }}
+                    onClick={() => setRoles(roles.filter((x) => x !== r))}
                     className="p-1 rounded text-white/30 hover:text-red-400">
                     <X size={13} />
                   </button>
