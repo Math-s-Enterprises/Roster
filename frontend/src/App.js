@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 
 import "@/App.css";
@@ -32,15 +32,16 @@ import { PaymentCancel, PaymentSuccess } from "@/pages/PaymentResult";
  */
 function Protected({ children }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-white/60">
+      <div className="min-h-screen flex items-center justify-center auth-ink-mute">
         Loading…
       </div>
     );
   }
-  return user ? children : <Navigate to="/login" replace />;
+  return user ? children : <Navigate to="/login" replace state={{ from: location }} />;
 }
 
 /** Keeps signed-in users away from the login page. */

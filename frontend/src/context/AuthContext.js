@@ -52,7 +52,17 @@ export function AuthProvider({ children }) {
   );
 
   const signup = useCallback(
-    async (payload) => completeSignIn((await api.post("/auth/signup", payload)).data),
+    async (payload) => {
+      const { data } = await api.post("/auth/signup", payload);
+      // A new shop opens in light mode. Only here, and only once the account
+      // exists — a failed sign-up must not change anyone's saved preference.
+      try {
+        localStorage.setItem("roster_theme", "light");
+      } catch {
+        /* storage unavailable (private mode) — nothing to set */
+      }
+      return completeSignIn(data);
+    },
     [completeSignIn],
   );
 
