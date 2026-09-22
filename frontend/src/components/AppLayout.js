@@ -209,8 +209,8 @@ export default function AppLayout() {
             >
               <span className="nv-theme-track">
                 <span className="nv-theme-thumb" aria-hidden="true" />
-                <span className="nv-theme-opt" data-on={theme !== "light"}>Dark</span>
                 <span className="nv-theme-opt" data-on={theme === "light"}>Light</span>
+                <span className="nv-theme-opt" data-on={theme !== "light"}>Dark</span>
               </span>
             </button>
             <button

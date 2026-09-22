@@ -148,7 +148,7 @@ export default function Onboarding() {
     } finally { setSaving(false); }
   };
 
-  if (!shop) return <div className="text-white/60">Loading…</div>;
+  if (!shop) return <div className="ui-body">Loading…</div>;
 
   // ---- settings view ------------------------------------------------
   //
@@ -743,9 +743,9 @@ export default function Onboarding() {
         </div>
       ) : (
         <>
-          <div className="text-xs text-white/40 uppercase tracking-widest mb-2">Onboarding · step {step + 1} of {steps.length}</div>
+          <div className="text-xs ui-faint uppercase tracking-widest mb-2">Onboarding · step {step + 1} of {steps.length}</div>
           <h1 className="text-4xl font-light mb-2">{steps[step].title}</h1>
-          <p className="text-white/50 mb-8">{steps[step].desc}</p>
+          <p className="ui-muted mb-8">{steps[step].desc}</p>
         </>
       )}
 
@@ -753,7 +753,7 @@ export default function Onboarding() {
         {shows(0) && (
           <Section show={editing} title="Shop identity">
           <div className="space-y-4">
-            <label className="text-xs text-white/60">Shop name</label>
+            <label className="text-xs ui-body">Shop name</label>
             <input data-testid="input-shop-name" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-4 py-3 rounded-xl" />
           </div>
           </Section>
@@ -789,7 +789,7 @@ export default function Onboarding() {
             </div>
 
             {open24h ? (
-              <p className="text-xs text-white/50">
+              <p className="text-xs ui-muted">
                 The shop is treated as open every hour of every day, and at
                 least one person is rostered at all times — including
                 overnight. Individual day times are not used.
@@ -799,7 +799,7 @@ export default function Onboarding() {
                 {hours.map((h, i) => (
                   <div key={h.day} className="flex items-center gap-3">
                     <div className="w-14 text-sm">{DAY_LABELS[h.day]}</div>
-                    <label className="flex items-center gap-2 text-xs text-white/60">
+                    <label className="flex items-center gap-2 text-xs ui-body">
                       <input
                         type="checkbox"
                         checked={!h.closed}
@@ -811,7 +811,7 @@ export default function Onboarding() {
                     <input type="time" value={h.open} disabled={h.closed}
                       onChange={(e) => { const n = [...hours]; n[i] = { ...h, open: e.target.value }; setHours(n); }}
                       className="px-3 py-2 rounded-lg font-mono" />
-                    <span className="text-white/40 text-sm">to</span>
+                    <span className="ui-faint text-sm">to</span>
                     <input type="time" value={h.close} disabled={h.closed}
                       onChange={(e) => { const n = [...hours]; n[i] = { ...h, close: e.target.value }; setHours(n); }}
                       className="px-3 py-2 rounded-lg font-mono" />
@@ -827,11 +827,11 @@ export default function Onboarding() {
           <Section show={editing} title="Shift limits">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs text-white/60">Min shift hours</label>
+              <label className="text-xs ui-body">Min shift hours</label>
               <input data-testid="input-min-shift" type="number" min={1} max={8} value={minShift} onChange={(e) => setMinShift(Number(e.target.value))} className="mt-1 w-full px-4 py-3 rounded-xl font-mono" />
             </div>
             <div>
-              <label className="text-xs text-white/60">Max shift hours</label>
+              <label className="text-xs ui-body">Max shift hours</label>
               <input data-testid="input-max-shift" type="number" min={4} max={12} value={maxShift} onChange={(e) => setMaxShift(Number(e.target.value))} className="mt-1 w-full px-4 py-3 rounded-xl font-mono" />
             </div>
           </div>
@@ -841,7 +841,7 @@ export default function Onboarding() {
         {shows(3) && (
           <Section show={editing} title="Roles & seniority">
           <div className="space-y-4">
-            <p className="text-xs text-white/50">
+            <p className="text-xs ui-muted">
               Most senior at the top. Hours are allocated down this list, and
               the roster grid, print view and exports all follow the same
               order.
@@ -849,10 +849,10 @@ export default function Onboarding() {
             <ul className="space-y-2">
               {roles.map((r, i) => (
                 <li key={r} data-testid={`role-row-${i}`} className="glass-solid rounded-xl px-3 py-2 flex items-center gap-3">
-                  <span className="font-mono text-[11px] text-white/30 w-5 text-right">{i + 1}</span>
+                  <span className="font-mono text-[11px] ui-faint w-5 text-right">{i + 1}</span>
                   <span className="flex-1 text-sm truncate">{r}</span>
                   {counts[r] > 0 && (
-                    <span className="text-[10px] text-white/40 font-mono shrink-0">
+                    <span className="text-[10px] ui-faint font-mono shrink-0">
                       {counts[r]} staff
                     </span>
                   )}
@@ -863,17 +863,17 @@ export default function Onboarding() {
                   )}
                   <button type="button" title="Move up" disabled={i === 0}
                     onClick={() => move(i, -1)}
-                    className="p-1 rounded text-white/40 hover:text-white disabled:opacity-20">
+                    className="p-1 rounded ui-faint ui-hover-ink disabled:opacity-20">
                     <ArrowUp size={13} />
                   </button>
                   <button type="button" title="Move down" disabled={i === roles.length - 1}
                     onClick={() => move(i, 1)}
-                    className="p-1 rounded text-white/40 hover:text-white disabled:opacity-20">
+                    className="p-1 rounded ui-faint ui-hover-ink disabled:opacity-20">
                     <ArrowDown size={13} />
                   </button>
                   <button type="button" title="Remove"
                     onClick={() => setRoles(roles.filter((x) => x !== r))}
-                    className="p-1 rounded text-white/30 hover:text-red-400">
+                    className="p-1 rounded ui-faint hover:text-red-400">
                     <X size={13} />
                   </button>
                 </li>
@@ -891,7 +891,7 @@ export default function Onboarding() {
                 }}
                 className="px-4 py-2.5 rounded-xl glass-solid text-sm">Add</button>
             </div>
-            <p className="text-[11px] text-white/40">
+            <p className="text-[11px] ui-faint">
               Roles in the top third count as supervisory cover. Removing a
               role here does not remove it from anyone — staff with an
               unlisted title simply rank last.
@@ -912,7 +912,7 @@ export default function Onboarding() {
               />
               <span>
                 <span className="text-sm block">Preferred days off are never overridden</span>
-                <span className="text-xs text-white/50 block mt-1">
+                <span className="text-xs ui-muted block mt-1">
                   On: a requested day off is honoured even when that leaves an
                   hour uncovered — the gap is reported instead of quietly
                   filled. Off: preferences yield to keeping the shop attended.
@@ -929,7 +929,7 @@ export default function Onboarding() {
               />
               <span>
                 <span className="text-sm block">Breaks are paid</span>
-                <span className="text-xs text-white/50 block mt-1">
+                <span className="text-xs ui-muted block mt-1">
                   On: a shift pays for its full length. Off: the break comes
                   out, so an 8-hour shift pays 7.5. This changes every wage
                   figure in the app. It does not change a full-time contract,
@@ -939,7 +939,7 @@ export default function Onboarding() {
             </label>
 
             <div>
-              <label className="text-xs text-white/60">Minimum rest between shifts (hours)</label>
+              <label className="text-xs ui-body">Minimum rest between shifts (hours)</label>
               <input
                 data-testid="input-min-rest-hours"
                 type="number" min={0} max={24} step={0.5}
@@ -947,7 +947,7 @@ export default function Onboarding() {
                 onChange={(e) => setMinRest(e.target.value)}
                 className="mt-1 w-32 px-4 py-2.5 rounded-xl font-mono"
               />
-              <p className="text-xs text-white/50 mt-2 max-w-lg">
+              <p className="text-xs ui-muted mt-2 max-w-lg">
                 Nobody starts again until this long after finishing. Eleven is
                 the daily rest entitlement in the Organisation of Working Time
                 Act. Counted in real time, so a night shift ending 07:00 on
@@ -956,7 +956,7 @@ export default function Onboarding() {
             </div>
 
             <div>
-              <label className="text-xs text-white/60">Paid sick days per year</label>
+              <label className="text-xs ui-body">Paid sick days per year</label>
               <input
                 data-testid="input-paid-sick-days"
                 type="number" min={0} max={365} step={0.5}
@@ -964,7 +964,7 @@ export default function Onboarding() {
                 onChange={(e) => setPaidSickDays(e.target.value)}
                 className="mt-1 w-32 px-4 py-2.5 rounded-xl font-mono"
               />
-              <p className="text-xs text-white/50 mt-2 max-w-lg">
+              <p className="text-xs ui-muted mt-2 max-w-lg">
                 Ireland's statutory minimum is 5. Set in days because that is
                 how the law is written, but spent in hours: each person's day
                 is worked out from the shifts they actually do, so somebody on
@@ -978,10 +978,10 @@ export default function Onboarding() {
                 because these people do not work here — see the note on the
                 state above. */}
             <div>
-              <label className="text-xs text-white/60">
+              <label className="text-xs ui-body">
                 Also send the roster to
               </label>
-              <p className="text-xs text-white/50 mt-1 mb-3 max-w-lg">
+              <p className="text-xs ui-muted mt-1 mb-3 max-w-lg">
                 Anyone who should get the whole week's rota without being on
                 it — an area manager, the owner. They receive every person and
                 every shift, not their own. Name and email is all that is
@@ -1045,8 +1045,8 @@ export default function Onboarding() {
             </div>
 
             <div className="glass-solid rounded-xl p-4">
-              <div className="text-xs text-white/60 mb-2">Rules that cannot be turned off</div>
-              <ul className="text-xs text-white/50 space-y-1.5">
+              <div className="text-xs ui-body mb-2">Rules that cannot be turned off</div>
+              <ul className="text-xs ui-muted space-y-1.5">
                 <li>• Someone is on the floor from open to close, every day.</li>
                 <li>• Hours are allocated down the seniority list above.</li>
                 <li>• Nobody exceeds their contracted hours or the maximum shift length.</li>
