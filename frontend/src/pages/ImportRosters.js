@@ -782,16 +782,16 @@ function ConfirmRemove({ week, busy, onCancel, onConfirm }) {
 
 const Hint = ({ icon: Icon, title, children, available = true }) => (
   <div className={`glass-solid rounded-xl p-4 ${available ? "" : "opacity-40"}`}>
-    <Icon size={16} className="text-white/50 mb-2" />
+    <Icon size={16} className="ui-muted mb-2" />
     <div className="text-xs font-medium mb-1 flex items-center gap-1.5">
       {title}
       {!available && (
-        <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-white/40 border border-white/10">
+        <span className="text-[9px] px-1.5 py-0.5 rounded ui-surface ui-faint border ui-line">
           unavailable
         </span>
       )}
     </div>
-    <div className="text-[11px] text-white/45 leading-relaxed">{children}</div>
+    <div className="text-[11px] ui-muted leading-relaxed">{children}</div>
   </div>
 );
 
@@ -812,14 +812,14 @@ function Review({
           <Icon size={22} className="text-cyan-400 mt-1" />
           <div>
             <div className="font-medium">{preview.filename}</div>
-            <div className="text-xs text-white/50 mt-1">
+            <div className="text-xs ui-muted mt-1">
               {s.weeks} week{s.weeks === 1 ? "" : "s"} · {s.shifts} shifts ·{" "}
               {s.employees} people · {s.date_range[0]} → {s.date_range[1]}
               {preview.pages ? ` · ${preview.pages} page(s)` : ""}
             </div>
           </div>
         </div>
-        <button onClick={onCancel} className="text-white/40 hover:text-white p-1">
+        <button onClick={onCancel} className="ui-faint ui-hover-ink p-1">
           <X size={18} />
         </button>
       </div>
@@ -832,7 +832,7 @@ function Review({
             <AlertTriangle size={16} />
             <span className="text-sm font-medium">Read from a {preview.kind} — check it</span>
           </div>
-          <p className="text-xs text-white/70 leading-relaxed">
+          <p className="text-xs ui-body leading-relaxed">
             Times and names were read from an image, so mistakes are possible. Check the
             preview below before importing — this becomes the history the AI learns from.
           </p>
@@ -841,8 +841,8 @@ function Review({
 
       {preview.notes?.length > 0 && (
         <div className="glass rounded-2xl p-5">
-          <div className="text-xs text-white/60 mb-2">Notes</div>
-          <ul className="text-xs text-white/70 space-y-1">
+          <div className="text-xs ui-body mb-2">Notes</div>
+          <ul className="text-xs ui-body space-y-1">
             {preview.notes.map((n, i) => <li key={i}>• {n}</li>)}
           </ul>
         </div>
@@ -860,7 +860,7 @@ function Review({
                     : preview.weeks.map((w) => w.week_start),
                 )
               }
-              className="text-[10px] px-2 py-1 rounded-full glass-solid text-white/60"
+              className="text-[10px] px-2 py-1 rounded-full glass-solid ui-body"
             >
               {weeks.length === preview.weeks.length ? "None" : "All"}
             </button>
@@ -873,7 +873,7 @@ function Review({
                 <label
                   key={w.week_start}
                   className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer ${
-                    on ? "bg-white/[0.06]" : "hover:bg-white/[0.03]"
+                    on ? "ui-surface" : "ui-hover"
                   }`}
                 >
                   <input
@@ -885,9 +885,9 @@ function Review({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-xs">{w.week_start}</span>
-                      <span className="text-[10px] text-white/40">{w.shifts} shifts</span>
+                      <span className="text-[10px] ui-faint">{w.shifts} shifts</span>
                       {w.already_imported && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-white/45 border border-white/10">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded ui-surface ui-muted border ui-line">
                           already imported
                         </span>
                       )}
@@ -898,7 +898,7 @@ function Review({
                       )}
                     </div>
                     {w.sheet_name && (
-                      <div className="text-[10px] text-white/30 truncate">{w.sheet_name}</div>
+                      <div className="text-[10px] ui-faint truncate">{w.sheet_name}</div>
                     )}
                     {w.warnings?.slice(0, 2).map((warning, i) => (
                       <div key={i} className="text-[10px] text-amber-400/80 mt-0.5">{warning}</div>
@@ -912,7 +912,7 @@ function Review({
 
         <div className="glass rounded-2xl p-6">
           <h2 className="font-medium text-sm mb-1">People found</h2>
-          <p className="text-[11px] text-white/45 mb-4">
+          <p className="text-[11px] ui-muted mb-4">
             Match each name to someone you already have, or leave as “Create new”.
             For anyone who has left, choose <em>No longer works here</em> — their
             shifts stay in the history so the staffing levels stay right, but they
@@ -926,7 +926,7 @@ function Review({
                 <div key={p.name} className="flex items-center gap-2">
                   <div className="w-32 shrink-0">
                     <div className="text-xs truncate">{p.name}</div>
-                    <div className="text-[10px] text-white/35 truncate">
+                    <div className="text-[10px] ui-faint truncate">
                       {p.role} · {p.shifts} shifts
                     </div>
                     {/* Only when the sheet and your role list disagree. The
@@ -971,14 +971,14 @@ function Review({
       </div>
 
       {s.unreadable_cells > 0 && (
-        <div className="glass rounded-2xl p-5 text-xs text-white/60">
+        <div className="glass rounded-2xl p-5 text-xs ui-body">
           {s.unreadable_cells} cell{s.unreadable_cells === 1 ? "" : "s"} could not be read
           and will be skipped — usually hours written without start and end times.
         </div>
       )}
 
       <div className="glass rounded-2xl p-6 flex items-center justify-between gap-4">
-        <div className="text-xs text-white/60">
+        <div className="text-xs ui-body">
           Importing <span className="text-cyan-400">{weeks.length}</span> week
           {weeks.length === 1 ? "" : "s"} · {selectedShifts} shifts
           {newPeople > 0 && <> · creating <span style={{ color: "var(--primary)" }}>{newPeople}</span> new employee{newPeople === 1 ? "" : "s"}</>}

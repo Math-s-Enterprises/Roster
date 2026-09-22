@@ -805,7 +805,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   --t-disabled: #a8946c;
 
   /* Warm greys, not neutral — a cool grey on beige reads as dirt. */
-  --t-faint: #8a7654;
+  --t-faint: #756241;
   --t-muted: #6e5c3c;
   --t-body3: #5a4a2e;
   --t-body2: #463822;
@@ -816,9 +816,9 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   /* Burnt orange clears 4.5:1 as text on the beige canvas and still
      carries near-white text when used as a fill. Ochre and terracotta
      stay far enough from it to read as different meanings. */
-  --t-accent: #b84a17;
+  --t-accent: #a54012;
   --t-on-accent: #fff6ec;
-  --t-warn: #8a5a12;
+  --t-warn: #7f520e;
   --t-danger: #9a2b1e;
   --t-danger-line: #e0c0b4;
 
@@ -830,7 +830,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   --t-fx-bar: #ede2d0;
   --t-fx-day: #e8dbc5;
   --t-fx-ink: #241c11;
-  --t-fx-accent: #b84a17;
+  --t-fx-accent: #a54012;
   --t-fx-accent-2: #9c3c10;
   --t-fx-on: #fff6ec;
 
@@ -873,18 +873,18 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   --ink-secondary: #3a2f1e;
   --ink-mute: #5a4a2e;
   --ink-mute-2: #6e5c3c;
-  --ink-faint: #9a8663;
+  --ink-faint: #756241;
   --hairline: #dccdb0;
   --hairline-strong: #bca77f;
   --hairline-cool: #e6d9c2;
-  --primary: #b84a17;
+  --primary: #a54012;
   --primary-hover: #9c3c10;
   --primary-deep: #83320c;
   --on-primary: #fff6ec;
   --danger: #9a2b1e;
   --danger-soft: #f7e3dd;
   --danger-hairline: #e0c0b4;
-  --warn: #8a5a12;
+  --warn: #7f520e;
   --warn-soft: #f7eeda;
   --warn-hairline: #e0cda0;
 }
@@ -3849,7 +3849,10 @@ label.ss-label-tight { letter-spacing: .04em; }
   border-radius: 999px; background: var(--t-accent);
   transition: transform 160ms ease-out;
 }
-.nv-theme[data-light="true"] .nv-theme-thumb { transform: translateX(100%); }
+/* Light sits on the left, so the thumb travels right for DARK. This has to
+   match the order of the two labels in AppLayout — flip one without the
+   other and the thumb highlights the wrong word. */
+.nv-theme[data-light="false"] .nv-theme-thumb { transform: translateX(100%); }
 @media (prefers-reduced-motion: reduce) {
   .nv-theme-thumb { transition: none; }
 }
@@ -3900,6 +3903,22 @@ label.ss-label-tight { letter-spacing: .04em; }
 @media (prefers-reduced-motion: reduce) {
   .nv-side { transition: none; }
 }
+
+/* Shared text and surface helpers.
+   ------------------------------------------------------------------
+   The setup wizard, the roles table and the import review were written
+   white-on-black — text-white/40, bg-white/5, border-white/10 — which is
+   invisible on the beige canvas. Those are now these classes, which read
+   the theme. Defined here rather than inline so all three screens stay
+   consistent and a future one can reuse them.
+   ------------------------------------------------------------------ */
+.ui-body { color: var(--t-body2); }
+.ui-muted { color: var(--t-muted); }
+.ui-faint { color: var(--t-faint); }
+.ui-surface { background: var(--t-inset); }
+.ui-line { border-color: var(--t-hairline); }
+.ui-hover:hover { background: var(--t-hover); }
+.ui-hover-ink:hover { color: var(--t-ink); }
 
 /* ------------------------------------------------------------------
    Signed-out pages — sign in, forgot password, reset password
