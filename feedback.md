@@ -35,6 +35,11 @@ faster. When I gave a conclusion without the chain, he asked for it.
 
 **Currency is euros.** He corrected a `$` in the UI. Irish shop.
 
+**Every requested product change updates this file.** Record the reported
+behaviour, the diagnostic evidence, the agreed rule, the implementation and
+the regression/sabotage result. Do not leave the next session to reconstruct
+why a guard or threshold exists from code alone.
+
 ---
 
 ## 2. Corrections he made — and what I had wrong
@@ -879,3 +884,59 @@ Two things to carry forward:
 STILL UNVERIFIED, because the sandbox lost shell access mid-change: the
 holdout fix compiles-clean and the test suite passes. Both need running
 before the next A/B is believed.
+
+---
+
+## 9. No-history and partial-history generation
+
+Three reports that looked related had different causes. They were reproduced
+separately before any fix was written.
+
+**Zero history, after closing.** Plain opening-hour blocks stopped at 22:00.
+Two later paths crossed it:
+
+- `profile_from_shop_hours` accepted a configured `14:00-23:00` template with
+  zero approved weeks, and `_ensure_supervisory_cover` placed it directly.
+- `_fit_contract_hours` extended a generated `14:00-22:00` closing shift to
+  `23:00` to put a full-timer inside their contract band. It checked the shift
+  cap, curfew and rest, but never checked the shop's close.
+
+The rule is now exact: generated work stops at close unless the same post-close
+shape ran in at least four distinct prior approved weeks. This is the same
+evidence bar as slot ownership. Fixed and pinned shifts remain the manager's
+explicit decision. Legacy `00:00-23:59` shops remain 24-hour shops.
+
+**Learned cleanup on arbitrary minutes.** Four weeks of `22:45-23:45` were
+copied unchanged into `day_slots`. `finish_granularity` did not touch them; it
+only sizes contract trims and defaults to 60 minutes under fifty shifts.
+Supported post-close work is now normalised to half-hour boundaries while
+preserving its duration (`22:45-23:45` becomes `22:30-23:30`). Both the current
+slot path and the arrivals path consume the same clean shape.
+
+**One prior week became three generic shifts.** The diagnostic showed
+`learn_demand` correctly reading one prior Monday, a staff target of seven and
+seven slots. `build_profile` then discarded the whole profile because it was
+below `MIN_WEEKS_FOR_DEMAND`, returned three generic blocks, and generated
+three people. A future roster included in the diagnostic was correctly
+excluded, so this was not another `age < 0` fault.
+
+One to three weeks now contribute headcount, role mix and daily staff totals,
+but not exact shapes, arrivals or ownership. Generic within-hours blocks remain
+the shape vocabulary until week four. This uses the only real volume signal
+without treating one week as a settled habit.
+
+**Sabotage evidence:**
+
+| removed | regression that failed |
+|---|---|
+| post-close template filter | zero-history template test |
+| contract-fit closing guard | zero-history contract test |
+| half-hour normalisation | four-week cleanup test |
+| arrivals normalisation | arrivals variant of the cleanup test |
+| four-occurrence evidence bar | three-of-four cleanup test |
+| partial-history merge | one-week seven-versus-three test |
+
+After restoring every guard, the focused demand, scheduler and 24-week
+reference-shop suites passed. The complete backend suite also exited zero;
+the only non-pass was the existing expected xfail, with dependency deprecation
+warnings unchanged.

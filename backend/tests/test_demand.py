@@ -181,12 +181,15 @@ class TestLearnDemand:
 # Fallback behaviour
 # ---------------------------------------------------------------------------
 class TestFallback:
-    def test_too_little_history_falls_back_to_shop_hours(self):
+    def test_too_little_history_uses_counts_with_safe_fallback_shapes(self):
         history = weekly_history(MIN_WEEKS_FOR_DEMAND - 1, [
             ("e1", "mon", "09:00", "17:00"),
         ])
         profile = build_profile(make_shop("09:00", "17:00"), history, {"e1": "Floor Assistant"})
-        assert profile.source == "shop_hours"
+        assert profile.source == "partial_history"
+        assert profile.weeks_observed == MIN_WEEKS_FOR_DEMAND - 1
+        assert profile.staff_target("mon") == 1
+        assert profile.slots_for("mon") == []
 
     def test_enough_history_uses_the_learned_curve(self):
         history = weekly_history(MIN_WEEKS_FOR_DEMAND + 2, [
