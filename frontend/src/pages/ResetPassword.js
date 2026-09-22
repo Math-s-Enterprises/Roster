@@ -3,21 +3,20 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { useAuth } from "@/context/AuthContext";
 import { errorMessage } from "@/lib/api";
-import AuthShell, { AuthCard } from "@/components/AuthShell";
+import AuthShell from "@/components/AuthShell";
 import { RESET_PASSWORD } from "@/constants/testIds/auth";
 
 /**
- * Reset password — reached from the emailed link, same frame as sign in.
+ * Reset password — reached from the emailed link, the sign-in page's frame.
  *
  * On success it hands a message to the sign-in page rather than toasting
  * here and navigating away, where the toast would be gone before anyone
  * read it.
  */
 
-const Padlock = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="4" y="10" width="16" height="11" rx="2" />
-    <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+const Lock = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
   </svg>
 );
 const Arrow = () => (
@@ -70,33 +69,31 @@ export default function ResetPassword() {
 
   return (
     <AuthShell single>
-      <AuthCard as="form" onSubmit={submit} noValidate>
-        <h2 className="lg-h2">Choose a new password</h2>
+      <form className="si-card" onSubmit={submit} noValidate>
+        <h2 className="si-h2">Choose a new password</h2>
 
         {!token ? (
           <>
-            <p className="lg-form-error" role="alert">
+            <p className="si-form-error" role="alert">
               This link is missing its reset token, so it cannot be used. Request a new one.
             </p>
-            <Link to="/forgot-password" data-testid={RESET_PASSWORD.loginLink} className="lg-cta">
+            <Link to="/forgot-password" data-testid={RESET_PASSWORD.loginLink} className="si-cta">
               Request a new link <Arrow />
             </Link>
-            <p className="lg-switch">
-              <Link to="/login" className="lg-link">Back to sign in</Link>
+            <p className="si-note">
+              <Link to="/login" className="si-link">Back to sign in</Link>
             </p>
           </>
         ) : (
           <>
-            <p className="lg-card-sub">At least 8 characters. You'll sign in with it next.</p>
+            <p className="si-card-sub">At least 8 characters. You'll sign in with it next.</p>
 
-            {error && <p className="lg-form-error" role="alert">{error}</p>}
-
-            <div className="lg-field">
-              <div className="lg-label-row">
-                <label className="lg-label" htmlFor="rp-password">New password</label>
+            <div className="si-field">
+              <div className="si-label-row">
+                <label className="si-label" htmlFor="rp-password">New password</label>
                 <button
                   type="button"
-                  className="lg-toggle"
+                  className="si-toggle"
                   aria-pressed={showPassword}
                   aria-controls="rp-password rp-confirm"
                   onClick={() => setShowPassword((v) => !v)}
@@ -104,8 +101,8 @@ export default function ResetPassword() {
                   {showPassword ? "Hide" : "Show"}
                 </button>
               </div>
-              <div className="lg-input" data-invalid={Boolean(fieldErrors.password)}>
-                <Padlock />
+              <div className="si-input" data-invalid={Boolean(fieldErrors.password)}>
+                <Lock />
                 <input
                   id="rp-password"
                   data-testid={RESET_PASSWORD.passwordInput}
@@ -118,15 +115,15 @@ export default function ResetPassword() {
                   aria-describedby={fieldErrors.password ? "rp-password-err" : undefined}
                 />
               </div>
-              {fieldErrors.password && <p id="rp-password-err" className="lg-field-error">{fieldErrors.password}</p>}
+              {fieldErrors.password && <p id="rp-password-err" className="si-field-error">{fieldErrors.password}</p>}
             </div>
 
-            <div className="lg-field">
-              <div className="lg-label-row">
-                <label className="lg-label" htmlFor="rp-confirm">Confirm new password</label>
+            <div className="si-field">
+              <div className="si-label-row">
+                <label className="si-label" htmlFor="rp-confirm">Confirm new password</label>
               </div>
-              <div className="lg-input" data-invalid={Boolean(fieldErrors.confirm)}>
-                <Padlock />
+              <div className="si-input" data-invalid={Boolean(fieldErrors.confirm)}>
+                <Lock />
                 <input
                   id="rp-confirm"
                   data-testid={RESET_PASSWORD.passwordConfirmInput}
@@ -138,19 +135,21 @@ export default function ResetPassword() {
                   aria-describedby={fieldErrors.confirm ? "rp-confirm-err" : undefined}
                 />
               </div>
-              {fieldErrors.confirm && <p id="rp-confirm-err" className="lg-field-error">{fieldErrors.confirm}</p>}
+              {fieldErrors.confirm && <p id="rp-confirm-err" className="si-field-error">{fieldErrors.confirm}</p>}
             </div>
+
+            <p className="si-form-error" aria-live="polite">{error}</p>
 
             <button
               type="submit"
               data-testid={RESET_PASSWORD.submitButton}
-              className="lg-cta"
+              className="si-cta"
               disabled={submitting}
               aria-busy={submitting}
             >
               {submitting ? (
                 <>
-                  <span className="lg-spinner" aria-hidden="true" />
+                  <span className="si-spinner" aria-hidden="true" />
                   <span className="sr-only">Resetting your password</span>
                 </>
               ) : (
@@ -158,14 +157,14 @@ export default function ResetPassword() {
               )}
             </button>
 
-            <p className="lg-switch">
-              <Link to="/login" data-testid={RESET_PASSWORD.loginLink} className="lg-link">
+            <p className="si-note">
+              <Link to="/login" data-testid={RESET_PASSWORD.loginLink} className="si-link">
                 Back to sign in
               </Link>
             </p>
           </>
         )}
-      </AuthCard>
+      </form>
     </AuthShell>
   );
 }

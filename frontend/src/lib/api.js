@@ -5,9 +5,56 @@ export const API = `${BACKEND_URL}/api`;
 
 const TOKEN_KEY = "roster_token";
 
-export const getToken = () => localStorage.getItem(TOKEN_KEY);
-export const setToken = (token) => localStorage.setItem(TOKEN_KEY, token);
-export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+/*
+ * Where the token lives is what "Keep me signed in" controls.
+ *
+ * localStorage survives closing the browser; sessionStorage is cleared when
+ * it closes. Email and Google sign-in authenticate only with this Bearer
+ * token — the server reads a session cookie but never sets one — so the
+ * choice of store genuinely decides whether you are still signed in
+ * tomorrow. The token's own expiry still applies either way.
+ *
+ * Wrapped in try/catch because storage throws in some private-browsing
+ * modes, where the sensible answer is simply "not signed in".
+ */
+export const getToken = () => {
+  try {
+    return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * `persist` true or false chooses the store; left out, the new token goes
+ * wherever the current one already is. That matters for token *replacement*
+ * — changing your password issues a fresh token, and defaulting to "keep"
+ * would silently turn a session-only sign-in into a remembered one.
+ */
+export const setToken = (token, persist) => {
+  try {
+    let keep;
+    if (persist === undefined) {
+      keep = sessionStorage.getItem(TOKEN_KEY) ? sessionStorage : localStorage;
+    } else {
+      keep = persist ? localStorage : sessionStorage;
+    }
+    const drop = keep === localStorage ? sessionStorage : localStorage;
+    drop.removeItem(TOKEN_KEY);
+    keep.setItem(TOKEN_KEY, token);
+  } catch {
+    /* storage unavailable — the request will simply be unauthenticated */
+  }
+};
+
+export const clearToken = () => {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* nothing stored, nothing to clear */
+  }
+};
 
 export const api = axios.create({
   baseURL: API,
