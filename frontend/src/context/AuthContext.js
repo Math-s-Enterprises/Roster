@@ -39,15 +39,19 @@ export function AuthProvider({ children }) {
   }, [refresh]);
 
   // Every sign-in path ends the same way: store the token, set the user.
-  const completeSignIn = useCallback((data) => {
-    setToken(data.token);
+  // `keepSignedIn` picks the store — see setToken in lib/api.
+  const completeSignIn = useCallback((data, keepSignedIn = true) => {
+    setToken(data.token, keepSignedIn);
     setUser(data.user);
     return data.user;
   }, []);
 
   const login = useCallback(
-    async (email, password) =>
-      completeSignIn((await api.post("/auth/login", { email, password })).data),
+    async (email, password, keepSignedIn = true) =>
+      completeSignIn(
+        (await api.post("/auth/login", { email, password })).data,
+        keepSignedIn,
+      ),
     [completeSignIn],
   );
 

@@ -3902,280 +3902,303 @@ label.ss-label-tight { letter-spacing: .04em; }
 }
 
 /* ------------------------------------------------------------------
-   Login (handoff: Login page)
+   Signed-out pages — sign in, forgot password, reset password
+   (handoff: Sign in, doodle background)
    ------------------------------------------------------------------
-   The one screen that deliberately leaves the approved system: its own
-   indigo-to-teal ground, aurora blooms and a ribbon of shift tiles. It is
-   the same in both themes on purpose — every line of copy sits on the
-   vignette's dark ground, so it stays readable whatever data-theme says.
-   Literal colours throughout for that reason, scoped under .lg-*.
+   Beige and terracotta on a hand-drawn pattern of roster motifs. Every
+   colour is a token on .si-page, so the dark sibling the handoff
+   describes is a token swap, not a second stylesheet.
    ------------------------------------------------------------------ */
-.lg-page {
+.si-page {
+  --si-canvas: #f7efe4;
+  --si-card: #fffdf9;
+  --si-chip: #fffaf3;
+  --si-input: #ffffff;
+  --si-border: #e3d6c6;
+  --si-ring: #ece0d0;
+  --si-input-border: #ddcfbd;
+  --si-ink: #1c1a17;
+  --si-body: #3d372f;
+  --si-muted: #6b6155;
+  --si-muted-2: #6f6558;
+  --si-placeholder: #8d8275;
+  --si-glyph: #9c9184;
+  --si-accent: #b84415;
+  --si-accent-bright: #d2551f;
+  --si-sand: #e0b384;
+  --si-deep: #8c3410;
+  --si-on-accent: #ffffff;
+  --si-error: #c0392b;
+
   position: relative; overflow: hidden; min-height: 100vh;
-  background: linear-gradient(160deg, #0a0620 0%, #161046 38%, #0c3a53 72%, #07271f 100%);
-  color: #f6f7fb;
+  background: var(--si-canvas); color: var(--si-ink);
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  color-scheme: dark;
+  color-scheme: light;
 }
+.si-page :focus-visible { outline: none; box-shadow: 0 0 0 4px rgba(184, 68, 21, .2); border-radius: 6px; }
 
-/* Background stack ------------------------------------------------ */
-.lg-bg { position: absolute; pointer-events: none; }
-.lg-grid {
-  inset: -52px 0 0 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, .045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, .045) 1px, transparent 1px);
-  background-size: 52px 52px;
-  opacity: .55;
-  animation: lg-scan 9s linear infinite;
-}
-@keyframes lg-scan { 0% { transform: translateY(0); } 100% { transform: translateY(-52px); } }
-
-.lg-bloom { border-radius: 50%; will-change: transform; }
-.lg-bloom-violet {
-  width: 760px; height: 760px; top: -260px; left: -220px;
-  background: radial-gradient(circle, rgba(124, 92, 255, .55), transparent 68%);
-  filter: blur(30px); animation: lg-aur 16s ease-in-out infinite;
-}
-.lg-bloom-mint {
-  width: 840px; height: 840px; bottom: -320px; right: -260px;
-  background: radial-gradient(circle, rgba(79, 240, 192, .42), transparent 68%);
-  filter: blur(34px); animation: lg-aur2 19s ease-in-out infinite;
-}
-.lg-bloom-pink {
-  width: 520px; height: 520px; top: 20%; right: 14%;
-  background: radial-gradient(circle, rgba(255, 106, 168, .32), transparent 68%);
-  filter: blur(36px); animation: lg-aur 22s ease-in-out infinite;
-}
-@keyframes lg-aur {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(40px, -30px) scale(1.12); }
-}
-@keyframes lg-aur2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(-40px, 30px) scale(1.12); }
-}
-
-.lg-ribbon { left: 0; right: 0; bottom: 0; overflow: hidden; opacity: .9; }
-.lg-ribbon-track {
-  display: flex; gap: 12px; width: 200%; padding: 0 6px 0 0;
-  animation: lg-slide 38s linear infinite; will-change: transform;
-}
-@keyframes lg-slide { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-.lg-tile { flex: 1; height: 74px; border-radius: 12px; }
-.lg-tile-mint { background: linear-gradient(140deg, #4ff0c0, #12b48d); }
-.lg-tile-live { box-shadow: 0 14px 40px rgba(79, 240, 192, .28); }
-.lg-tile-empty { background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .1); }
-.lg-tile-violet { background: linear-gradient(140deg, #7c5cff, #4429c4); }
-.lg-tile-pink { background: linear-gradient(140deg, #ff6aa8, #c32f76); }
-.lg-tile-amber { background: linear-gradient(140deg, #ffc36a, #e08a1e); }
-
-/* Stops above the ribbon: it darkens the ground under the content, not
-   the tiles, which keep their colour and glow. */
-.lg-scrim {
-  left: 0; right: 0; bottom: 74px; height: 300px;
-  background: linear-gradient(180deg, rgba(7, 8, 26, 0), rgba(7, 8, 26, .96) 78%);
-}
-.lg-vignette {
+/* Background stack — all aria-hidden, none of it interactive. ------- */
+.si-bg { position: absolute; pointer-events: none; }
+.si-doodles { inset: 0; width: 100%; height: 100%; color: var(--si-accent); }
+.si-wash {
   inset: 0;
-  background: radial-gradient(1000px 620px at 50% 46%,
-    rgba(8, 6, 26, 0) 0%, rgba(8, 6, 26, .55) 66%, rgba(8, 6, 26, .85) 100%);
+  background: linear-gradient(170deg, rgba(255, 250, 243, .7), rgba(247, 239, 228, 0) 42%, rgba(238, 226, 208, .6));
+}
+.si-bloom { border-radius: 50%; will-change: transform; }
+.si-bloom-a {
+  width: 720px; height: 720px; top: -220px; left: 16%;
+  background: radial-gradient(circle, rgba(184, 68, 21, .2), transparent 68%);
+  filter: blur(44px);
+}
+.si-bloom-b {
+  width: 760px; height: 760px; bottom: -280px; right: 4%;
+  background: radial-gradient(circle, rgba(224, 179, 132, .42), transparent 68%);
+  filter: blur(46px);
+}
+/* This is what keeps the card legible over the pattern. Resize it with the
+   card if the card ever changes size. */
+.si-vignette {
+  inset: 0;
+  background: radial-gradient(820px 560px at 50% 48%,
+    rgba(247, 239, 228, .94) 0%, rgba(247, 239, 228, .7) 46%,
+    rgba(247, 239, 228, .34) 72%, rgba(247, 239, 228, 0) 100%);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .lg-grid, .lg-bloom, .lg-ribbon-track { animation: none; }
+/* Motion only for people who have not asked for less. Still by default. */
+@keyframes si-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(36px, -26px, 0) scale(1.08); }
+}
+@keyframes si-pulse { 0%, 100% { opacity: .4; } 50% { opacity: .9; } }
+@keyframes si-marq { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes si-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: no-preference) {
+  .si-bloom-a { animation: si-drift 22s ease-in-out infinite; }
+  .si-bloom-b { animation: si-drift 28s ease-in-out infinite reverse; }
+  .si-pill-dot { animation: si-pulse 2.8s ease-in-out infinite; }
+  .si-marquee-row { animation: si-marq 30s linear infinite; }
 }
 
-/* Foreground ------------------------------------------------------ */
-.lg-fore { position: relative; display: flex; flex-direction: column; min-height: 100vh; }
-.lg-page :focus-visible { outline: none; box-shadow: 0 0 0 4px rgba(79, 240, 192, .28); border-radius: 6px; }
+/* Foreground -------------------------------------------------------- */
+.si-fore {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  min-height: 100vh; padding-bottom: 48px; box-sizing: border-box;
+}
 
-.lg-bar { display: flex; justify-content: flex-end; flex-wrap: wrap; padding: 28px 32px; }
-.lg-link {
+.si-bar {
+  align-self: stretch;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 14px; padding: 24px 34px;
+}
+.si-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.si-brand-mark {
+  width: 38px; height: 38px; border-radius: 10px; flex: none;
+  background: var(--si-accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+}
+.si-brand-name { display: block; font-size: 17px; font-weight: 800; letter-spacing: -.02em; color: var(--si-ink); }
+.si-brand-sub { display: block; font-size: 13px; color: var(--si-muted); }
+.si-bar-note { font-size: 14.5px; font-weight: 600; color: var(--si-muted); }
+
+.si-link {
   border: 0; background: none; padding: 0;
-  font-family: inherit; font-size: 14.5px; font-weight: 600;
-  color: rgba(255, 255, 255, .62); cursor: pointer; text-decoration: none;
-  transition: color 120ms ease-out;
+  font-family: inherit; font-size: inherit; font-weight: 700;
+  color: var(--si-accent); cursor: pointer; text-decoration: none;
 }
-.lg-link:hover { color: #fff; }
+.si-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 
-.lg-content {
-  flex: 1;
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 44px; align-items: center;
-  padding: 20px 32px 40px; max-width: 1200px; width: 100%;
-  margin: 0 auto; box-sizing: border-box;
-}
-
-.lg-content-single {
-  grid-template-columns: minmax(0, 452px);
-  justify-content: center;
-}
-.lg-pill {
+/* Hero -------------------------------------------------------------- */
+.si-hero { max-width: 800px; margin: 34px auto 0; padding: 0 24px; text-align: center; }
+.si-pill {
   display: inline-flex; align-items: center; gap: 9px;
-  padding: 8px 16px; border-radius: 999px;
-  background: rgba(79, 240, 192, .14); border: 1px solid rgba(79, 240, 192, .4);
-  font-size: 12.5px; font-weight: 700; letter-spacing: .1em; color: #7ff7d4;
+  padding: 9px 16px; border-radius: 999px;
+  background: rgba(184, 68, 21, .1); border: 1px solid rgba(184, 68, 21, .3);
+  font-size: 12.5px; font-weight: 700; letter-spacing: .11em; color: var(--si-accent);
 }
-.lg-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ff0c0; box-shadow: 0 0 12px #4ff0c0; }
-.lg-h1 {
-  margin: 22px 0 0; max-width: 600px;
-  font-size: 50px; line-height: 1.02; font-weight: 800; letter-spacing: -.045em;
-  color: #fff; text-wrap: pretty;
+.si-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--si-accent); opacity: .9; }
+.si-h1 {
+  margin: 22px 0 0;
+  font-size: 54px; line-height: 1.01; font-weight: 800; letter-spacing: -.045em;
+  color: var(--si-ink); text-wrap: balance;
 }
-.lg-h1-grad {
-  background: linear-gradient(110deg, #4ff0c0, #7c5cff 58%, #ff6aa8);
-  -webkit-background-clip: text; background-clip: text;
-  color: transparent;
+/* The underline is drawn, not a border — a straight rule reads as a link. */
+.si-h1-mark { position: relative; white-space: nowrap; color: var(--si-accent); }
+.si-h1-mark svg {
+  position: absolute; left: 0; right: 0; bottom: -10px;
+  width: 100%; height: 12px; overflow: visible;
 }
-.lg-lead {
-  margin: 20px 0 0; max-width: 520px;
-  font-size: 17px; line-height: 1.55; color: rgba(255, 255, 255, .74);
+.si-sub {
+  margin: 22px auto 0; max-width: 620px;
+  font-size: 17px; line-height: 1.55; color: var(--si-muted); text-wrap: pretty;
 }
-.lg-chips { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 28px; }
-.lg-chip {
-  display: inline-flex; align-items: center; gap: 10px;
-  padding: 11px 16px; border-radius: 11px;
-  background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .13);
-  font-size: 14.5px; font-weight: 600; color: rgba(255, 255, 255, .88);
-}
-.lg-chip-dot { width: 9px; height: 9px; border-radius: 3px; flex: none; }
 
-/* Card ------------------------------------------------------------- */
-.lg-card-outer {
-  max-width: 452px; width: 100%; justify-self: center;
-  border-radius: 20px; padding: 1.5px;
-  background: linear-gradient(150deg, rgba(79, 240, 192, .85), rgba(124, 92, 255, .7) 45%, rgba(255, 106, 168, .55) 100%);
-  box-shadow: 0 34px 90px rgba(4, 2, 20, .7);
+/* Card -------------------------------------------------------------- */
+.si-card {
+  width: 100%; max-width: 440px; margin: 34px auto 0; box-sizing: border-box;
+  border: 1px solid var(--si-ring); border-radius: 18px;
+  background: var(--si-card); padding: 32px 30px 30px;
+  box-shadow:
+    0 2px 0 rgba(255, 255, 255, .9) inset,
+    0 30px 70px rgba(90, 58, 26, .18),
+    0 0 0 8px rgba(255, 250, 243, .5);
 }
-.lg-card { border-radius: 19px; background: rgba(10, 8, 32, .88); padding: 32px 30px 30px; }
-.lg-h2 { margin: 0; font-size: 27px; font-weight: 800; letter-spacing: -.025em; color: #fff; }
-.lg-card-sub { margin: 8px 0 0; font-size: 15px; color: rgba(255, 255, 255, .6); }
+.si-single .si-card { margin-top: 64px; }
+.si-h2 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -.025em; color: var(--si-ink); }
+.si-card-sub { margin: 8px 0 0; font-size: 14.5px; line-height: 1.5; color: var(--si-muted); }
 
-.lg-form-error {
-  margin: 20px 0 0; padding: 12px 14px; border-radius: 11px;
-  background: rgba(255, 106, 168, .1); border: 1px solid rgba(255, 106, 168, .35);
-  font-size: 14px; line-height: 1.5; color: #ff9db9;
-}
-/* Success, the mint counterpart of the pink error. */
-.lg-form-ok {
-  margin: 20px 0 0; padding: 12px 14px; border-radius: 11px;
-  background: rgba(79, 240, 192, .1); border: 1px solid rgba(79, 240, 192, .35);
-  font-size: 14px; line-height: 1.5; color: #7ff7d4;
-}
-.lg-form-ok strong { color: #fff; font-weight: 700; }
-.lg-field { margin-top: 22px; }
-.lg-field + .lg-field { margin-top: 18px; }
-.lg-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
-.lg-label {
+.si-field { margin-top: 22px; }
+.si-field + .si-field { margin-top: 18px; }
+.si-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+.si-label {
   font-size: 11px; font-weight: 700; letter-spacing: .14em;
-  text-transform: uppercase; color: rgba(255, 255, 255, .6);
+  text-transform: uppercase; color: var(--si-muted);
 }
-.lg-toggle {
+.si-toggle {
   border: 0; background: none; padding: 0;
-  font-family: inherit; font-size: 13.5px; font-weight: 600;
-  color: rgba(255, 255, 255, .6); cursor: pointer;
+  font-family: inherit; font-size: 13.5px; font-weight: 700;
+  color: var(--si-accent); cursor: pointer;
 }
-.lg-toggle:hover { color: #fff; }
 
-.lg-input {
-  height: 54px; padding: 0 16px;
-  display: flex; align-items: center; gap: 12px;
-  border-radius: 11px;
-  border: 1px solid rgba(255, 255, 255, .16);
-  background: rgba(255, 255, 255, .04);
-  transition: border-color 120ms ease-out, background 120ms ease-out, box-shadow 120ms ease-out;
+.si-input {
+  height: 52px; padding: 0 15px;
+  display: flex; align-items: center; gap: 11px;
+  border: 1px solid var(--si-input-border); border-radius: 9px;
+  background: var(--si-input);
+  transition: border-color 120ms ease-out, box-shadow 120ms ease-out;
 }
-.lg-input svg { flex: none; color: rgba(255, 255, 255, .5); transition: color 120ms ease-out; }
-.lg-input:focus-within {
-  border-color: #4ff0c0;
-  background: rgba(79, 240, 192, .08);
-  box-shadow: 0 0 0 4px rgba(79, 240, 192, .12);
+.si-input svg { flex: none; color: var(--si-glyph); transition: color 120ms ease-out; }
+.si-input:focus-within {
+  border-color: var(--si-accent);
+  box-shadow: 0 0 0 4px rgba(184, 68, 21, .12);
 }
-.lg-input:focus-within svg { color: #4ff0c0; }
-.lg-input[data-invalid="true"] { border-color: #ff6aa8; }
-/* The app's global input rule is !important and themed; this page is not,
-   so each property is taken back explicitly — otherwise a light-mode user
-   gets a beige box with a second ring inside this one. */
-.lg-input input {
+.si-input:focus-within svg { color: var(--si-accent); }
+.si-input[data-invalid="true"] { border-color: var(--si-error); }
+/* The app's global input rule is !important and themed. Every property it
+   sets is taken back here, or the field draws its own box and ring inside
+   this one. */
+.si-input input {
   flex: 1; min-width: 0; align-self: stretch; height: auto;
   background: transparent !important;
   border: 0 !important; border-radius: 0 !important;
   min-height: 0 !important; box-shadow: none !important; outline: none !important;
   padding: 0; margin: 0; line-height: normal;
-  color: #fff !important; font-family: inherit; font-size: 16px;
+  color: var(--si-ink) !important; font-family: inherit; font-size: 16px;
 }
-.lg-input input::placeholder { color: rgba(255, 255, 255, .38) !important; }
-/* Edge draws its own eye inside every password field, beside our Show/Hide
-   — two controls for one job. Its eye also disappears once the field has
-   lost focus (it only reveals a password you are still typing), so it
-   cannot be relied on to show the password a second time. Ours can, so
-   Edge's goes. The clear-field cross is Edge's too. */
-.lg-input input::-ms-reveal,
-.lg-input input::-ms-clear { display: none; }
-/* Chrome paints autofilled fields pale yellow, which would read as a
-   white slab on this card. */
-.lg-input input:-webkit-autofill,
-.lg-input input:-webkit-autofill:hover,
-.lg-input input:-webkit-autofill:focus {
-  -webkit-text-fill-color: #fff;
-  -webkit-box-shadow: 0 0 0 1000px rgba(20, 16, 50, 1) inset;
-  caret-color: #fff;
+.si-input input::placeholder { color: var(--si-placeholder) !important; }
+.si-input input[type="password"] { letter-spacing: .2em; }
+.si-input input[type="password"]::placeholder { letter-spacing: normal; }
+/* Edge's own eye duplicates Show/Hide and vanishes after one use. */
+.si-input input::-ms-reveal,
+.si-input input::-ms-clear { display: none; }
+/* Chrome paints autofilled fields pale yellow. */
+.si-input input:-webkit-autofill,
+.si-input input:-webkit-autofill:hover,
+.si-input input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--si-ink);
+  -webkit-box-shadow: 0 0 0 1000px var(--si-input) inset;
   transition: background-color 9999s ease-out;
 }
-.lg-field-error { margin: 7px 0 0; font-size: 13.5px; color: #ff9db9; }
-.lg-hint { margin: 7px 0 0; font-size: 13px; color: rgba(255, 255, 255, .5); }
+.si-field-error { margin: 7px 0 0; font-size: 13.5px; color: var(--si-error); }
+.si-hint { margin: 7px 0 0; font-size: 13px; color: var(--si-muted); }
 
-.lg-options {
-  display: flex; align-items: center; justify-content: flex-end;
+.si-options {
+  display: flex; align-items: center; justify-content: space-between;
   gap: 14px; flex-wrap: wrap; margin-top: 18px;
 }
+.si-check { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+.si-check input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.si-box {
+  width: 20px; height: 20px; border-radius: 5px; flex: none;
+  border: 1.5px solid var(--si-input-border); background: var(--si-input);
+  display: flex; align-items: center; justify-content: center;
+  transition: background 120ms ease-out, border-color 120ms ease-out;
+}
+.si-check input:checked + .si-box { background: var(--si-accent); border-color: var(--si-accent); }
+.si-check input:focus-visible + .si-box { box-shadow: 0 0 0 4px rgba(184, 68, 21, .2); }
+.si-check-label { font-size: 15px; font-weight: 600; color: var(--si-body); }
+.si-options .si-link { font-size: 14.5px; }
 
-.lg-cta {
-  width: 100%; height: 56px; margin-top: 24px;
+.si-form-error {
+  margin: 18px 0 0; font-size: 14px; line-height: 1.5; font-weight: 600;
+  color: var(--si-error);
+}
+/* Kept in the DOM so screen readers announce it the moment it fills, but
+   takes no space while empty. */
+.si-form-error:empty { margin: 0; }
+.si-form-ok {
+  margin: 18px 0 0; padding: 12px 14px; border-radius: 9px;
+  background: rgba(184, 68, 21, .07); border: 1px solid rgba(184, 68, 21, .25);
+  font-size: 14px; line-height: 1.5; color: var(--si-body);
+}
+.si-form-ok strong { color: var(--si-ink); }
+
+.si-cta {
+  width: 100%; height: 54px; margin-top: 22px;
   display: flex; align-items: center; justify-content: center; gap: 10px;
-  border: 0; border-radius: 12px;
-  background: linear-gradient(110deg, #4ff0c0, #7c5cff);
-  font-family: inherit; font-size: 17px; font-weight: 800; color: #0a0620;
-  box-shadow: 0 18px 44px rgba(124, 92, 255, .42);
+  border: 0; border-radius: 10px;
+  background: var(--si-accent); color: var(--si-on-accent);
+  font-family: inherit; font-size: 16.5px; font-weight: 800; text-decoration: none;
+  box-shadow: 0 14px 34px rgba(184, 68, 21, .26);
   cursor: pointer;
-  transition: filter 120ms ease-out, transform 120ms ease-out;
+  transition: background 120ms ease-out, transform 120ms ease-out;
 }
-.lg-cta { text-decoration: none; }
-.lg-cta:hover:not(:disabled) { filter: brightness(1.06); }
-.lg-cta:active:not(:disabled) { transform: translateY(1px); }
-.lg-cta:disabled { cursor: progress; }
-.lg-spinner {
+.si-cta:hover:not(:disabled) { background: var(--si-deep); }
+.si-cta:active:not(:disabled) { transform: translateY(1px); }
+.si-cta:disabled { cursor: progress; opacity: .92; }
+.si-spinner {
   width: 20px; height: 20px; border-radius: 50%;
-  border: 2.5px solid rgba(10, 6, 32, .25); border-top-color: #0a0620;
-  animation: lg-spin 700ms linear infinite;
+  border: 2.5px solid rgba(255, 255, 255, .35); border-top-color: #fff;
+  animation: si-spin 700ms linear infinite;
 }
-@keyframes lg-spin { to { transform: rotate(360deg); } }
 
-.lg-divider {
-  display: flex; align-items: center; gap: 12px; margin: 22px 0 18px;
-  font-size: 12.5px; color: rgba(255, 255, 255, .45);
+.si-divider {
+  display: flex; align-items: center; gap: 12px; margin: 20px 0 16px;
+  font-size: 12.5px; color: var(--si-muted);
 }
-.lg-divider::before, .lg-divider::after { content: ""; flex: 1; height: 1px; background: rgba(255, 255, 255, .1); }
+.si-divider::before, .si-divider::after { content: ""; flex: 1; height: 1px; background: var(--si-border); }
 
-.lg-switch { margin: 22px 0 0; text-align: center; font-size: 14.5px; color: rgba(255, 255, 255, .6); }
-.lg-switch .lg-link { color: #7ff7d4; font-weight: 700; }
-.lg-switch .lg-link:hover { color: #fff; }
+.si-note { margin: 18px 0 0; text-align: center; font-size: 14px; color: var(--si-muted); }
+.si-note .si-link { font-size: 14px; }
 
-/* Footer: the 96px bottom padding keeps its text clear of the ribbon. */
-.lg-foot {
-  border-top: 1px solid rgba(255, 255, 255, .1);
-  padding: 18px 32px 96px;
-  display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;
-  font-size: 14px; color: rgba(255, 255, 255, .5);
+/* Capability chips and trusted-by ---------------------------------- */
+.si-chips {
+  display: flex; justify-content: center; flex-wrap: wrap; gap: 10px;
+  margin: 30px auto 0; padding: 0 24px; max-width: 800px;
+}
+.si-chip {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 10px 15px; border-radius: 9px;
+  background: var(--si-chip); border: 1px solid var(--si-border);
+  font-size: 14.5px; font-weight: 600; color: var(--si-body);
+}
+.si-chip-dot { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+
+.si-trusted { width: 100%; max-width: 700px; margin: 34px auto 0; padding: 0 24px; box-sizing: border-box; }
+.si-trusted-label {
+  margin: 0 0 12px; text-align: center;
+  font-size: 11px; font-weight: 700; letter-spacing: .16em; color: var(--si-muted-2);
+}
+.si-marquee { overflow: hidden; }
+.si-marquee-row { display: flex; width: 200%; }
+.si-marquee-half { display: flex; width: 50%; gap: 10px; padding-right: 10px; box-sizing: border-box; }
+.si-tile {
+  flex: 1 1 auto; min-width: fit-content; height: 52px; padding: 0 14px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 9px; background: var(--si-chip); border: 1px solid var(--si-border);
+  font-size: 14px; font-weight: 700; color: var(--si-muted-2); white-space: nowrap;
+}
+/* With reduced motion the marquee is a still, centred row — one copy. */
+@media (prefers-reduced-motion: reduce) {
+  .si-marquee-row { width: 100%; justify-content: center; }
+  .si-marquee-half { width: 100%; padding-right: 0; }
+  .si-marquee-half[aria-hidden="true"] { display: none; }
 }
 
 @media (max-width: 600px) {
-  .lg-h1 { font-size: 38px; }
-  .lg-bar, .lg-content, .lg-foot { padding-left: 20px; padding-right: 20px; }
-  .lg-card { padding: 26px 22px 24px; }
-}
-@media (max-height: 700px) {
-  .lg-ribbon, .lg-scrim { display: none; }
-  .lg-foot { padding-bottom: 24px; }
+  .si-bar { padding: 20px; }
+  .si-h1 { font-size: 38px; }
+  .si-card { padding: 26px 20px; }
+  .si-hero, .si-card { margin-top: 24px; }
+  /* The card is the job on a phone; the chips are decoration. */
+  .si-chips { display: none; }
 }
