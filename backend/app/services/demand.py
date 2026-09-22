@@ -19,10 +19,11 @@ import math
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from app.services.learning import latest_per_week
 from app.services.scheduler import DAYS, to_minutes
+from app.services import slot_owners
 
 HOURS_PER_DAY = 24
 
@@ -124,6 +125,11 @@ class DemandProfile:
     #
     # So it is learned rather than assumed. See `finish_granularity`.
     edge_minutes: int = 60
+    # Post-close work is exceptional. Each entry is a clean generated shape
+    # that was present on this day in at least the same four distinct weeks
+    # required before a shift can have an owner. Empty for fallback and
+    # partial-history profiles, so generation stops at closing time.
+    post_close_slots: Dict[str, List[List[str]]] = field(default_factory=dict)
 
     @property
     def is_usable(self) -> bool:
@@ -149,6 +155,15 @@ class DemandProfile:
         """Whether this day has a learned arrival pattern to fill from."""
         return any(self.arrivals.get(day) or ())
 
+    def supports_post_close(self, day: str, start: str, end: str) -> bool:
+        return [start, end] in self.post_close_slots.get(day, [])
+
+    def normalise_post_close(
+        self, day: str, start: str, end: str,
+    ) -> Optional[Tuple[str, str]]:
+        clean = _snap_post_close(start, end)
+        return clean if self.supports_post_close(day, *clean) else None
+
     def role_target(self, day: str, hour: int, role: str) -> float:
         return self.role_mix.get(day, {}).get(role, [0.0] * HOURS_PER_DAY)[hour]
 
@@ -170,6 +185,7 @@ class DemandProfile:
             "edge_minutes": self.edge_minutes,
             "day_slots": self.day_slots,
             "arrivals": self.arrivals,
+            "post_close_slots": self.post_close_slots,
             "source": self.source,
         }
 
@@ -195,6 +211,10 @@ class DemandProfile:
             },
             arrivals={
                 d: list(hours) for d, hours in (data.get("arrivals") or {}).items()
+            },
+            post_close_slots={
+                d: [list(slot) for slot in slots]
+                for d, slots in (data.get("post_close_slots") or {}).items()
             },
             source=data.get("source", "learned"),
         )
@@ -630,6 +650,87 @@ def learn_demand(
     )
 
 
+def _post_close(shop: Dict[str, Any], day: str, start: str, end: str) -> bool:
+    """Whether a same-day trading window is exceeded by this shape."""
+    if shop.get("open_24h"):
+        return False
+    hours = next((row for row in shop.get("hours", []) if row.get("day") == day), None)
+    if not hours or hours.get("closed"):
+        return False
+    open_m, close_m = to_minutes(hours["open"]), to_minutes(hours["close"])
+    if open_m == 0 and close_m >= 23 * 60 + 59:
+        return False  # legacy 24-hour representation without open_24h
+    if close_m <= open_m:
+        return False  # an overnight trading day closes on the next date
+    start_m, end_m = to_minutes(start), to_minutes(end)
+    if end_m <= start_m:
+        end_m += 24 * 60
+    return end_m > close_m
+
+
+def _snap_post_close(start: str, end: str) -> Tuple[str, str]:
+    """Put an evidenced cleanup shift on half-hours without changing its span."""
+    start_m = to_minutes(start)
+    # Nearest half-hour; an exact :15/:45 tie rounds the start earlier so a
+    # cleanup period is not silently shortened at its leading edge.
+    snapped_start = ((start_m + 14) // 30) * 30
+    span = _span_minutes(start, end)
+    snapped_span = max(30, ((span + 15) // 30) * 30)
+
+    def hhmm(minutes: int) -> str:
+        minutes %= 24 * 60
+        return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+    return hhmm(snapped_start), hhmm(snapped_start + snapped_span)
+
+
+def _apply_post_close_evidence(
+    profile: DemandProfile,
+    shop: Dict[str, Any],
+    rosters: Sequence[Dict[str, Any]],
+    lookback_weeks: int,
+    for_week: Optional[str],
+) -> DemandProfile:
+    """Keep post-close slots only after four distinct prior weeks support them."""
+    weeks_by_shape: Dict[Tuple[str, str, str], Set[str]] = defaultdict(set)
+    for roster, _ in _weighted_rosters(rosters, lookback_weeks, for_week):
+        week = roster.get("week_start")
+        if not week:
+            continue
+        for shift in roster.get("shifts", []):
+            if not _is_worked(shift):
+                continue
+            day, start, end = shift.get("day"), shift.get("start"), shift.get("end")
+            if day in DAYS and start and end and _post_close(shop, day, start, end):
+                weeks_by_shape[(day, start, end)].add(str(week))
+
+    supported_raw = {
+        shape for shape, weeks in weeks_by_shape.items()
+        if len(weeks) >= slot_owners.MIN_OCCURRENCES
+    }
+    supported_clean: Dict[str, Set[Tuple[str, str]]] = defaultdict(set)
+    cleaned_slots: Dict[str, List[List[str]]] = {}
+    for day, slots in profile.day_slots.items():
+        cleaned = []
+        for start, end in slots:
+            if not _post_close(shop, day, start, end):
+                cleaned.append([start, end])
+                continue
+            if (day, start, end) not in supported_raw:
+                continue
+            clean = _snap_post_close(start, end)
+            supported_clean[day].add(clean)
+            cleaned.append(list(clean))
+        cleaned_slots[day] = cleaned
+
+    profile.day_slots = cleaned_slots
+    profile.post_close_slots = {
+        day: [list(shape) for shape in sorted(shapes)]
+        for day, shapes in supported_clean.items()
+    }
+    return profile
+
+
 # ---------------------------------------------------------------------------
 # Fallback
 # ---------------------------------------------------------------------------
@@ -660,6 +761,14 @@ def profile_from_shop_hours(shop: Dict[str, Any]) -> DemandProfile:
 
     templates = shop.get("shift_templates") or []
     for template in templates:
+        # A template after closing is not evidence that people really work
+        # after closing. Learned history can add that exception after four
+        # distinct weeks; the zero-history path must stop at shop close.
+        if any(
+            _post_close(shop, day, template["start"], template["end"])
+            for day in DAYS
+        ):
+            continue
         pattern_counts[(template["start"], template["end"])] += 1
 
     patterns = [
@@ -695,15 +804,31 @@ def build_profile(
         profile.source = "manual"
         if not profile.patterns:
             profile.patterns = profile_from_shop_hours(shop).patterns
-        return profile
+        return _apply_post_close_evidence(
+            profile, shop, rosters, lookback_weeks, for_week,
+        )
 
     learned = learn_demand(
         rosters, employee_roles,
         lookback_weeks=lookback_weeks, for_week=for_week,
     )
     if learned.is_usable and learned.patterns:
-        return learned
-    return profile_from_shop_hours(shop)
+        return _apply_post_close_evidence(
+            learned, shop, rosters, lookback_weeks, for_week,
+        )
+
+    fallback = profile_from_shop_hours(shop)
+    if learned.weeks_observed:
+        # One to three real weeks are not enough to establish shift shapes or
+        # ownership, but they are still better evidence of staffing volume
+        # than the generic one-person coverage floor.
+        fallback.headcount = learned.headcount
+        fallback.role_mix = learned.role_mix
+        fallback.staff_per_day = learned.staff_per_day
+        fallback.weeks_observed = learned.weeks_observed
+        fallback.seasonal_weeks = learned.seasonal_weeks
+        fallback.source = "partial_history"
+    return fallback
 
 
 # ---------------------------------------------------------------------------

@@ -431,8 +431,16 @@ staff data reaches another.
 ## 7. Learn from the shop's own history
 
 `demand.py` learns per-day shift lists (`day_slots`) from a trailing
-**24-week** window, needs at least **4 weeks** to use them, and falls back to
-generic block coverage below that.
+**24-week** window and needs at least **4 weeks** to use their exact shapes.
+With 1–3 prior weeks, their headcount, role mix and daily staff total still
+drive the week, but safe generic within-hours blocks supply the shapes. With
+zero history, both volume and shape fall back to opening-hour coverage.
+
+**Closing is the boundary until history proves otherwise.** A generated shift
+may run after close only when that same day/shape ran in at least four distinct
+prior approved weeks. Supported cleanup shifts are normalised to half-hour
+boundaries while preserving their duration; no-history templates and contract
+fitting cannot manufacture post-close work.
 
 - **One roster per week** — `latest_per_week()`, newest wins. A duplicated week
   pulls twice as hard on every weight.
@@ -487,7 +495,9 @@ Three rules, and the interaction between them is the whole design:
 2. **Starts are never rounded to the hour.** Arrivals are counted per hour but
    the slot carries a start the shop really writes — Top Oil writes `07:30`,
    and offering `07:00` would be a start nobody has worked, which familiarity
-   (§2) would then have to exclude everybody from.
+   (§2) would then have to exclude everybody from. The narrow exception is a
+   four-week-supported post-close cleanup shape, whose two edges are snapped
+   to 30-minute boundaries before it reaches either slot path.
 3. **Presence caps arrivals — but only on a floor STRICTLY ABOVE the curve.**
    *"If there are two people starting at 8:00 and the shop needs just 2, and
    we already have them who started at 6:00, then it should not put them at
@@ -634,7 +644,8 @@ own rosters: the coarsest of 60, 30, 15 that ≥90% of finishes are a multiple
 of, defaulting to 60 below 50 shifts. Coarsest-that-fits rather than most
 common, because the question is what a trim may round to without inventing a
 shape the shop does not write. **Only finishes** — starts are never rounded,
-because familiarity is keyed on them.
+because familiarity is keyed on them. This is separate from the post-close
+cleanup rule in §7: `finish_granularity` does not process learned `day_slots`.
 
 Gap-closing stays hour-aligned whatever the shop's convention, because that one
 is not convention: covering an hour means being there for all of it.

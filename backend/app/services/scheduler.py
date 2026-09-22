@@ -1023,6 +1023,33 @@ class _RosterBuilder:
         return 1
 
     # -- eligibility ------------------------------------------------------
+    def _clean_generated_shape(
+        self, day: str, start: str, end: str,
+    ) -> Optional[Tuple[str, str]]:
+        """Return the allowed generated shape, normalising learned cleanup."""
+        if self.shop.get("open_24h"):
+            return start, end
+        hours = self.hours_by_day.get(day)
+        if not hours or hours.get("closed"):
+            return start, end
+        open_m, close_m = to_minutes(hours["open"]), to_minutes(hours["close"])
+        if open_m == 0 and close_m >= 23 * 60 + 59:
+            return start, end  # legacy 24-hour representation
+        if close_m <= open_m:
+            return start, end  # this trading day closes after midnight
+        start_m, end_m = to_minutes(start), to_minutes(end)
+        if end_m <= start_m:
+            end_m += 24 * 60
+        if end_m <= close_m:
+            return start, end
+        if self.demand is None:
+            return None
+        normalise = getattr(self.demand, "normalise_post_close", None)
+        return normalise(day, start, end) if normalise else None
+
+    def _generated_shape_allowed(self, day: str, start: str, end: str) -> bool:
+        return self._clean_generated_shape(day, start, end) == (start, end)
+
     def _is_eligible(
         self,
         employee: Dict[str, Any],
@@ -1042,6 +1069,13 @@ class _RosterBuilder:
         having silently vanished from the roster.
         """
         employee_id = employee["employee_id"]
+
+        # Opening hours are the hard boundary until four distinct approved
+        # weeks establish a clean post-close shift. Fixed and pinned work is
+        # laid down outside this generated-assignment path and remains the
+        # manager's explicit decision.
+        if not self._generated_shape_allowed(day, segment.start, segment.end):
+            return False
 
         # 1. Active employment.
         if not avail.is_active(employee):
@@ -2615,9 +2649,20 @@ class _RosterBuilder:
         shop, and `test_slot_scheduling` has one. Both regenerate tests fail
         without this.
         """
-        counts = self._shapes_by_hour.get((day, hour))
-        if not counts:
+        raw_counts = self._shapes_by_hour.get((day, hour))
+        if not raw_counts:
             return []           # never worked; not a start to invent (§9)
+
+        # Post-close history enters the solver only through the four-week
+        # evidence gate on DemandProfile, and enters already snapped to the
+        # clean half-hour shape the manager will see.
+        counts: Dict[Tuple[str, str], int] = defaultdict(int)
+        for (start, end), count in raw_counts.items():
+            clean = self._clean_generated_shape(day, start, end)
+            if clean is not None:
+                counts[clean] += count
+        if not counts:
+            return []
 
         total = sum(counts.values())
         shapes: List[Tuple[str, str]] = []
@@ -3105,6 +3150,8 @@ class _RosterBuilder:
         new_end_m = (to_minutes(start) + minutes) % (24 * 60)
         new_end = f"{new_end_m // 60:02d}:{new_end_m % 60:02d}"
         if violates_minor_curfew(employee, start, new_end):
+            return end
+        if not self._generated_shape_allowed(day, start, new_end):
             return end
         return new_end
 
@@ -4199,6 +4246,9 @@ class _RosterBuilder:
             return "no employee record"
         who = employee.get("name") or shift["employee_id"]
 
+        if not self._generated_shape_allowed(shift["day"], new_start, new_end):
+            return f"{who} would finish after the shop closes"
+
         span = shift_duration_minutes(new_start, new_end) / 60
         max_shift = min(
             float(self.shop.get("max_shift_hours") or ABSOLUTE_MAX_SHIFT_HOURS),
@@ -4692,6 +4742,10 @@ class _RosterBuilder:
                     new_end = f"{new_end_m // 60:02d}:{new_end_m % 60:02d}"
 
                     if violates_minor_curfew(employee, shift["start"], new_end):
+                        continue
+                    if not self._generated_shape_allowed(
+                        shift["day"], shift["start"], new_end
+                    ):
                         continue
                     if delta < 0 and not self._can_shorten_to(shift, new_end):
                         continue
