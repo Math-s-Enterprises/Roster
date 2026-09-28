@@ -122,11 +122,15 @@ export default function RosterView() {
     // roster for that week came back first — usually the approved one,
     // which is precisely not the version that was clicked.
     const byId = rosterParam && r.data.find((x) => x.roster_id === rosterParam);
+    const selectedDepartment = byId?.department
+      || s.data.current_department || department || s.data.departments?.[0] || "Shop Floor";
+    if (department !== selectedDepartment) setDepartment(selectedDepartment);
     const found = byId
-      || r.data.find((x) => x.week_start === week && (x.department || null) === (department || null));
+      || r.data.find((x) => x.week_start === week
+        && (x.department || s.data.departments?.[0] || "Shop Floor") === selectedDepartment);
     setRoster(found || null);
   };
-  useEffect(() => { load(); }, [week, department]);
+  useEffect(() => { load(); }, [week, department, rosterParam]);
 
   const totalRosters = rosters.length;
   const freeLimit = 4;
@@ -409,6 +413,12 @@ export default function RosterView() {
     return m;
   }, [roster]);
 
+  const externalByCell = useMemo(() => Object.fromEntries(
+    (roster?.external_shifts || []).map((shift) => [
+      `${shift.employee_id}|${shift.day}`, shift,
+    ]),
+  ), [roster]);
+
   // Which cells the solver wants confirmed, keyed for O(1) lookup while
   // rendering the grid rather than scanning the list for every cell.
   const needsConfirming = useMemo(() => new Set(
@@ -418,9 +428,11 @@ export default function RosterView() {
   // Leavers stay in the database so their past rosters remain readable, but
   // a permanently empty row in every future grid is just noise.
   const gridEmployees = useMemo(() => emps.filter(
-    (e) => e.is_active !== false
+    (e) => (e.departments || ["Shop Floor"]).includes(department || "Shop Floor")
+      && (e.is_active !== false
       || (roster?.shifts || []).some((s) => s.employee_id === e.employee_id)
-  ), [emps, roster]);
+      || (roster?.external_shifts || []).some((s) => s.employee_id === e.employee_id))
+  ), [emps, roster, department]);
 
   /**
    * The longest shift this shop allows: its own max_shift_hours, capped at
@@ -620,7 +632,8 @@ export default function RosterView() {
   const advisories = roster?.issues || [];
   const staffing = audit?.staffing || [];
   const unrostered = roster?.unrostered || [];
-  const weekVersions = rosters.filter((r) => r.week_start === week);
+  const weekVersions = rosters.filter((r) => r.week_start === week
+    && (r.department || shop?.departments?.[0] || "Shop Floor") === department);
 
   // Needs attention is everything that wants a decision before approval:
   // uncovered hours, unfamiliar shifts, people owed contracted hours, and
@@ -671,6 +684,7 @@ export default function RosterView() {
    *  line under the time says "fixed", "pinned", "extra" or "night" too. */
   const cellKind = (s) => {
     if (!s) return "empty";
+    if (s.external_department) return "external";
     if (s.paid_holiday || s.unpaid_holiday || s.sick) return "leave";
     if (s.fixed) return "template";
     if (isUnsocial(s)) return "unsocial";
@@ -693,6 +707,14 @@ export default function RosterView() {
    *  approved week only accepts a sick report, everything else asks you
    *  to reopen it first. */
   const onCell = (s, employee, day, isLeaveCell) => {
+    const external = externalByCell[`${employee.employee_id}|${day}`];
+    if (!s && external) {
+      toast.error(
+        `${employee.name} is already working in ${external.department} on ${DAY_LABELS[day]} `
+        + `(${external.start}–${external.end}).`,
+      );
+      return;
+    }
     if (roster.approved) {
       if (weekHasEnded) {
         toast.error("This week has been worked and can no longer be changed");
@@ -731,9 +753,10 @@ export default function RosterView() {
     : gridEmployees;
   const shownPeople = gridPeople.slice(0, visiblePeople);
 
-  const hoursFor = (id) => (roster?.shifts || [])
-    .filter((s) => s.employee_id === id)
-    .reduce((a, s) => a + shiftPaidHours(s), 0);
+  const hoursFor = (id) => roster?.shop_week_hours?.[id]
+    ?? (roster?.shifts || [])
+      .filter((s) => s.employee_id === id)
+      .reduce((a, s) => a + shiftPaidHours(s), 0);
 
   const headcount = (day) =>
     (shiftsByDay[day] || []).filter((s) => s.start && !s.paid_holiday && !s.unpaid_holiday && !s.sick).length;
@@ -915,19 +938,6 @@ export default function RosterView() {
         </div>
 
         <div className="wr-headacts">
-          {shop?.multi_department && user?.pro && (
-            <span className="wr-picker">
-              <select
-                data-testid="dept-switch"
-                value={department || ""}
-                onChange={(e) => setDepartment(e.target.value || null)}
-                aria-label="Department"
-              >
-                <option value="">All departments</option>
-                {(shop.departments || []).map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </span>
-          )}
           <label
             className="wr-picker"
             onClick={(e) => {
@@ -1180,12 +1190,19 @@ export default function RosterView() {
 
                     {DAYS.map((d) => {
                       const s = (shiftsByDay[d] || []).find((x) => x.employee_id === e.employee_id);
+                      const externalRaw = externalByCell[`${e.employee_id}|${d}`];
+                      const external = externalRaw
+                        ? { ...externalRaw, external_department: externalRaw.department }
+                        : null;
+                      const shown = s || external;
                       const isLeaveCell = !!s && (s.paid_holiday || s.unpaid_holiday || s.sick);
                       const confirm = s && needsConfirming.has(`${e.employee_id}|${d}`);
-                      const kind = cellKind(s);
+                      const kind = cellKind(shown);
                       const meta = s && !isLeaveCell ? cellMeta(s) : "";
                       const dur = s && !isLeaveCell ? shiftHours(s.start, s.end) : 0;
-                      const name = s
+                      const name = external && !s
+                        ? `${e.name}, ${DAY_LABELS[d]}, working in ${external.department}, ${external.start} to ${external.end}`
+                        : s
                         ? isLeaveCell
                           ? `${e.name}, ${DAY_LABELS[d]}, ${leaveLabel(s).toLowerCase()}`
                           : `${e.name}, ${DAY_LABELS[d]}, ${s.start} to ${s.end}${s.fixed ? ", from a fixed template" : ""}${s.pinned ? ", pinned" : ""}`
@@ -1199,7 +1216,9 @@ export default function RosterView() {
                           data-kind={kind}
                           data-confirm={Boolean(confirm)}
                           aria-label={name}
-                          title={cellTitle(s, isLeaveCell, confirm)}
+                          title={external && !s
+                            ? `Already working in ${external.department} — cannot be rostered here`
+                            : cellTitle(s, isLeaveCell, confirm)}
                           draggable={!!s && !isLeaveCell}
                           onDragStart={() => s && !isLeaveCell && setDragging(s)}
                           onDragOver={(ev) => { if (dragging && !isLeaveCell) ev.preventDefault(); }}
@@ -1211,7 +1230,12 @@ export default function RosterView() {
                           onDragEnd={() => setDragging(null)}
                           onClick={() => onCell(s, e, d, isLeaveCell)}
                         >
-                          {!s ? (
+                          {external && !s ? (
+                            <>
+                              <span className="wr-cell-time">{external.department}</span>
+                              <span className="wr-cell-meta">{external.start}–{external.end}</span>
+                            </>
+                          ) : !s ? (
                             <span aria-hidden="true">+</span>
                           ) : isLeaveCell ? (
                             <span className="wr-cell-leave">{leaveLabel(s)}</span>
@@ -1251,8 +1275,12 @@ export default function RosterView() {
             <div className="wr-daylist">
               {DAYS.map((d) => {
                 const lines = shownPeople
-                  .map((e) => ({ e, s: (shiftsByDay[d] || []).find((x) => x.employee_id === e.employee_id) }))
-                  .filter((x) => x.s);
+                  .map((e) => ({
+                    e,
+                    s: (shiftsByDay[d] || []).find((x) => x.employee_id === e.employee_id),
+                    external: externalByCell[`${e.employee_id}|${d}`],
+                  }))
+                  .filter((x) => x.s || x.external);
                 return (
                   <div key={d} className="wr-dayblock">
                     <div className="wr-dayblock-head">
@@ -1260,7 +1288,22 @@ export default function RosterView() {
                     </div>
                     {lines.length === 0 ? (
                       <div className="wr-namesub">Nobody rostered.</div>
-                    ) : lines.map(({ e, s }) => {
+                    ) : lines.map(({ e, s, external }) => {
+                      if (!s && external) {
+                        return (
+                          <button
+                            key={e.employee_id}
+                            type="button"
+                            className="wr-dayline"
+                            onClick={() => onCell(null, e, d, false)}
+                          >
+                            <span className="wr-dayline-name">{e.name}</span>
+                            <span className="wr-dayline-time" data-kind="external">
+                              {external.department} · {external.start}–{external.end}
+                            </span>
+                          </button>
+                        );
+                      }
                       const isLeaveCell = s.paid_holiday || s.unpaid_holiday || s.sick;
                       return (
                         <button

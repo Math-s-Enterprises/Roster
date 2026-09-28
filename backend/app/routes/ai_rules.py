@@ -22,6 +22,8 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.models import AIRuleIn
 from app.services import llm
+from app.services.departments import names as department_names
+from app.services.departments import rules_for
 from app.services.rule_parser import parse_rule, validate_constraint
 from app.tenancy import ShopScope, CurrentScope
 
@@ -45,9 +47,16 @@ def _reject_if_locked(rule) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, _LOCKED_MESSAGE)
 
 
+def _validate_departments(payload: AIRuleIn, scope: ShopScope) -> None:
+    unknown = set(payload.departments) - set(department_names(scope.shop))
+    if unknown:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "Unknown roster group(s): " + ", ".join(sorted(unknown)))
+
+
 @router.get("")
 async def list_rules(scope: ShopScope = CurrentScope):
-    rules = await scope.ai_rules.find()
+    rules = rules_for(await scope.ai_rules.find(), scope.department)
     # Locked rules first, so the guarantees are what an owner sees first.
     return sorted(rules, key=lambda r: (not r.get("locked"), r.get("title", "")))
 
@@ -81,6 +90,7 @@ async def _compile_locally(payload: AIRuleIn, scope: ShopScope) -> Dict[str, Any
 async def create_rule(payload: AIRuleIn, scope: ShopScope = CurrentScope):
     # Rules created through the API are never locked — only the seeded
     # system defaults are.
+    _validate_departments(payload, scope)
     return await scope.ai_rules.insert({
         "rule_id": f"rule_{uuid.uuid4().hex[:10]}",
         "locked": False,
@@ -92,6 +102,7 @@ async def create_rule(payload: AIRuleIn, scope: ShopScope = CurrentScope):
 @router.put("/{rule_id}")
 async def update_rule(rule_id: str, payload: AIRuleIn, scope: ShopScope = CurrentScope):
     _reject_if_locked(await _get_or_404(scope, rule_id))
+    _validate_departments(payload, scope)
     await scope.ai_rules.update_one({"rule_id": rule_id}, {
         **payload.model_dump(),
         # Re-read the wording: an edited rule must not keep enforcing what

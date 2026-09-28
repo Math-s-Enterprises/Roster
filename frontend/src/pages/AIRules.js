@@ -101,6 +101,7 @@ function understood(rule) {
 
 export default function AIRules() {
   const [rules, setRules] = useState([]);
+  const [shop, setShop] = useState(null);
   const [filter, setFilter] = useState("all");
   const [compiling, setCompiling] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -114,6 +115,7 @@ export default function AIRules() {
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { api.get("/shop").then((r) => setShop(r.data)).catch(() => {}); }, []);
 
   const counts = useMemo(() => {
     const by = { legal: 0, safety: 0, custom: 0 };
@@ -149,6 +151,7 @@ export default function AIRules() {
       description: draft.description.trim(),
       category: draft.category || "custom",
       enabled: true,
+      departments: draft.departments || [],
     };
     try {
       if (draft.rule_id) {
@@ -202,6 +205,7 @@ export default function AIRules() {
         description: rule.description,
         category: rule.category,
         enabled,
+        departments: rule.departments || [],
       });
       toast.success(enabled ? "Resumed" : "Paused — the solver will ignore it");
       await load();
@@ -318,7 +322,12 @@ export default function AIRules() {
       >
         <div role="cell" style={{ minWidth: 0 }}>
           <div className="air-rule-name">{rule.title}</div>
-          <div className="air-rule-desc">{rule.description}</div>
+          <div className="air-rule-desc">
+            {rule.description}
+            {!rule.locked && rule.departments?.length > 0
+              ? ` · ${rule.departments.join(", ")} only`
+              : !rule.locked && shop?.multi_department ? " · All roster groups" : ""}
+          </div>
           {read && <div className="air-understood">{read}</div>}
           {state.key === "not-in-force" && (
             <div className="air-error">
@@ -358,7 +367,10 @@ export default function AIRules() {
             type="button"
             data-testid="btn-add-rule"
             className="air-btn air-btn-1"
-            onClick={() => setDraft({ title: "", description: "", category: "custom" })}
+            onClick={() => setDraft({
+              title: "", description: "", category: "custom",
+              departments: [shop?.current_department].filter(Boolean),
+            })}
           >
             <Plus size={15} strokeWidth={2} /> New rule
           </button>
@@ -466,7 +478,10 @@ export default function AIRules() {
                   <button
                     type="button"
                     className="air-link"
-                    onClick={() => setDraft({ title: "", description: "", category: "custom" })}
+                    onClick={() => setDraft({
+                      title: "", description: "", category: "custom",
+                      departments: [shop?.current_department].filter(Boolean),
+                    })}
                   >
                     New rule
                   </button>
@@ -527,6 +542,41 @@ export default function AIRules() {
                 placeholder="e.g. No lone opening"
               />
             </div>
+
+            {shop?.multi_department && (
+              <div className="air-field">
+                <div className="air-label">Applies to</div>
+                <div className="air-pills" role="group" aria-label="Roster groups for this rule">
+                  <button
+                    type="button"
+                    className="air-pill"
+                    aria-pressed={(draft.departments || []).length === 0}
+                    onClick={() => setDraft({ ...draft, departments: [] })}
+                  >
+                    All groups
+                  </button>
+                  {(shop.departments || []).map((department) => {
+                    const on = (draft.departments || []).includes(department);
+                    return (
+                      <button
+                        type="button"
+                        key={department}
+                        className="air-pill"
+                        aria-pressed={on}
+                        onClick={() => setDraft({
+                          ...draft,
+                          departments: on
+                            ? draft.departments.filter((name) => name !== department)
+                            : [...(draft.departments || []), department],
+                        })}
+                      >
+                        {department}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="air-field">
               <label className="air-label" htmlFor="air-desc">Description</label>

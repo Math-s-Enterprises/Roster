@@ -4,6 +4,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8001"
 export const API = `${BACKEND_URL}/api`;
 
 const TOKEN_KEY = "roster_token";
+export const ROSTER_GROUP_KEY = "roster_group";
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (token) => localStorage.setItem(TOKEN_KEY, token);
@@ -19,6 +20,8 @@ export const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  const rosterGroup = localStorage.getItem(ROSTER_GROUP_KEY);
+  if (rosterGroup) config.headers["X-Roster-Group"] = rosterGroup;
   return config;
 });
 

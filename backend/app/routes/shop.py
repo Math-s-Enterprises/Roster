@@ -1,5 +1,6 @@
 """Shop settings and employee/holiday/fixed-shift management."""
 import uuid
+from copy import deepcopy
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Set
 
@@ -24,9 +25,32 @@ from app.services import setup_status as setup_status_service
 from app.services.hierarchy import sort_employees
 from app.services.learning import training_summary
 from app.services.shop_service import apply_24h_defaults
+from app.services.departments import (
+    DEFAULT_DEPARTMENT,
+    SCHEDULING_FIELDS,
+    effective_shop,
+    employee_for,
+    names as department_names,
+)
 from app.tenancy import ShopScope, CurrentScope
 
 router = APIRouter(tags=["shop"])
+
+
+async def _group_employees(scope: ShopScope) -> List[Dict]:
+    return [
+        employee_for(employee, scope.department)
+        for employee in await scope.employees.find(limit=1000)
+        if scope.department in (employee.get("departments") or [DEFAULT_DEPARTMENT])
+    ]
+
+
+async def _group_rosters(scope: ShopScope, *, approved: bool | None = None) -> List[Dict]:
+    query = {"approved": approved} if approved is not None else None
+    return [
+        roster async for roster in scope.rosters.stream(query)
+        if (roster.get("department") or DEFAULT_DEPARTMENT) == scope.department
+    ]
 
 
 def _record_dates(record: Dict) -> Set[str]:
@@ -311,18 +335,66 @@ async def update_shop(payload: ShopUpdate, scope: ShopScope = CurrentScope):
     if "shift_templates" in changes:
         changes["shift_templates"] = [dict(t) for t in changes["shift_templates"]]
 
-    changes = apply_24h_defaults(changes, scope.shop)
+    if "departments" in changes:
+        cleaned = [str(name).strip() for name in changes["departments"] if str(name).strip()]
+        folded = [name.casefold() for name in cleaned]
+        if not cleaned:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Keep at least one roster group.")
+        if len(folded) != len(set(folded)):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Roster group names must be unique.")
+        removed = set(department_names(scope.shop)) - set(cleaned)
+        if removed:
+            employees = [employee async for employee in scope.employees.stream()]
+            rosters = [roster async for roster in scope.rosters.stream()]
+            used = sorted({
+                department for department in removed
+                if any(department in (employee.get("departments") or [DEFAULT_DEPARTMENT])
+                       for employee in employees)
+                or any((roster.get("department") or DEFAULT_DEPARTMENT) == department
+                       for roster in rosters)
+            })
+            if used:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "Cannot remove roster group(s) still used by employees or rosters: "
+                    + ", ".join(used),
+                )
+        changes["departments"] = cleaned
+        changes["multi_department"] = len(cleaned) > 1
 
-    min_hours = changes.get("min_shift_hours", scope.shop.get("min_shift_hours", 4))
-    max_hours = changes.get("max_shift_hours", scope.shop.get("max_shift_hours", 9))
+    # One shop owns the employees and legal/payroll policy; each roster group
+    # owns the settings that shape its own schedule.
+    scheduling = {
+        key: changes.pop(key) for key in list(changes) if key in SCHEDULING_FIELDS
+    }
+    scheduling = apply_24h_defaults(scheduling, scope.shop)
+
+    min_hours = scheduling.get("min_shift_hours", scope.shop.get("min_shift_hours", 4))
+    max_hours = scheduling.get("max_shift_hours", scope.shop.get("max_shift_hours", 9))
     if min_hours > max_hours:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             f"Minimum shift length ({min_hours}h) cannot exceed the maximum ({max_hours}h).",
         )
 
+    settings = deepcopy(scope.base_shop.get("department_settings") or {})
+    current = dict(settings.get(scope.department) or {})
+    current.update(scheduling)
+    settings[scope.department] = current
+
+    # A newly-created group starts from the current group's practical
+    # settings, then can be edited independently from its own workspace.
+    for department in changes.get("departments") or []:
+        if department not in settings:
+            settings[department] = {
+                key: deepcopy(scope.shop.get(key))
+                for key in SCHEDULING_FIELDS if key in scope.shop
+            }
+    changes["department_settings"] = settings
+
     await db.shops.update_one({"shop_id": scope.shop_id}, {"$set": changes})
-    return await db.shops.find_one({"shop_id": scope.shop_id}, {"_id": 0})
+    saved = await db.shops.find_one({"shop_id": scope.shop_id}, {"_id": 0})
+    return effective_shop(saved, scope.department)
 
 
 @router.get("/shop/hierarchy")
@@ -334,7 +406,11 @@ async def get_role_hierarchy(scope: ShopScope = CurrentScope):
     that exist on staff but were never positioned show up instead of
     silently ranking last.
     """
-    employees = await scope.employees.find(limit=1000)
+    employees = [
+        employee_for(employee, scope.department)
+        for employee in await scope.employees.find(limit=1000)
+        if scope.department in (employee.get("departments") or [DEFAULT_DEPARTMENT])
+    ]
     roles_in_use = [e.get("role") for e in employees if e.get("role")]
     hierarchy = hierarchy_service.effective_hierarchy(scope.shop, roles_in_use)
     configured = bool(scope.shop.get("role_hierarchy"))
@@ -375,6 +451,7 @@ async def list_employees(
         False,
         description="Include people who exist only to own imported history.",
     ),
+    all_departments: bool = Query(False),
 ):
     """Everyone, in the order the shop wants to read them.
 
@@ -391,14 +468,31 @@ async def list_employees(
     """
     query = None if include_past else {"past_staff": {"$ne": True}}
     employees = await scope.employees.find(query, limit=limit, skip=skip)
+    if not all_departments:
+        employees = [
+            employee for employee in employees
+            if scope.department in (employee.get("departments") or [DEFAULT_DEPARTMENT])
+        ]
+    employees = [employee_for(employee, scope.department) for employee in employees]
     return hierarchy_service.display_order(employees, scope.shop)
 
 
 @router.post("/employees", status_code=status.HTTP_201_CREATED)
 async def create_employee(payload: EmployeeIn, scope: ShopScope = CurrentScope):
+    unknown = set(payload.departments) - set(department_names(scope.shop))
+    if unknown:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "Unknown roster group(s): " + ", ".join(sorted(unknown)))
+    if not payload.departments:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Choose at least one roster group.")
+    data = payload.model_dump()
+    roles = dict(data.get("department_roles") or {})
+    for department in data["departments"]:
+        roles.setdefault(department, data["role"])
+    data["department_roles"] = roles
     return await scope.employees.insert({
         "employee_id": f"emp_{uuid.uuid4().hex[:12]}",
-        **payload.model_dump(),
+        **data,
     })
 
 
@@ -406,6 +500,12 @@ async def create_employee(payload: EmployeeIn, scope: ShopScope = CurrentScope):
 async def update_employee(
     employee_id: str, payload: EmployeeIn, scope: ShopScope = CurrentScope
 ):
+    unknown = set(payload.departments) - set(department_names(scope.shop))
+    if unknown:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "Unknown roster group(s): " + ", ".join(sorted(unknown)))
+    if not payload.departments:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Choose at least one roster group.")
     # Saving an employee records that somebody looked at this record.
     #
     # The setup checklist used to work out whether pay and age had been
@@ -414,13 +514,25 @@ async def update_employee(
     # default rate and really does work 40 hours — so their step could never
     # be ticked, however many times it was edited. Provenance answers the
     # actual question; the values never could.
+    existing = await scope.employees.find_one({"employee_id": employee_id})
+    if not existing:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
+    data = payload.model_dump()
+    roles = dict(existing.get("department_roles") or {})
+    roles.update(data.get("department_roles") or {})
+    roles[scope.department] = data["role"]
+    data["department_roles"] = {
+        department: role for department, role in roles.items()
+        if department in data["departments"]
+    }
+    if scope.department != department_names(scope.base_shop)[0]:
+        data["role"] = existing.get("role") or data["role"]
     modified = await scope.employees.update_one(
         {"employee_id": employee_id},
-        {**payload.model_dump(), "details_confirmed": True},
+        {**data, "details_confirmed": True},
     )
-    if modified == 0 and not await scope.employees.find_one({"employee_id": employee_id}):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
-    return await scope.employees.find_one({"employee_id": employee_id})
+    saved = await scope.employees.find_one({"employee_id": employee_id})
+    return employee_for(saved, scope.department)
 
 
 @router.delete("/employees/{employee_id}")
@@ -515,7 +627,15 @@ async def apply_contacts(
 # ---------------------------------------------------------------------------
 @router.get("/holidays")
 async def list_holidays(scope: ShopScope = CurrentScope):
-    return await scope.holidays.find(sort=[("date", -1)])
+    employee_ids = {
+        employee["employee_id"] for employee in await scope.employees.find(limit=1000)
+        if scope.department in (employee.get("departments") or [DEFAULT_DEPARTMENT])
+    }
+    return [
+        holiday for holiday in await scope.holidays.find(sort=[("date", -1)])
+        if holiday.get("scope") == "shop"
+        or holiday.get("employee_id") in employee_ids
+    ]
 
 
 @router.post("/holidays", status_code=status.HTTP_201_CREATED)
@@ -541,8 +661,8 @@ async def create_holiday(payload: HolidayIn, scope: ShopScope = CurrentScope):
         if data["scope"] in ("employee", "unavailable") and not confirmed_shortage:
             _raise_staffing_warning(_leave_staffing_warnings(
                 scope.shop,
-                await scope.employees.find(limit=1000),
-                [roster async for roster in scope.rosters.stream({"approved": True})],
+                await _group_employees(scope),
+                await _group_rosters(scope, approved=True),
                 bookings,
                 data["employee_id"],
                 requested_dates,
@@ -674,8 +794,9 @@ async def book_leave(payload: LeaveRequest, scope: ShopScope = CurrentScope):
     if not payload.confirm_staffing_shortage:
         _raise_staffing_warning(_leave_staffing_warnings(
             scope.shop,
-            await scope.employees.find(limit=1000),
-            approved,
+            await _group_employees(scope),
+            [r for r in approved
+             if (r.get("department") or DEFAULT_DEPARTMENT) == scope.department],
             bookings,
             payload.employee_id,
             date_set,
@@ -774,8 +895,8 @@ async def update_holiday(
         if data["scope"] in ("employee", "unavailable") and not confirmed_shortage:
             _raise_staffing_warning(_leave_staffing_warnings(
                 scope.shop,
-                await scope.employees.find(limit=1000),
-                [roster async for roster in scope.rosters.stream({"approved": True})],
+                await _group_employees(scope),
+                await _group_rosters(scope, approved=True),
                 bookings,
                 data["employee_id"],
                 requested_dates,
@@ -810,7 +931,10 @@ async def delete_holiday(holiday_id: str, scope: ShopScope = CurrentScope):
 # ---------------------------------------------------------------------------
 @router.get("/fixed-shifts")
 async def list_fixed_shifts(scope: ShopScope = CurrentScope):
-    return await scope.fixed_shifts.find()
+    return [
+        fixed for fixed in await scope.fixed_shifts.find()
+        if (fixed.get("department") or DEFAULT_DEPARTMENT) == scope.department
+    ]
 
 
 @router.post("/fixed-shifts", status_code=status.HTTP_201_CREATED)
@@ -818,12 +942,17 @@ async def create_fixed_shift(payload: FixedShiftIn, scope: ShopScope = CurrentSc
     if not await scope.employees.find_one({"employee_id": payload.employee_id}):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
     return await scope.fixed_shifts.insert({
-        "fixed_id": f"fs_{uuid.uuid4().hex[:10]}", **payload.model_dump()
+        "fixed_id": f"fs_{uuid.uuid4().hex[:10]}",
+        "department": scope.department,
+        **payload.model_dump(),
     })
 
 
 @router.delete("/fixed-shifts/{fixed_id}")
 async def delete_fixed_shift(fixed_id: str, scope: ShopScope = CurrentScope):
+    fixed = await scope.fixed_shifts.find_one({"fixed_id": fixed_id})
+    if not fixed or (fixed.get("department") or DEFAULT_DEPARTMENT) != scope.department:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Fixed shift not found")
     if not await scope.fixed_shifts.delete_one({"fixed_id": fixed_id}):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Fixed shift not found")
     return {"ok": True}
@@ -854,13 +983,20 @@ async def hours_report(
     Streams every approved roster rather than paging: a report that quietly
     dropped a week would understate somebody's wages, and be believed.
     """
-    approved = [r async for r in scope.rosters.stream({"approved": True})]
+    approved = [
+        roster async for roster in scope.rosters.stream({"approved": True})
+        if (roster.get("department") or DEFAULT_DEPARTMENT) == scope.department
+    ]
     try:
         return payroll_report.build_report(
             shop=scope.shop,
             # Includes leavers and past staff — they worked the hours and are
             # owed for them, whatever their status is now.
-            employees=await scope.employees.find(limit=1000),
+            employees=[
+                employee_for(employee, scope.department)
+                for employee in await scope.employees.find(limit=1000)
+                if scope.department in (employee.get("departments") or [DEFAULT_DEPARTMENT])
+            ],
             rosters=approved,
             start=start,
             end=end,

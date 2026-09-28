@@ -940,3 +940,113 @@ After restoring every guard, the focused demand, scheduler and 24-week
 reference-shop suites passed. The complete backend suite also exited zero;
 the only non-pass was the existing expected xfail, with dependency deprecation
 warnings unchanged.
+
+---
+
+## 10. Roster groups are separate learning problems, not separate employers
+
+A client with one shop and two operating areas needed independently named
+rosters: Shop Floor and Deli were the example, but the names must belong to
+the shop rather than to the code. Some employees work in both areas.
+
+The diagnostic found that `departments` already existed on shops and
+employees, but it was only a partial UI filter:
+
+- the importer wrote every employee to `Shop Floor` and treated a calendar
+  week as a duplicate across the whole shop
+- generation read every approved roster into one demand, ownership,
+  familiarity and preference corpus
+- independent solves did not know that the same employee was already working
+  on the other roster
+
+That partial boundary is worse than having none. It displays two groups while
+quietly teaching one from the other and gives a shared employee a fresh hours
+budget in each solve.
+
+The rule now has two explicit halves:
+
+- **department-local:** imported weeks, demand, arrival/shape history, slot
+  ownership, familiarity, preferences, coverage, roster versions and scoped
+  custom AI rules
+- **shop-wide:** weekly/seasonal hour caps, paid hours, working days, rest,
+  leave and double-booking
+
+Shops create and name their own roster groups. Employees can belong to more
+than one. Every import chooses exactly one group, and the same calendar week
+may be imported once per group. A manually mapped existing employee gains
+membership of that group instead of being duplicated.
+
+When another group already has a shift for a shared employee, its latest
+visible roster is passed to the solver as an **external commitment**. That
+commitment spends hours and a working day and participates in rest checks, but
+never counts as coverage or output for the roster being built. The grid and
+print view show the other group's name and times as a read-only cell. A manual
+edit or sick-cover choice that tries to put the person in both groups on the
+same day is refused with the other group and shift named.
+
+The boundary is also recorded in training evidence: generation stores its
+group, only that group's history sources and the external commitments it had
+to work around. A future model can therefore learn Deli decisions without
+mistaking them for Shop Floor demand while still seeing why a shared employee
+was unavailable.
+
+**Regression and sabotage evidence:**
+
+| removed | regression that failed |
+|---|---|
+| shop-wide external-hour seeding | a shared employee was scheduled in the second group after already using their weekly cap in the first |
+| department filter on approved history | a Deli import appeared in Shop Floor's `training_context.history_sources` |
+
+The import regression also proves the same week is accepted once in each
+group, and the API edit regression proves an existing other-group shift is
+returned to the browser and cannot be overwritten from this roster.
+
+---
+
+## 11. A roster group is a workspace, not a dropdown filter
+
+The first department implementation separated roster history and employee
+membership, but left one shop-wide settings document and one job title on the
+employee. That still made Deli behave like Shop Floor with a filtered list:
+it inherited Shop Floor's opening hours, role ladder and supervisory roles,
+and the browser had no durable current-workspace context. Reports could also
+mix corrections from both groups even though generation had learned them
+separately.
+
+The product boundary is now explicit:
+
+- every request carries the selected roster group; legacy clients with no
+  selection continue in the shop's primary group
+- each group owns its opening hours, shift limits/templates, role ladder,
+  supervisory roles, import aliases and demand settings
+- an employee may hold a different role in each group, without becoming two
+  employees or receiving two hour balances
+- import review offers employees from every group for explicit mapping; a
+  mapped person gains the new membership and that group's mapped role instead
+  of being duplicated
+- employees, holidays, fixed shifts, AI rules, current/past rosters, imports
+  and learning reports render inside the selected workspace
+- employment and legal facts stay shop-wide: weekly caps, paid hours, working
+  days, rest, leave entitlement and double-booking do not reset at a group
+  boundary
+- only the primary workspace has a Dashboard; it deliberately fetches all
+  groups, labels every recent roster with its group, and shows the combined
+  shop activity feed
+
+The storage remains one shop document. Group scheduling settings are overlays
+under `department_settings`; `ShopScope` exposes the effective selected view.
+That keeps tenancy, billing, leave and employment attached to one employer
+instead of creating fake shops merely to obtain separate settings.
+
+**Regression and sabotage evidence:**
+
+| removed | regression that failed |
+|---|---|
+| selected group's settings overlay | Deli lost its own hours and role ladder |
+| correction-report group filter | each group's learning report counted both groups' approved weeks |
+| import mapping membership update | the mapped employee remained invisible in the new group |
+
+The restored tests also prove holiday-balance lists contain only the current
+group's people while the primary activity feed includes actions from both
+groups. This distinction is deliberate: the list is a workspace view; the
+dashboard is the owner's whole-shop view.

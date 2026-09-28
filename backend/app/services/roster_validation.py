@@ -149,6 +149,7 @@ def validate_shifts(
     week_start: str,
     history_rosters: Optional[List[Dict[str, Any]]] = None,
     ai_rules: Optional[List[Dict[str, Any]]] = None,
+    include_roster_rules: bool = True,
 ) -> Verdict:
     """Check a proposed week of shifts against the same rules the solver uses."""
     verdict = Verdict()
@@ -319,10 +320,11 @@ def validate_shifts(
                 f"Shorten or remove one of their shifts first."
             )
 
-    verdict.blocking.extend(
-        breach["message"] for breach in compliance.closing_role_breaches(
-            shifts, shop=shop, employees=employees, ai_rules=ai_rules,
-            week_start=week_start, holidays=holidays,
+    if include_roster_rules:
+        verdict.blocking.extend(
+            breach["message"] for breach in compliance.closing_role_breaches(
+                shifts, shop=shop, employees=employees, ai_rules=ai_rules,
+                week_start=week_start, holidays=holidays,
+            )
         )
-    )
     return verdict

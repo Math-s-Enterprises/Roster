@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.models import HolidayAdjustment
-from app.services import holiday_balance
+from app.services import departments, holiday_balance
 from app.services.hierarchy import display_order
 from app.tenancy import ShopScope, CurrentScope
 
@@ -26,7 +26,14 @@ async def all_balances(scope: ShopScope = CurrentScope):
     """Everyone's entitlement, in the shop's reading order."""
     approved = await _approved(scope)
     bookings = await _bookings(scope)
-    employees = display_order(await scope.employees.find(limit=1000), scope.shop)
+    employees = [
+        departments.employee_for(employee, scope.department)
+        for employee in await scope.employees.find(limit=1000)
+        if scope.department in (
+            employee.get("departments") or [departments.DEFAULT_DEPARTMENT]
+        )
+    ]
+    employees = display_order(employees, scope.shop)
     return [
         holiday_balance.compute_balance(
             e, approved, shop=scope.shop, holidays=bookings,

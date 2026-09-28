@@ -6,11 +6,29 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException, status
 
 from app.models import CorrectionDecision
-from app.services import corrections, holiday_balance, sick_balance
+from app.services import corrections, departments, holiday_balance, sick_balance
 from app.services.shop_service import log_activity
 from app.tenancy import ShopScope, CurrentScope
 
 router = APIRouter(tags=["reports"])
+
+
+def _group_employees(employees: List[Dict[str, Any]], department: str):
+    """Employees visible in one roster-group workspace, with its local role."""
+    return [
+        departments.employee_for(employee, department)
+        for employee in employees
+        if department in (
+            employee.get("departments") or [departments.DEFAULT_DEPARTMENT]
+        )
+    ]
+
+
+async def _group_rosters(scope: ShopScope) -> List[Dict[str, Any]]:
+    return [
+        roster async for roster in scope.rosters.stream({"approved": True})
+        if departments.matches(roster, scope.department, scope.base_shop)
+    ]
 
 @router.get("/reports/sick-balance")
 async def sick_balance_report(scope: ShopScope = CurrentScope):
@@ -21,7 +39,9 @@ async def sick_balance_report(scope: ShopScope = CurrentScope):
     would quietly take more from them than from a full-timer.
     """
     approved = [r async for r in scope.rosters.stream({"approved": True})]
-    employees = await scope.employees.find(limit=1000)
+    employees = _group_employees(
+        await scope.employees.find(limit=1000), scope.department,
+    )
 
     rows = [
         sick_balance.compute_sick_balance(e, approved, shop=scope.shop)
@@ -46,13 +66,15 @@ async def sick_leave_report(scope: ShopScope = CurrentScope):
     """Sick leave per employee. HR reporting only — never training signal."""
     absences = await scope.holidays.find({"scope": "sick"}, limit=1000)
     employees = {
-        e["employee_id"]: e for e in await scope.employees.find(limit=1000)
+        e["employee_id"]: e for e in _group_employees(
+            await scope.employees.find(limit=1000), scope.department,
+        )
     }
 
     by_employee: Dict[str, Dict[str, Any]] = {}
     for absence in absences:
         employee_id = absence.get("employee_id")
-        if not employee_id:
+        if not employee_id or employee_id not in employees:
             continue
 
         employee = employees.get(employee_id, {})
@@ -102,7 +124,9 @@ def _legacy_holiday_balance(balance: Dict[str, Any]) -> Dict[str, Any]:
 async def all_holiday_balances(scope: ShopScope = CurrentScope):
     approved = [r async for r in scope.rosters.stream({"approved": True})]
     bookings = [h async for h in scope.holidays.stream()]
-    employees = await scope.employees.find(limit=1000)
+    employees = _group_employees(
+        await scope.employees.find(limit=1000), scope.department,
+    )
     return [
         _legacy_holiday_balance(holiday_balance.compute_balance(
             employee, approved, shop=scope.shop, holidays=bookings,
@@ -142,9 +166,12 @@ async def corrections_report(scope: ShopScope = CurrentScope):
     request, in line with the rest of the app. A stored summary starts lying
     the moment a week is unapproved.
     """
-    rosters = [r async for r in scope.rosters.stream({"approved": True})]
+    rosters = await _group_rosters(scope)
     dismissed = [
-        d["signature"] for d in await scope.correction_dismissals.find(limit=500)
+        dismissal["signature"]
+        for dismissal in await scope.correction_dismissals.find(limit=500)
+        if (dismissal.get("department") or departments.DEFAULT_DEPARTMENT)
+        == scope.department
     ]
     employees = {
         e["employee_id"]: e.get("name", e["employee_id"])
@@ -188,8 +215,12 @@ async def dismiss_suggestion(
     that prompted it.
     """
     await scope.correction_dismissals.upsert(
-        {"signature": payload.signature},
-        {"signature": payload.signature, "dismissed_at": datetime.now().isoformat()},
+        {"signature": payload.signature, "department": scope.department},
+        {
+            "signature": payload.signature,
+            "department": scope.department,
+            "dismissed_at": datetime.now().isoformat(),
+        },
     )
     return {"ok": True}
 
@@ -204,7 +235,7 @@ async def apply_suggestion(
     employee record. Afterwards it lives in the ordinary UI, where somebody
     who has never heard of this feature can see it and change it back.
     """
-    rosters = [r async for r in scope.rosters.stream({"approved": True})]
+    rosters = await _group_rosters(scope)
     offer = next(
         (s for s in corrections.suggestions(rosters)
          if s["signature"] == payload.signature),
@@ -222,9 +253,13 @@ async def apply_suggestion(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "That employee has left.")
 
     if offer["action"] == "fixed_shift":
-        existing = await scope.fixed_shifts.find_one({
-            "employee_id": offer["employee_id"], "day": offer["day"],
-        })
+        existing = next((
+            fixed for fixed in await scope.fixed_shifts.find({
+                "employee_id": offer["employee_id"], "day": offer["day"],
+            })
+            if (fixed.get("department") or departments.DEFAULT_DEPARTMENT)
+            == scope.department
+        ), None)
         if existing:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
@@ -236,6 +271,7 @@ async def apply_suggestion(
             "day": offer["day"],
             "start": offer["start"],
             "end": offer["end"],
+            "department": scope.department,
         })
         detail = (f"fixed shift for {employee.get('name')} on {offer['day']} "
                   f"{offer['start']}-{offer['end']}")
@@ -264,8 +300,15 @@ async def apply_suggestion(
     # Dismissed as well as applied: the corrections that prompted it are still
     # in the history, so without this it would be offered again next week.
     await scope.correction_dismissals.upsert(
-        {"signature": payload.signature},
-        {"signature": payload.signature, "applied_at": datetime.now().isoformat()},
+        {"signature": payload.signature, "department": scope.department},
+        {
+            "signature": payload.signature,
+            "department": scope.department,
+            "applied_at": datetime.now().isoformat(),
+        },
     )
-    await log_activity(scope.shop_id, "correction_applied", f"Learned: {detail}")
+    await log_activity(
+        scope.shop_id, "correction_applied",
+        f"{scope.department}: learned: {detail}",
+    )
     return {"ok": True, "detail": detail}

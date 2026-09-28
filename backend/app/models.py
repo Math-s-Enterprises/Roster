@@ -220,6 +220,7 @@ class EmployeeIn(BaseModel):
     max_weekly_hours: float = Field(40, gt=0, le=168)
     preferred_days_off: List[DayKey] = []
     departments: List[str] = ["Shop Floor"]
+    department_roles: Dict[str, str] = {}
 
     # Inactive staff keep their history (so past rosters stay readable) but
     # are never scheduled. Preferable to deleting a leaver, which would
@@ -366,6 +367,9 @@ class AIRuleIn(BaseModel):
     description: str = Field(min_length=1)
     enabled: bool = True
     category: Literal["legal", "safety", "custom"] = "custom"
+    # Empty means shop-wide. A custom rule can instead belong to one or more
+    # roster departments; locked system rules always apply everywhere.
+    departments: List[str] = []
 
 
 # ---------------------------------------------------------------------------

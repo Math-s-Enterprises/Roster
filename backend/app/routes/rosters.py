@@ -21,6 +21,7 @@ from app.services import availability as avail
 from app.services import compliance, corrections, llm, mailer, sick_cover
 from app.services import demand as demand_service
 from app.services import training_evidence
+from app.services import departments as department_service
 from app.services.demand import build_profile
 from app.services.hierarchy import sort_employees
 from app.services.roster_validation import validate_shifts
@@ -51,17 +52,103 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-async def _approved_rosters(scope: ShopScope) -> List[Dict[str, Any]]:
+_ALL_DEPARTMENTS = object()
+
+
+async def _approved_rosters(
+    scope: ShopScope, department: Any = _ALL_DEPARTMENTS,
+) -> List[Dict[str, Any]]:
     """Every approved roster — the corpus the preference weights build on.
 
     Streamed rather than page-limited: a truncated read would silently skew
     the weights instead of failing visibly.
     """
-    return [roster async for roster in scope.rosters.stream({"approved": True})]
+    rosters = [roster async for roster in scope.rosters.stream({"approved": True})]
+    if department is _ALL_DEPARTMENTS:
+        return rosters
+    return [
+        roster for roster in rosters
+        if department_service.matches(roster, department, scope.shop)
+    ]
+
+
+def _selected_department(shop: Dict[str, Any], requested: Optional[str]) -> str:
+    configured = department_service.names(shop)
+    if shop.get("multi_department") and not requested:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Choose which roster group to generate.",
+        )
+    department = requested or configured[0]
+    if department not in configured:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"Unknown roster group: {department}.")
+    return department
+
+
+def _department_employees(
+    employees: List[Dict[str, Any]], department: str, *, members_only: bool = False,
+) -> List[Dict[str, Any]]:
+    if members_only:
+        employees = [
+            employee for employee in employees
+            if department in (employee.get("departments")
+                              or [department_service.DEFAULT_DEPARTMENT])
+        ]
+    return [department_service.employee_for(employee, department) for employee in employees]
+
+
+async def _external_commitments(
+    scope: ShopScope, week_start: str, department: str, *, exclude: str = "",
+) -> List[Dict[str, Any]]:
+    """Latest visible shifts from every other department in this week."""
+    candidates = await scope.rosters.find(
+        {"week_start": week_start, "archived": {"$ne": True}},
+        limit=500, sort=[("created_at", -1)],
+    )
+    latest: Dict[str, Dict[str, Any]] = {}
+    for roster in candidates:
+        if roster.get("roster_id") == exclude:
+            continue
+        other = department_service.roster_department(roster, scope.shop)
+        if other == department or other in latest:
+            continue
+        latest[other] = roster
+
+    return [
+        {**shift, "department": other, "roster_id": roster.get("roster_id")}
+        for other, roster in latest.items()
+        for shift in roster.get("shifts") or []
+        if shift.get("start") and shift.get("end")
+        and not (shift.get("paid_holiday") or shift.get("unpaid_holiday")
+                 or shift.get("sick"))
+    ]
+
+
+_EMPLOYEE_RULES = {
+    "weekly_hours", "contract_over", "contract_under", "days_worked",
+    "shift_length", "minor_curfew", "booked_leave", "double_booked", "rest_gap",
+}
+
+
+def _merge_shop_wide_breaches(
+    department_breaches: List[Dict[str, Any]],
+    combined_breaches: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Add employee-limit failures from all groups without mixing coverage."""
+    merged = list(department_breaches)
+    seen = {(b.get("rule"), b.get("employee_id"), b.get("message")) for b in merged}
+    for breach in combined_breaches:
+        key = (breach.get("rule"), breach.get("employee_id"), breach.get("message"))
+        if breach.get("rule") in _EMPLOYEE_RULES and key not in seen:
+            merged.append(breach)
+            seen.add(key)
+    return merged
 
 
 def _with_current_break_setting(
     roster: Dict[str, Any], shop: Dict[str, Any], employees: List[Dict[str, Any]],
+    external_shifts: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Present roster hours and wages using the shop's setting right now."""
     breaks_paid = shop_breaks_paid(shop)
@@ -90,6 +177,14 @@ def _with_current_break_setting(
             ) * rates.get(shift.get("employee_id"), 0)
         shifts.append(shift)
 
+    external = [dict(shift) for shift in (external_shifts or [])]
+    shop_week_hours = dict(per_employee)
+    for shift in external:
+        hours = shift_paid_hours(shift, breaks_paid=breaks_paid)
+        shift["paid_hours"] = round(hours, 2)
+        employee_id = shift.get("employee_id")
+        shop_week_hours[employee_id] = shop_week_hours.get(employee_id, 0.0) + hours
+
     return {
         **roster,
         "shifts": shifts,
@@ -112,6 +207,11 @@ def _with_current_break_setting(
             employee_id: round(hours, 1)
             for employee_id, hours in per_employee.items()
         },
+        "shop_week_hours": {
+            employee_id: round(hours, 1)
+            for employee_id, hours in shop_week_hours.items()
+        },
+        "external_shifts": external,
     }
 
 
@@ -125,14 +225,27 @@ async def _approved_for_week(
     all read "every approved roster" and treat each as one week that was
     actually worked.
     """
-    query: Dict[str, Any] = {
-        "week_start": week_start,
-        "department": department,
-        "approved": True,
-    }
+    query: Dict[str, Any] = {"week_start": week_start, "approved": True}
     if exclude:
         query["roster_id"] = {"$ne": exclude}
-    return await scope.rosters.find_one(query)
+    candidates = await scope.rosters.find(query, limit=100)
+    return next((
+        roster for roster in candidates
+        if department_service.matches(roster, department, scope.shop)
+    ), None)
+
+
+async def _department_rosters_for_week(
+    scope: ShopScope, week_start: str, department: str,
+) -> List[Dict[str, Any]]:
+    """Newest first, including legacy rosters with no stored department."""
+    candidates = await scope.rosters.find(
+        {"week_start": week_start}, limit=100, sort=[("created_at", -1)],
+    )
+    return [
+        roster for roster in candidates
+        if department_service.matches(roster, department, scope.shop)
+    ]
 
 
 def _date_for_day(week_start: str, day: str) -> str:
@@ -200,7 +313,8 @@ def _next_version(previous: Dict[str, Any] | None) -> str:
 # ---------------------------------------------------------------------------
 @router.post("/roster/generate")
 async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope):
-    shop = scope.shop
+    department = _selected_department(scope.base_shop, payload.department or scope.department)
+    shop = department_service.effective_shop(scope.base_shop, department)
 
     if config.BILLING_ENFORCED and not scope.user.get("pro"):
         used = await scope.rosters.count()
@@ -216,7 +330,7 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
     # approved rosters — which the solver reads as two weeks that were both
     # worked, doubling that week's pull on every preference weight. Unapprove
     # is the deliberate way back in.
-    settled = await _approved_for_week(scope, payload.week_start, payload.department)
+    settled = await _approved_for_week(scope, payload.week_start, department)
     if settled:
         raise HTTPException(status.HTTP_409_CONFLICT, {
             "message": (
@@ -230,17 +344,15 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
             "approved_roster_id": settled["roster_id"],
         })
 
-    employees = await scope.employees.find(limit=1000)
-    if payload.department:
-        employees = [
-            e for e in employees
-            if payload.department in (e.get("departments") or ["Shop Floor"])
-        ]
+    employees = [
+        department_service.employee_for(e, department)
+        for e in await scope.employees.find(limit=1000)
+        if department in (e.get("departments") or [department_service.DEFAULT_DEPARTMENT])
+    ]
     if not employees:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            f"No employees in {payload.department}." if payload.department
-            else "Add employees before generating a roster.",
+            f"No employees in {department}.",
         )
 
     open_days = [
@@ -257,11 +369,11 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
     # re-solves everyone else around it. Generating fresh keeps nothing.
     locked_shifts = []
     if payload.keep_pinned:
-        current = await scope.rosters.find_one({
-            "week_start": payload.week_start,
-            "department": payload.department,
-            "archived": {"$ne": True},
-        })
+        department_versions = await _department_rosters_for_week(
+            scope, payload.week_start, department,
+        )
+        current = next((r for r in department_versions
+                        if not r.get("archived")), None)
         # Extra shifts are held exactly like pins. They are a decision the
         # manager made for a reason the app cannot see — a delivery, a
         # renovation — and a rebalance that quietly removed them would be
@@ -291,11 +403,19 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
     fixed_shifts = [
         f for f in await scope.fixed_shifts.find(limit=1000)
         if f["employee_id"] in employee_ids
+        and (f.get("department") or department_service.DEFAULT_DEPARTMENT) == department
     ]
-    rules = await scope.ai_rules.find({"enabled": True})
+    rules = department_service.rules_for(
+        await scope.ai_rules.find({"enabled": True}), department,
+    )
 
-    approved = await _approved_rosters(scope)
+    # Learning is department-local. A Deli week must never teach Shop Floor
+    # its headcount, shift shapes, owners or familiarity.
+    approved = await _approved_rosters(scope, department)
     weights = compute_weights(approved)
+    external_shifts = await _external_commitments(
+        scope, payload.week_start, department,
+    )
 
     # Staffing levels are learned from this shop's own recent history: how many
     # people per hour, which roles, and which shift shapes it actually uses.
@@ -328,13 +448,15 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
     training_context = training_evidence.generation_context(
         shop, employees, holidays, fixed_shifts, rules, approved,
         week_start=payload.week_start, seed=seed, only_day=payload.only_day,
-        department=payload.department, locked_shifts=locked_shifts,
+        department=department, locked_shifts=locked_shifts,
+        external_shifts=external_shifts,
         weights=weights, demand=demand,
     )
     result = solve_roster(
         shop, employees, holidays, fixed_shifts, rules, payload.week_start,
         weights, demand, history_rosters=approved,
         locked_shifts=locked_shifts, seed=seed, only_day=payload.only_day,
+        external_shifts=external_shifts,
     )
 
     # The narrative summary is decoration on a complete result. If the model
@@ -351,7 +473,9 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
         except Exception as exc:
             log.warning("AI summary skipped: %s", exc)
 
-    previous = await scope.rosters.find_one({"week_start": payload.week_start})
+    previous = next(iter(await _department_rosters_for_week(
+        scope, payload.week_start, department,
+    )), None)
     roster = await scope.rosters.insert({
         "roster_id": f"rst_{uuid.uuid4().hex[:12]}",
         "week_start": payload.week_start,
@@ -371,15 +495,17 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
         ),
         "ai_summary": ai_summary,
         "approved": False,
-        "department": payload.department,
+        "department": department,
         "created_at": _now(),
     })
 
     await log_activity(
         scope.shop_id, "roster_generated",
-        f"Generated {roster['version']} for week of {payload.week_start}",
+        f"{department}: generated {roster['version']} for week of {payload.week_start}",
     )
-    return _with_current_break_setting(roster, shop, employees)
+    return _with_current_break_setting(
+        roster, shop, employees, external_shifts=external_shifts,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -390,15 +516,29 @@ async def list_rosters(
     scope: ShopScope = CurrentScope,
     limit: int = Query(200, ge=1, le=500),
     skip: int = Query(0, ge=0),
+    all_departments: bool = Query(False),
 ):
     rosters = await scope.rosters.find(
         limit=limit, skip=skip, sort=[("created_at", -1)],
     )
     employees = await scope.employees.find(limit=1000)
-    return [
-        _with_current_break_setting(roster, scope.shop, employees)
-        for roster in rosters
-    ]
+    if not all_departments:
+        rosters = [
+            roster for roster in rosters
+            if department_service.matches(roster, scope.department, scope.base_shop)
+        ]
+    result = []
+    for roster in rosters:
+        department = department_service.roster_department(roster, scope.base_shop)
+        roster_shop = department_service.effective_shop(scope.base_shop, department)
+        external = await _external_commitments(
+            scope, roster.get("week_start"), department,
+            exclude=roster.get("roster_id", ""),
+        )
+        result.append(_with_current_break_setting(
+            roster, roster_shop, employees, external_shifts=external,
+        ))
+    return result
 
 
 @router.get("/rosters/past")
@@ -410,6 +550,10 @@ async def list_past_rosters(
     rosters = await scope.rosters.find(
         {"week_start": {"$lt": today}}, limit=limit, sort=[("week_start", -1)]
     )
+    rosters = [
+        roster for roster in rosters
+        if department_service.matches(roster, scope.department, scope.base_shop)
+    ]
     employees = await scope.employees.find(limit=1000)
     return [
         _with_current_break_setting(roster, scope.shop, employees)
@@ -441,9 +585,12 @@ async def get_roster(roster_id: str, scope: ShopScope = CurrentScope):
     # Not written back. A GET that quietly rewrites the document it was asked
     # for turns a page load into an edit, and `updated_at` would then move
     # every time somebody looked at the week.
+    department = department_service.roster_department(roster, scope.base_shop)
+    roster_shop = department_service.effective_shop(scope.base_shop, department)
+    approved = await _approved_rosters(scope, department)
     uncovered = compliance.uncovered_hours(
-        roster.get("shifts") or [], shop=scope.shop,
-        week_start=roster.get("week_start"), history_rosters=await _approved_rosters(scope))
+        roster.get("shifts") or [], shop=roster_shop,
+        week_start=roster.get("week_start"), history_rosters=approved)
     roster = dict(roster)
     roster["gaps"] = [
         {**gap, "required": 1, "actual": 0, "severity": "uncovered"}
@@ -456,7 +603,12 @@ async def get_roster(roster_id: str, scope: ShopScope = CurrentScope):
         for run in collapse_hour_runs(uncovered)
     ]
     employees = await scope.employees.find(limit=1000)
-    return _with_current_break_setting(roster, scope.shop, employees)
+    external = await _external_commitments(
+        scope, roster.get("week_start"), department, exclude=roster_id,
+    )
+    return _with_current_break_setting(
+        roster, roster_shop, employees, external_shifts=external,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -481,6 +633,9 @@ async def update_roster(
             ],
             "can_unapprove": not _week_has_ended(existing["week_start"]),
         })
+
+    department = department_service.roster_department(existing, scope.base_shop)
+    roster_shop = department_service.effective_shop(scope.base_shop, department)
 
     # The grid sends the whole week back on every edit, but it only knows the
     # seven fields it renders. Derived values — paid_hours, the break, a leave
@@ -521,13 +676,44 @@ async def update_roster(
                 "break_minutes": break_minutes(span),
                 "paid_hours": round(paid_hours(
                     data["start"], data["end"],
-                    breaks_paid=shop_breaks_paid(scope.shop),
+                    breaks_paid=shop_breaks_paid(roster_shop),
                 ), 2),
             })
             # A work shift cannot inherit a leave label from whatever used to
             # occupy this slot.
             record.pop("label", None)
         shifts.append(record)
+
+    external_shifts = await _external_commitments(
+        scope, existing["week_start"], department, exclude=roster_id,
+    )
+    external_by_person_day = {
+        (shift.get("employee_id"), shift.get("day")): shift
+        for shift in external_shifts
+    }
+    employees = _department_employees(
+        await scope.employees.find(limit=1000), department,
+    )
+    employees_by_id = {employee["employee_id"]: employee for employee in employees}
+    clashes = []
+    for shift in shifts:
+        if shift.get("paid_holiday") or shift.get("unpaid_holiday") or shift.get("sick"):
+            continue
+        other = external_by_person_day.get((shift.get("employee_id"), shift.get("day")))
+        if not other:
+            continue
+        employee = employees_by_id.get(shift.get("employee_id"), {})
+        clashes.append(
+            f"{employee.get('name', 'This employee')} is already working in "
+            f"{other.get('department')} on {shift.get('day')} "
+            f"({other.get('start')}-{other.get('end')})."
+        )
+    if clashes:
+        raise HTTPException(status.HTTP_409_CONFLICT, {
+            "code": "other_department_shift",
+            "message": "This employee is already rostered in another group that day.",
+            "reasons": clashes,
+        })
 
     # A hand-edited roster is held to the same rules as a generated one, but
     # only for what the edit actually changes.
@@ -538,15 +724,16 @@ async def update_roster(
     # there, that the swap did not cause, and that the swap cannot fix. Small
     # tweaks are how a roster gets finished, so the question is "does this
     # make anything worse", not "is everything already perfect".
-    employees = await scope.employees.find(limit=1000)
     holidays = await scope.holidays.find(limit=1000)
-    approved = await _approved_rosters(scope)
-    active_rules = await scope.ai_rules.find({"enabled": True}, limit=200)
+    approved = await _approved_rosters(scope, department)
+    active_rules = department_service.rules_for(
+        await scope.ai_rules.find({"enabled": True}, limit=200), department,
+    )
 
     def check(candidate):
         return validate_shifts(
             candidate,
-            shop=scope.shop,
+            shop=roster_shop,
             employees=employees,
             holidays=holidays,
             week_start=existing["week_start"],
@@ -556,6 +743,28 @@ async def update_roster(
 
     before = check(existing.get("shifts", []))
     verdict = check(shifts)
+
+    # Hours, days and rest apply across the shop. Check those again with the
+    # other departments present, while leaving department coverage/closing
+    # rules to the current roster alone.
+    combined_before = validate_shifts(
+        [*(existing.get("shifts") or []), *external_shifts],
+        shop=roster_shop, employees=employees, holidays=holidays,
+        week_start=existing["week_start"], history_rosters=approved,
+        ai_rules=[], include_roster_rules=False,
+    )
+    combined_after = validate_shifts(
+        [*shifts, *external_shifts],
+        shop=roster_shop, employees=employees, holidays=holidays,
+        week_start=existing["week_start"], history_rosters=approved,
+        ai_rules=[], include_roster_rules=False,
+    )
+    for problem in combined_after.blocking:
+        if problem not in combined_before.blocking and problem not in verdict.blocking:
+            verdict.blocking.append(problem)
+    for warning in combined_after.warnings:
+        if warning not in combined_before.warnings and warning not in verdict.warnings:
+            verdict.warnings.append(warning)
 
     # Counted rather than set-differenced, so going from one breach to two of
     # the same kind is still caught.
@@ -598,7 +807,7 @@ async def update_roster(
     pre_existing = [p for p in verdict.blocking if p not in introduced]
 
     rates = {e["employee_id"]: e.get("hourly_rate", 0) for e in employees}
-    breaks_paid = shop_breaks_paid(scope.shop)
+    breaks_paid = shop_breaks_paid(roster_shop)
     # Paid hours, matching how the solver costs a roster. Paid holiday still
     # costs wages; whether work breaks are paid is this shop's setting.
     labor_cost = sum(
@@ -612,7 +821,7 @@ async def update_roster(
     )
 
     uncovered = compliance.uncovered_hours(
-        shifts, shop=scope.shop, week_start=existing.get("week_start"), history_rosters=approved)
+        shifts, shop=roster_shop, week_start=existing.get("week_start"), history_rosters=approved)
 
     await scope.rosters.update_one({"roster_id": roster_id}, {
         "shifts": shifts,
@@ -653,7 +862,9 @@ async def update_roster(
     # What THIS edit caused, so the UI can name it rather than showing the
     # week's whole backlog of problems after every keystroke.
     return {
-        **_with_current_break_setting(saved, scope.shop, employees),
+        **_with_current_break_setting(
+            saved, roster_shop, employees, external_shifts=external_shifts,
+        ),
         "introduced": introduced,
     }
 
@@ -678,18 +889,30 @@ async def suggest_for_gap(
     if not roster:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Roster not found")
 
-    employees = await scope.employees.find(limit=1000)
-    approved = await _approved_rosters(scope)
+    department = department_service.roster_department(roster, scope.base_shop)
+    roster_shop = department_service.effective_shop(scope.base_shop, department)
+    employees = _department_employees(
+        await scope.employees.find(limit=1000), department, members_only=True,
+    )
+    approved = await _approved_rosters(scope, department)
     week_start = roster["week_start"]
-    active_rules = await scope.ai_rules.find({"enabled": True}, limit=200)
+    active_rules = department_service.rules_for(
+        await scope.ai_rules.find({"enabled": True}, limit=200), department,
+    )
+    external_shifts = await _external_commitments(
+        scope, week_start, department, exclude=roster_id,
+    )
 
     taken = {
         s["employee_id"] for s in roster.get("shifts", [])
         if s.get("day") == day
     }
+    taken.update(
+        s["employee_id"] for s in external_shifts if s.get("day") == day
+    )
 
     candidates = []
-    for employee in sort_employees(employees, scope.shop):
+    for employee in sort_employees(employees, roster_shop):
         # Each candidate is scored against the same rules the solver uses,
         # then reported with whatever it would have objected to.
         proposed = [
@@ -700,13 +923,13 @@ async def suggest_for_gap(
             "start": start, "end": end,
         }]
         verdict = validate_shifts(
-            proposed,
-            shop=scope.shop,
+            [*proposed, *external_shifts],
+            shop=roster_shop,
             employees=employees,
             holidays=await scope.holidays.find(limit=1000),
             week_start=week_start,
             history_rosters=approved,
-            ai_rules=active_rules,
+            ai_rules=active_rules, include_roster_rules=False,
         )
         mine = [
             m for m in verdict.blocking + verdict.warnings
@@ -742,25 +965,40 @@ async def audit_roster(roster_id: str, scope: ShopScope = CurrentScope):
     if not roster:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Roster not found")
 
-    employees = await scope.employees.find(limit=1000)
+    department = department_service.roster_department(roster, scope.base_shop)
+    roster_shop = department_service.effective_shop(scope.base_shop, department)
+    employees = _department_employees(
+        await scope.employees.find(limit=1000), department,
+    )
     holidays = await scope.holidays.find(limit=1000)
-    active_rules = await scope.ai_rules.find({"enabled": True}, limit=200)
+    active_rules = department_service.rules_for(
+        await scope.ai_rules.find({"enabled": True}, limit=200), department,
+    )
+    external_shifts = await _external_commitments(
+        scope, roster["week_start"], department, exclude=roster_id,
+    )
     breaches = compliance.audit(
         roster.get("shifts") or [],
-        shop=scope.shop,
+        shop=roster_shop,
         employees=employees,
         week_start=roster["week_start"],
         holidays=holidays,
         ai_rules=active_rules,
     )
+    combined_breaches = compliance.audit(
+        [*(roster.get("shifts") or []), *external_shifts],
+        shop=roster_shop, employees=employees, week_start=roster["week_start"],
+        holidays=holidays, ai_rules=[],
+    )
+    breaches = _merge_shop_wide_breaches(breaches, combined_breaches)
 
     # How this week compares to the shape the shop normally runs. Separate
     # from breaches on purpose: a rule being broken is a fact about the law
     # or a contract, whereas running two fewer people on a Tuesday evening is
     # a decision. Mixing them would make one look like the other.
-    approved = await _approved_rosters(scope)
+    approved = await _approved_rosters(scope, department)
     profile = build_profile(
-        scope.shop, approved,
+        roster_shop, approved,
         {e["employee_id"]: e.get("role", "") for e in employees},
         for_week=roster["week_start"],
     )
@@ -774,9 +1012,9 @@ async def audit_roster(roster_id: str, scope: ShopScope = CurrentScope):
     # Same function the solver calls, so the generator and this page cannot
     # give two different answers for one week.
     contract_gaps = compliance.under_contract(
-        roster.get("shifts") or [],
+        [*(roster.get("shifts") or []), *external_shifts],
         employees=employees,
-        shop=scope.shop,
+        shop=roster_shop,
         week_start=roster["week_start"],
         holidays=holidays,
     )
@@ -862,16 +1100,34 @@ async def approve_roster(
     # it is accounted for. A week with breaches can still become real, but only
     # deliberately, by somebody who proves who they are — and the log records
     # what they overrode.
-    approval_employees = await scope.employees.find(limit=1000)
+    department = department_service.roster_department(roster, scope.base_shop)
+    roster_shop = department_service.effective_shop(scope.base_shop, department)
+    approval_employees = _department_employees(
+        await scope.employees.find(limit=1000), department,
+    )
     approval_holidays = await scope.holidays.find(limit=1000)
-    approval_rules = await scope.ai_rules.find({"enabled": True}, limit=200)
+    approval_rules = department_service.rules_for(
+        await scope.ai_rules.find({"enabled": True}, limit=200), department,
+    )
+    external_shifts = await _external_commitments(
+        scope, roster["week_start"], department, exclude=roster_id,
+    )
     breaches = compliance.audit(
         roster.get("shifts") or [],
-        shop=scope.shop,
+        shop=roster_shop,
         employees=approval_employees,
         week_start=roster["week_start"],
         holidays=approval_holidays,
         ai_rules=approval_rules,
+    )
+    breaches = _merge_shop_wide_breaches(
+        breaches,
+        compliance.audit(
+            [*(roster.get("shifts") or []), *external_shifts],
+            shop=roster_shop, employees=approval_employees,
+            week_start=roster["week_start"], holidays=approval_holidays,
+            ai_rules=[],
+        ),
     )
     hard = compliance.blocking(breaches)
     if hard:
@@ -908,8 +1164,9 @@ async def approve_roster(
     #
     # §5, and the audit immediately above was already doing it correctly.
     empty = compliance.uncovered_hours(
-        roster.get("shifts") or [], shop=scope.shop,
-        week_start=roster.get("week_start"), history_rosters=await _approved_rosters(scope))
+        roster.get("shifts") or [], shop=roster_shop,
+        week_start=roster.get("week_start"),
+        history_rosters=await _approved_rosters(scope, department))
     if empty and not acknowledge_gaps:
         windows = ", ".join(f"{g['day']} {g['window']}" for g in empty[:4])
         more = f" and {len(empty) - 4} more" if len(empty) > 4 else ""
@@ -926,19 +1183,21 @@ async def approve_roster(
     approval_fixed_shifts = [
         fixed for fixed in await scope.fixed_shifts.find(limit=1000)
         if fixed.get("employee_id") in approval_employee_ids
+        and (fixed.get("department") or department_service.DEFAULT_DEPARTMENT) == department
     ]
     approval_context = training_evidence.context(
-        scope.shop, approval_employees, approval_holidays,
+        roster_shop, approval_employees, approval_holidays,
         approval_fixed_shifts,
         approval_rules,
         week_start=roster["week_start"],
     )
-    superseded = await scope.rosters.find({
-        "week_start": roster["week_start"],
-        "department": roster.get("department"),
-        "roster_id": {"$ne": roster_id},
-        "approved": {"$ne": True},
-    }, limit=100)
+    superseded = [
+        candidate for candidate in await _department_rosters_for_week(
+            scope, roster["week_start"], department,
+        )
+        if candidate.get("roster_id") != roster_id
+        and not candidate.get("approved")
+    ]
 
     for draft in superseded:
         await scope.rosters.update_one({"roster_id": draft["roster_id"]}, {
@@ -968,10 +1227,10 @@ async def approve_roster(
             final_shifts=roster.get("shifts") or [], corrections=changes,
             forced=forced, uncovered_hours=empty, breaches=breaches,
             constraint_result=training_evidence.constraint_outcome(
-                roster.get("shifts") or [], shop=scope.shop,
+                roster.get("shifts") or [], shop=roster_shop,
                 employees=approval_employees, holidays=approval_holidays,
                 week_start=roster["week_start"],
-                history_rosters=await _approved_rosters(scope),
+                history_rosters=await _approved_rosters(scope, department),
                 ai_rules=approval_rules,
             ),
         ),
@@ -1000,13 +1259,13 @@ async def approve_roster(
     if forced:
         await log_activity(
             scope.shop_id, "roster_force_approved",
-            f"{scope.user.get('email')} force-approved week of "
+            f"{department}: {scope.user.get('email')} force-approved week of "
             f"{roster['week_start']} with {len(breaches)} rule(s) broken"
             + (f" — {payload.reason}" if payload and payload.reason else ""),
         )
     await log_activity(
         scope.shop_id, "roster_approved",
-        f"Approved {roster['version']} for week of {roster['week_start']} "
+        f"{department}: approved {roster['version']} for week of {roster['week_start']} "
         f"({len(superseded)} draft(s) archived)"
         + (f" — ACCEPTING {len(empty)} uncovered hour(s)" if empty else ""),
     )
@@ -1045,14 +1304,24 @@ async def cover_options(
             status.HTTP_404_NOT_FOUND, f"No shift for that person on {day}."
         )
 
-    employees = await scope.employees.find(limit=1000)
+    department = department_service.roster_department(roster, scope.base_shop)
+    roster_shop = department_service.effective_shop(scope.base_shop, department)
+    employees = _department_employees(
+        await scope.employees.find(limit=1000), department, members_only=True,
+    )
     holidays = await scope.holidays.find(limit=1000)
-    approved = await _approved_rosters(scope)
+    approved = await _approved_rosters(scope, department)
+    external_shifts = await _external_commitments(
+        scope, roster["week_start"], department, exclude=roster_id,
+    )
+    roster_with_commitments = {
+        **roster, "shifts": [*(roster.get("shifts") or []), *external_shifts],
+    }
 
     return sick_cover.rank_cover(
-        shop=scope.shop,
+        shop=roster_shop,
         employees=employees,
-        roster=roster,
+        roster=roster_with_commitments,
         absent_id=employee_id,
         day=day,
         start=shift["start"],
@@ -1116,6 +1385,24 @@ async def report_sick(
         cover = employees.get(payload.cover_employee_id)
         if not cover:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "No such employee to cover.")
+
+        department = department_service.roster_department(roster, scope.base_shop)
+        external = await _external_commitments(
+            scope, roster["week_start"], department, exclude=roster_id,
+        )
+        other = next((
+            shift for shift in external
+            if shift.get("employee_id") == payload.cover_employee_id
+            and shift.get("day") == payload.day
+        ), None)
+        if other:
+            raise HTTPException(status.HTTP_409_CONFLICT, {
+                "message": f"{cover.get('name')} is already working in "
+                           f"{other.get('department')} that day.",
+                "reasons": [
+                    f"{other.get('department')}: {other.get('start')}-{other.get('end')}"
+                ],
+            })
 
         clash = [
             s for s in shifts
@@ -1471,7 +1758,11 @@ async def dispatch_roster(roster_id: str, scope: ShopScope = CurrentScope):
     if not roster:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Roster not found")
 
-    employees = await scope.employees.find(limit=1000)
+    department = department_service.roster_department(roster, scope.base_shop)
+    roster_shop = department_service.effective_shop(scope.base_shop, department)
+    employees = _department_employees(
+        await scope.employees.find(limit=1000), department, members_only=True,
+    )
 
     # Imported staff have no email — a spreadsheet does not carry one. They
     # are named back to the manager rather than counted as sent, because a
@@ -1491,8 +1782,8 @@ async def dispatch_roster(roster_id: str, scope: ShopScope = CurrentScope):
     ]
 
     outcome = await mailer.send_roster_emails(
-        scope.shop.get("name", "Your shop"), roster["week_start"],
-        recipients, bool(scope.shop.get("breaks_are_paid")),
+        roster_shop.get("name", "Your shop"), roster["week_start"],
+        recipients, bool(roster_shop.get("breaks_are_paid")),
     )
     outcome["no_email"] = no_address
 
@@ -1500,21 +1791,22 @@ async def dispatch_roster(roster_id: str, scope: ShopScope = CurrentScope):
     # manager, a franchise owner. Reported under its own key so a boss who
     # did not receive their copy is not hidden inside the staff counts.
     outcome["observers"] = await mailer.send_shop_roster(
-        scope.shop.get("name", "Your shop"), roster["week_start"],
+        roster_shop.get("name", "Your shop"), roster["week_start"],
         [
             {"name": e["name"], "role": e.get("role", ""),
              "shifts": [s for s in roster.get("shifts", [])
                         if s["employee_id"] == e["employee_id"]]}
             for e in employees
         ],
-        [dict(r) for r in (scope.shop.get("roster_recipients") or [])],
-        bool(scope.shop.get("breaks_are_paid")),
+        [dict(r) for r in (roster_shop.get("roster_recipients") or [])],
+        bool(roster_shop.get("breaks_are_paid")),
     )
 
     await scope.rosters.update_one({"roster_id": roster_id}, {"dispatched_at": _now()})
     await log_activity(
         scope.shop_id, "roster_dispatched",
-        f"Dispatched {roster.get('version')} — {len(outcome['sent'])} sent, "
+        f"{department_service.roster_department(roster, scope.base_shop)}: "
+        f"dispatched {roster.get('version')} — {len(outcome['sent'])} sent, "
         f"{len(outcome['failed'])} failed",
     )
     return {**outcome, "total": len(recipients)}
