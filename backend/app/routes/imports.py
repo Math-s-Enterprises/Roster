@@ -11,11 +11,12 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 
 from app import db
 from app.services import file_import, hierarchy, llm
+from app.services import departments as department_service
 from app.services.learning import training_summary
 from app.services.scheduler import shift_duration_minutes
 from app.services.shop_service import log_activity
@@ -84,6 +85,7 @@ def _map_role(raw: Optional[str], shop: Optional[Dict[str, Any]] = None) -> str:
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def upload_roster_file(
     file: UploadFile = File(...),
+    department: Optional[str] = Form(None),
     week_start: Optional[str] = Form(
         None,
         description="Monday to assign to any week the file itself does not date. "
@@ -92,6 +94,15 @@ async def upload_roster_file(
     scope: ShopScope = CurrentScope,
 ):
     """Parse an uploaded roster and store it for review. Imports nothing."""
+    configured = department_service.names(scope.shop)
+    if scope.shop.get("multi_department") and not department:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "Choose the roster group this file belongs to.")
+    department = department or configured[0]
+    if department not in configured:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"Unknown roster group: {department}.")
+    import_shop = department_service.effective_shop(scope.base_shop, department)
     data = await file.read()
 
     employees = await scope.employees.find(limit=1000)
@@ -136,14 +147,18 @@ async def upload_roster_file(
 
     # Match sheet names against existing staff so the review screen can show
     # who is already known and who would be created.
-    existing = {e["name"].strip().lower(): e for e in employees}
+    existing = {
+        e["name"].strip().lower(): e for e in employees
+        if department in (e.get("departments")
+                          or [department_service.DEFAULT_DEPARTMENT])
+    }
     people = {}
     for week in usable:
         for name, role in week.employees.items():
             match = existing.get(name.strip().lower())
             people.setdefault(name, {
                 "name": name,
-                "role": _map_role(role, scope.shop),
+                "role": _map_role(role, import_shop),
                 # Shown alongside so the manager can see when the sheet's
                 # wording and the shop's ladder disagree, before committing.
                 "role_in_file": (role or "").strip() or None,
@@ -158,6 +173,7 @@ async def upload_roster_file(
     already = {
         r["week_start"]
         for r in await scope.rosters.find({"historical": True}, limit=500)
+        if department_service.matches(r, department, scope.shop)
     }
 
     import_id = f"imp_{uuid.uuid4().hex[:12]}"
@@ -170,6 +186,7 @@ async def upload_roster_file(
         "notes": result.notes,
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
         "committed": False,
+        "department": department,
         "weeks": [w.to_dict() for w in usable],
     }
     await scope.imports.insert(document)
@@ -178,6 +195,7 @@ async def upload_roster_file(
         "import_id": import_id,
         "filename": file.filename,
         "kind": result.kind,
+        "department": department,
         "pages": result.pages,
         # Photos and PDFs are a model's reading of a picture; spreadsheets are
         # parsed exactly. The UI uses this to decide how loudly to warn.
@@ -273,6 +291,7 @@ async def _write_week(
     week: Dict[str, Any],
     name_to_id: Dict[str, str],
     import_id: str,
+    department: str,
 ) -> tuple[bool, int]:
     """Turn one parsed week into a historical roster.
 
@@ -318,6 +337,7 @@ async def _write_week(
         "approved": True,
         "historical": True,
         "source_import": import_id,
+        "department": department,
         "source_sheet": week.get("sheet_name"),
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
@@ -335,6 +355,9 @@ async def commit_import(
     if record.get("committed"):
         raise HTTPException(status.HTTP_409_CONFLICT, "That import has already been applied.")
 
+    department = record.get("department") or department_service.DEFAULT_DEPARTMENT
+    import_shop = department_service.effective_shop(scope.base_shop, department)
+
     weeks = record.get("weeks", [])
     if payload.week_starts is not None:
         wanted = set(payload.week_starts)
@@ -342,10 +365,38 @@ async def commit_import(
     if not weeks:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No weeks selected.")
 
+    employee_records = await scope.employees.find(limit=1000)
     existing = {
-        e["name"].strip().lower(): e["employee_id"]
-        for e in await scope.employees.find(limit=1000)
+        e["name"].strip().lower(): e for e in employee_records
+        if department in (e.get("departments")
+                          or [department_service.DEFAULT_DEPARTMENT])
     }
+
+    async def add_membership(employee_id: str, raw_role: Optional[str] = None) -> None:
+        employee = next((e for e in employee_records
+                         if e.get("employee_id") == employee_id), None)
+        if not employee:
+            return
+        memberships = list(employee.get("departments") or [department_service.DEFAULT_DEPARTMENT])
+        changed = False
+        if department not in memberships:
+            memberships.append(department)
+            changed = True
+        department_roles = dict(employee.get("department_roles") or {})
+        if department not in department_roles:
+            department_roles[department] = _map_role(
+                raw_role or employee.get("role"), import_shop,
+            )
+            changed = True
+        if changed:
+            await scope.employees.update_one(
+                {"employee_id": employee_id}, {
+                    "departments": memberships,
+                    "department_roles": department_roles,
+                },
+            )
+            employee["departments"] = memberships
+            employee["department_roles"] = department_roles
 
     # Resolve every name to an employee id before writing any roster, so a
     # half-mapped import cannot produce shifts pointing at nobody.
@@ -374,10 +425,14 @@ async def commit_import(
             chosen = payload.employee_map.get(name)
             if chosen:
                 name_to_id[name] = chosen
+                await add_membership(chosen, roles.get(name) or entry.get("role"))
                 continue
             match = existing.get(name.strip().lower())
             if match:
-                name_to_id[name] = match
+                name_to_id[name] = match["employee_id"]
+                await add_membership(
+                    match["employee_id"], roles.get(name) or entry.get("role"),
+                )
                 continue
             is_leaver = name.strip().lower() in leavers
             if payload.skip_unmapped and not is_leaver and name not in payload.employee_map:
@@ -387,12 +442,17 @@ async def commit_import(
                 "employee_id": employee_id,
                 "name": name,
                 "email": None,
-                "role": _map_role(roles.get(name) or entry.get("role"), scope.shop),
+                "role": _map_role(roles.get(name) or entry.get("role"), import_shop),
                 "age": DEFAULT_AGE,
                 "hourly_rate": DEFAULT_RATE,
                 "max_weekly_hours": DEFAULT_MAX_WEEKLY_HOURS,
                 "preferred_days_off": [],
-                "departments": ["Shop Floor"],
+                "departments": [department],
+                "department_roles": {
+                    department: _map_role(
+                        roles.get(name) or entry.get("role"), import_shop,
+                    )
+                },
                 "imported": True,
                 "is_active": not is_leaver,
                 "past_staff": is_leaver,
@@ -406,6 +466,7 @@ async def commit_import(
     already = {
         r["week_start"]
         for r in await scope.rosters.find({"historical": True}, limit=500)
+        if department_service.matches(r, department, scope.shop)
     }
 
     imported, skipped_weeks, skipped_shifts = 0, 0, 0
@@ -414,7 +475,9 @@ async def commit_import(
             skipped_weeks += 1
             continue
 
-        written, dropped = await _write_week(scope, week, name_to_id, import_id)
+        written, dropped = await _write_week(
+            scope, week, name_to_id, import_id, department,
+        )
         skipped_shifts += dropped
         if written:
             imported += 1
@@ -448,7 +511,9 @@ async def discard_import(import_id: str, scope: ShopScope = CurrentScope):
 
 
 @router.get("/history")
-async def list_imported_weeks(scope: ShopScope = CurrentScope):
+async def list_imported_weeks(
+    department: Optional[str] = Query(None), scope: ShopScope = CurrentScope,
+):
     """The weeks that came from an upload, newest first.
 
     Kept separate from the roster history proper because these are the only
@@ -457,6 +522,9 @@ async def list_imported_weeks(scope: ShopScope = CurrentScope):
     rosters = await scope.rosters.find(
         {"historical": True}, limit=500, sort=[("week_start", -1)]
     )
+    if department:
+        rosters = [r for r in rosters
+                   if department_service.matches(r, department, scope.shop)]
     return [
         {
             "roster_id": r["roster_id"],
@@ -466,6 +534,7 @@ async def list_imported_weeks(scope: ShopScope = CurrentScope):
             "source_sheet": r.get("source_sheet"),
             "source_import": r.get("source_import"),
             "created_at": r.get("created_at"),
+            "department": department_service.roster_department(r, scope.shop),
         }
         for r in rosters
     ]
@@ -527,6 +596,7 @@ async def remove_imported_week(roster_id: str, scope: ShopScope = CurrentScope):
             ]
             removed.append({
                 "week_start": roster["week_start"],
+                "department": department_service.roster_department(roster, scope.shop),
                 "removed_at": datetime.now(timezone.utc).isoformat(),
             })
             await scope.imports.update_one(
@@ -547,15 +617,18 @@ async def remove_imported_week(roster_id: str, scope: ShopScope = CurrentScope):
 
 
 @router.get("/removed")
-async def list_removed_weeks(scope: ShopScope = CurrentScope):
+async def list_removed_weeks(
+    department: Optional[str] = Query(None), scope: ShopScope = CurrentScope,
+):
     """Weeks taken out of the history that the source upload can still put back.
 
     Computed by checking each noted removal against what is in the history
     now, rather than trusting the note alone — a week re-imported by
     re-uploading the file must stop being offered here.
     """
+    requested_department = department
     live = {
-        r["week_start"]
+        (r["week_start"], department_service.roster_department(r, scope.shop))
         for r in await scope.rosters.find({"historical": True}, limit=500)
     }
 
@@ -564,7 +637,11 @@ async def list_removed_weeks(scope: ShopScope = CurrentScope):
         weeks = {w.get("week_start"): w for w in record.get("weeks", [])}
         for note in record.get("removed_weeks", []):
             week = weeks.get(note.get("week_start"))
-            if not week or note["week_start"] in live:
+            row_department = note.get("department") or record.get("department") \
+                or department_service.DEFAULT_DEPARTMENT
+            if not week or (note["week_start"], row_department) in live:
+                continue
+            if requested_department and row_department != requested_department:
                 continue
             out.append({
                 "import_id": record["import_id"],
@@ -573,6 +650,7 @@ async def list_removed_weeks(scope: ShopScope = CurrentScope):
                 "shifts": len(week.get("shifts", [])),
                 "sheet_name": week.get("sheet_name"),
                 "filename": record.get("filename"),
+                "department": row_department,
             })
 
     return sorted(out, key=lambda w: w["week_start"], reverse=True)
@@ -616,19 +694,21 @@ async def restore_removed_week(
             f"That upload does not contain the week of {payload.week_start}.",
         )
 
-    clash = await scope.rosters.find_one({
+    department = record.get("department") or department_service.DEFAULT_DEPARTMENT
+    import_shop = department_service.effective_shop(scope.base_shop, department)
+    clashes = await scope.rosters.find({
         "week_start": payload.week_start, "historical": True,
-    })
+    }, limit=100)
+    clash = next((r for r in clashes
+                  if department_service.matches(r, department, scope.shop)), None)
     if clash:
         raise HTTPException(status.HTTP_409_CONFLICT, {
             "message": f"Week of {payload.week_start} is already in your history.",
             "reasons": ["Remove the one that is there before restoring this one."],
         })
 
-    existing = {
-        e["name"].strip().lower(): e["employee_id"]
-        for e in await scope.employees.find(limit=1000)
-    }
+    employee_records = await scope.employees.find(limit=1000)
+    existing = {e["name"].strip().lower(): e for e in employee_records}
     name_to_id: Dict[str, str] = {}
     created: List[str] = []
     for entry in week.get("employees", []):
@@ -637,26 +717,49 @@ async def restore_removed_week(
             continue
         match = existing.get(name.strip().lower())
         if match:
-            name_to_id[name] = match
+            name_to_id[name] = match["employee_id"]
+            memberships = list(
+                match.get("departments") or [department_service.DEFAULT_DEPARTMENT]
+            )
+            department_roles = dict(match.get("department_roles") or {})
+            changed = False
+            if department not in memberships:
+                memberships.append(department)
+                changed = True
+            if department not in department_roles:
+                department_roles[department] = _map_role(
+                    entry.get("role") or match.get("role"), import_shop,
+                )
+                changed = True
+            if changed:
+                await scope.employees.update_one(
+                    {"employee_id": match["employee_id"]}, {
+                        "departments": memberships,
+                        "department_roles": department_roles,
+                    },
+                )
             continue
         employee_id = f"emp_{uuid.uuid4().hex[:12]}"
         await scope.employees.insert({
             "employee_id": employee_id,
             "name": name,
             "email": None,
-            "role": _map_role(entry.get("role"), scope.shop),
+            "role": _map_role(entry.get("role"), import_shop),
             "age": DEFAULT_AGE,
             "hourly_rate": DEFAULT_RATE,
             "max_weekly_hours": DEFAULT_MAX_WEEKLY_HOURS,
             "preferred_days_off": [],
-            "departments": ["Shop Floor"],
+            "departments": [department],
+            "department_roles": {
+                department: _map_role(entry.get("role"), import_shop)
+            },
             "imported": True,
         })
         name_to_id[name] = employee_id
         created.append(name)
 
     written, dropped = await _write_week(
-        scope, week, name_to_id, payload.import_id
+        scope, week, name_to_id, payload.import_id, department,
     )
     if not written:
         raise HTTPException(
@@ -685,7 +788,9 @@ async def restore_removed_week(
 
 # Declared last so the literal path is not swallowed by "/{import_id}".
 @router.get("/learning-summary")
-async def learning_summary(scope: ShopScope = CurrentScope):
+async def learning_summary(
+    department: Optional[str] = Query(None), scope: ShopScope = CurrentScope,
+):
     """How much history the solver currently has to learn from.
 
     Lives with importing because that is the only thing that changes it, and
@@ -693,4 +798,7 @@ async def learning_summary(scope: ShopScope = CurrentScope):
     actually give the roster more to go on?
     """
     approved = [r async for r in scope.rosters.stream({"approved": True})]
+    if department:
+        approved = [r for r in approved
+                    if department_service.matches(r, department, scope.shop)]
     return training_summary(approved)

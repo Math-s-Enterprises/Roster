@@ -2311,6 +2311,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .wr-cell[data-kind="ai"] { background: var(--t-shift-solver); color: var(--t-shift-solver-ink); }
 .wr-cell[data-kind="unsocial"] { background: var(--t-shift-night); color: var(--t-shift-night-ink); }
 .wr-cell[data-kind="leave"] { border: 1px solid var(--t-input); color: var(--t-muted); background: transparent; }
+.wr-cell[data-kind="external"] { border: 1px solid var(--t-warn); color: var(--t-warn); background: transparent; cursor: not-allowed; }
 .wr-cell[data-kind="empty"] { border: 1px dashed var(--t-hairline); background: transparent; color: var(--t-faint); }
 .wr-cell[data-kind="empty"]:hover { border-color: var(--t-focus); color: var(--t-accent); }
 .wr-cell[data-kind="template"]:hover, .wr-cell[data-kind="ai"]:hover, .wr-cell[data-kind="unsocial"]:hover {
@@ -2351,6 +2352,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .wr-dayline-time[data-kind="ai"] { color: var(--t-shift-solver-text); }
 .wr-dayline-time[data-kind="unsocial"] { color: var(--t-shift-night-text); }
 .wr-dayline-time[data-kind="leave"] { color: var(--t-muted); }
+.wr-dayline-time[data-kind="external"] { color: var(--t-warn); }
 
 /* Share + versions ------------------------------------------------ */
 .wr-share {
@@ -3783,6 +3785,17 @@ label.ss-label-tight { letter-spacing: .04em; }
 }
 .nv-brand-name { font-size: 16.5px; font-weight: 800; letter-spacing: -.02em; color: var(--t-ink); }
 .nv-brand-sub { font-size: 12.5px; color: var(--t-muted); }
+.nv-workspace {
+  display: grid; gap: 6px; padding: 0 14px 14px;
+  color: var(--t-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+}
+.nv-workspace select {
+  width: 100%; min-width: 0; padding: 8px 9px;
+  border: 1px solid var(--t-hairline); border-radius: 8px;
+  background: var(--t-input); color: var(--t-ink);
+  font-family: inherit; font-size: 12px; font-weight: 600;
+  text-transform: none; letter-spacing: 0;
+}
 
 /* Nav -------------------------------------------------------------- */
 .nv-nav { flex: 1; overflow-y: auto; scrollbar-width: thin; }

@@ -526,6 +526,7 @@ class _RosterBuilder:
         locked_shifts: Optional[List[Dict[str, Any]]] = None,
         seed: Optional[int] = None,
         only_day: Optional[str] = None,
+        external_shifts: Optional[List[Dict[str, Any]]] = None,
     ):
         # Re-solve ONE day and leave the rest of the week exactly as it is.
         #
@@ -556,6 +557,17 @@ class _RosterBuilder:
         for shift in locked_shifts or []:
             if shift.get("day") and shift.get("start") and shift.get("end"):
                 self.locked_by_day.setdefault(shift["day"], []).append(shift)
+
+        # Work already assigned on another department roster. It reserves the
+        # person and consumes their shop-wide hours/rest/day limits, but it is
+        # never counted as coverage or output on this department's roster.
+        self.external_shifts = [
+            dict(shift) for shift in (external_shifts or [])
+            if shift.get("employee_id") and shift.get("day")
+            and shift.get("start") and shift.get("end")
+            and not (shift.get("paid_holiday") or shift.get("unpaid_holiday")
+                     or shift.get("sick"))
+        ]
 
         self.shop = shop
         self.employees = employees
@@ -1312,7 +1324,7 @@ class _RosterBuilder:
         new_start, new_end = self._week_span(day, start, end)
         required = self.min_rest_hours * 60
 
-        for shift in self.result.shifts:
+        for shift in [*self.result.shifts, *self.external_shifts]:
             if shift.get("employee_id") != employee_id:
                 continue
             if not (shift.get("start") and shift.get("end")):
@@ -2226,6 +2238,35 @@ class _RosterBuilder:
                 pinned=True, **({"extra": True} if shift.get("extra") else {}),
             )
             assigned_today.add(employee_id)
+
+    def _apply_external_commitments(self, day: str, assigned_today: Set[str]) -> None:
+        """Reserve people already working in another department this day."""
+        for shift in self.external_shifts:
+            if shift.get("day") != day:
+                continue
+            employee_id = shift.get("employee_id")
+            if employee_id not in self.employees_by_id or employee_id in assigned_today:
+                continue
+            assigned_today.add(employee_id)
+            department = shift.get("department") or "another roster group"
+            self._note_exclusion(
+                employee_id,
+                f"Already working in {department} on {day} "
+                f"({shift['start']}-{shift['end']}).",
+            )
+
+    def _seed_external_hours(self) -> None:
+        """Count other departments once, including days this group is closed."""
+        for shift in self.external_shifts:
+            employee_id = shift.get("employee_id")
+            if employee_id not in self.employees_by_id:
+                continue
+            span = shift_duration_minutes(shift["start"], shift["end"]) / 60
+            self.hours_used[employee_id] += paid_hours(
+                shift["start"], shift["end"], breaks_paid=self.breaks_paid,
+            )
+            self.span_used[employee_id] += span
+            self.days_worked.setdefault(employee_id, set()).add(shift["day"])
 
     def _apply_fixed_shifts(self, day: str, date_iso: str, assigned_today: Set[str]) -> None:
         """Honour recurring fixed shifts before any automatic assignment.
@@ -3560,6 +3601,7 @@ class _RosterBuilder:
           3. then report whatever is still short
         """
         self._warn_on_oversubscribed_days()
+        self._seed_external_hours()
         trading = self._trading_days()
         # Every day is still SET UP — leave, pins and fixed shifts are applied
         # across the week, so hours and rest gaps are counted against the real
@@ -3580,6 +3622,7 @@ class _RosterBuilder:
 
             assigned_today: Set[str] = set()
             assigned_by_day[day] = assigned_today
+            self._apply_external_commitments(day, assigned_today)
             self._apply_leave(day, date_iso, assigned_today)
             # Pinned before recurring: if the manager put somebody somewhere
             # by hand this week, that beats the standing arrangement.
@@ -3795,14 +3838,13 @@ class _RosterBuilder:
             )
             configured = "supervisory_roles" in self.shop
             closing_required = configured or bool(closing_rules)
+            # A 24-hour shop has no closing time, so there is nothing here
+            # for a closing rule to apply to. This is not worth surfacing as
+            # an issue every generation - it's expected, not a problem.
+            if closing_required and self.shop.get("open_24h"):
+                closing_required = False
             if closing_required:
                 self.rules_that_fired.update(id(rule) for rule in closing_rules)
-                if self.shop.get("open_24h"):
-                    self.result.issues.append(
-                        f"Your closing role rule cannot apply on {day}: this shop "
-                        f"is configured as open 24 hours and has no closing time."
-                    )
-                    closing_required = False
 
             seniors = [
                 e for e in hierarchy.sort_employees(self.employees, self.shop)
@@ -4095,7 +4137,7 @@ class _RosterBuilder:
         from app.services import compliance
 
         self.result.under_contract = compliance.under_contract(
-            self.result.shifts,
+            [*self.result.shifts, *self.external_shifts],
             employees=self.employees,
             shop=self.shop,
             week_start=self.week_start,
@@ -5006,7 +5048,15 @@ class _RosterBuilder:
             shift_paid_hours(s) * rates.get(s["employee_id"], 0)
             for s in self.result.shifts
         )
-        self.result.total_hours = sum(self.hours_used.values())
+        # Department total excludes external commitments. Per-person totals
+        # include them because caps and the hours shown beside a shared
+        # employee are shop-wide.
+        self.result.total_hours = sum(
+            paid_hours(s["start"], s["end"], breaks_paid=self.breaks_paid)
+            for s in self.result.shifts
+            if s.get("start") and s.get("end")
+            and not (s.get("paid_holiday") or s.get("unpaid_holiday") or s.get("sick"))
+        )
         self.result.per_employee_hours = dict(self.hours_used)
 
         # Against the caps in force this week (a student's summer ceiling
@@ -5070,6 +5120,7 @@ def solve_roster(
     locked_shifts: Optional[List[Dict[str, Any]]] = None,
     seed: Optional[int] = None,
     only_day: Optional[str] = None,
+    external_shifts: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Build a week's roster. Pure function — same inputs, same output.
 
@@ -5086,5 +5137,6 @@ def solve_roster(
     builder = _RosterBuilder(
         shop, employees, holidays, fixed_shifts, ai_rules, week_start,
         weights or {}, demand, history_rosters, locked_shifts, seed, only_day,
+        external_shifts,
     )
     return builder.solve().to_dict()

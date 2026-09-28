@@ -341,12 +341,19 @@ async def _send_one(
             await asyncio.sleep(0.5)  # stay within the provider's rate limit
             return None
         except httpx.HTTPStatusError as exc:
-            detail = exc.response.text[:200]
-            log.warning("Email to %s failed: %s %s", to, exc.response.status_code, detail)
-            return f"{exc.response.status_code}: {detail}"
+            # Recipient addresses and provider response bodies are private.
+            # The latter may echo the rejected payload, so neither belongs in
+            # application logs or in the error returned to the dispatch API.
+            status_code = exc.response.status_code
+            log.warning("Email delivery failed with provider status %s", status_code)
+            return f"Email provider rejected delivery ({status_code})."
         except Exception as exc:  # network error, timeout, DNS failure...
-            log.warning("Email to %s failed: %s", to, exc)
-            return str(exc)[:200]
+            # Raw exception text can include request details. The exception
+            # class is enough to distinguish a timeout from a DNS/TLS error
+            # without retaining recipient data or message content.
+            error_type = type(exc).__name__
+            log.warning("Email delivery failed (%s)", error_type)
+            return f"Email delivery failed ({error_type})."
 
 
 def render_password_reset_email(name: str, reset_url: str, expiry_minutes: int) -> str:
@@ -389,7 +396,7 @@ async def send_password_reset_email(to: str, name: str, reset_url: str, expiry_m
     logs loudly here so a developer notices resets are silently not sending.
     """
     if not enabled:
-        log.warning("Password reset requested for %s but email is not configured.", to)
+        log.warning("Password reset email was not sent because email is not configured.")
         return "Email is not configured (RESEND_API_KEY is unset)."
 
     async with httpx.AsyncClient(timeout=30) as http:

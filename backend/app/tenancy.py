@@ -20,7 +20,7 @@ Routes obtain one via `Depends(get_shop_scope)` and use `scope.employees`,
 """
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends
+from fastapi import Depends, Header
 
 from app import db
 from app.security import get_current_user
@@ -114,8 +114,15 @@ class ScopedCollection:
 class ShopScope:
     """All collections a request may touch, pre-bound to one shop."""
 
-    def __init__(self, shop: Dict[str, Any], user: Dict[str, Any]):
-        self.shop = shop
+    def __init__(
+        self, shop: Dict[str, Any], user: Dict[str, Any], department: Optional[str] = None,
+    ):
+        from app.services.departments import effective_shop, primary
+
+        self.base_shop = shop
+        self.department = department if department in (shop.get("departments") or []) \
+            else primary(shop)
+        self.shop = effective_shop(shop, self.department)
         self.user = user
         self.shop_id: str = shop["shop_id"]
 
@@ -131,13 +138,16 @@ class ShopScope:
         )
 
 
-async def get_shop_scope(user: Dict[str, Any] = Depends(get_current_user)) -> ShopScope:
+async def get_shop_scope(
+    user: Dict[str, Any] = Depends(get_current_user),
+    roster_group: Optional[str] = Header(None, alias="X-Roster-Group"),
+) -> ShopScope:
     # Imported here rather than at module level to avoid a circular import
     # (shop_service imports tenancy for type hints).
     from app.services.shop_service import ensure_shop
 
     shop = await ensure_shop(user)
-    return ShopScope(shop, user)
+    return ShopScope(shop, user, roster_group)
 
 
 CurrentScope = Depends(get_shop_scope)

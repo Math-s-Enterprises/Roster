@@ -17,6 +17,8 @@ export default function Onboarding() {
   // means the two can never drift apart.
   const [roles, setRoles] = useState([]);
   const [newRole, setNewRole] = useState("");
+  const [departments, setDepartments] = useState(["Shop Floor"]);
+  const [newDepartment, setNewDepartment] = useState("");
   const [supervisory, setSupervisory] = useState([]);
   const [counts, setCounts] = useState({});
   const [strictDaysOff, setStrictDaysOff] = useState(true);
@@ -60,6 +62,11 @@ export default function Onboarding() {
   useEffect(() => {
     Promise.all([api.get("/shop"), api.get("/shop/hierarchy")]).then(([r, h]) => {
       setShop(r.data); setName(r.data.name);
+      setDepartments(
+        r.data.multi_department && r.data.departments?.length
+          ? r.data.departments
+          : [r.data.departments?.[0] || "Shop Floor"],
+      );
       setHours(r.data.hours); setMinShift(r.data.min_shift_hours);
       setMaxShift(r.data.max_shift_hours);
       setStrictDaysOff(r.data.strict_days_off !== false);
@@ -128,6 +135,8 @@ export default function Onboarding() {
       min_rest_hours: Number(minRest) || 0,
       roster_recipients: observers,
       supervisory_roles: coverRoles || [],
+      departments,
+      multi_department: departments.length > 1,
       ...extra,
     });
   };
@@ -174,6 +183,12 @@ export default function Onboarding() {
     if (JSON.stringify(roles) !== JSON.stringify(shop.role_hierarchy || shop.roles || [])) {
       dirty.roles = "roles and seniority";
     }
+    const storedDepartments = shop.multi_department
+      ? (shop.departments || ["Shop Floor"])
+      : [shop.departments?.[0] || "Shop Floor"];
+    if (JSON.stringify(departments) !== JSON.stringify(storedDepartments)) {
+      dirty.departments = "roster groups";
+    }
     if (JSON.stringify(observers) !== JSON.stringify(shop.roster_recipients || [])) {
       dirty.observers = "roster recipients";
     }
@@ -213,6 +228,8 @@ export default function Onboarding() {
   const blocked = Object.keys(invalid).length > 0;
 
   const cover = coverRoles || supervisory;
+  const isPrimaryGroup = !shop?.primary_department
+    || shop.current_department === shop.primary_department;
 
   const toggleCover = (role) => {
     const on = cover.includes(role);
@@ -234,6 +251,28 @@ export default function Onboarding() {
     setRoles([...roles, title]);
     setNewRole("");
     toast.success(`Added ${title}`);
+  };
+
+  const addDepartment = () => {
+    const title = newDepartment.trim();
+    if (!title) return;
+    if (departments.some((name) => name.toLowerCase() === title.toLowerCase())) {
+      toast.error(`${title} is already a roster group`);
+      return;
+    }
+    setDepartments([...departments, title]);
+    setNewDepartment("");
+  };
+
+  const removeDepartment = (name) => {
+    if (departments.length === 1) {
+      toast.error("Keep at least one roster group");
+      return;
+    }
+    if (!window.confirm(
+      `Remove ${name}?\n\nThis can only be saved if no employees or rosters still use it.`
+    )) return;
+    setDepartments(departments.filter((item) => item !== name));
   };
 
   const removeRole = (role) => {
@@ -264,7 +303,9 @@ export default function Onboarding() {
       <div className="ss-page">
         <header className="ss-head">
           <div className="ss-eyebrow">SETUP</div>
-          <h1 className="ss-h1">Shop settings</h1>
+          <h1 className="ss-h1">
+            {isPrimaryGroup ? "Shop settings" : `${shop.current_department} settings`}
+          </h1>
           <p className="ss-sub">
             Change anything you got wrong first time. Saving applies to the next roster you
             generate — weeks already approved are untouched.
@@ -273,16 +314,25 @@ export default function Onboarding() {
 
         <div className="ss-split">
           <div className="ss-name-cell">
-            <label className="ss-label" htmlFor="ss-name">Shop name</label>
-            <input
-              id="ss-name"
-              data-testid="input-shop-name"
-              className="ss-input"
-              style={{ maxWidth: 520 }}
-              value={name}
-              data-dirty={Boolean(dirty.name)}
-              onChange={(e) => setName(e.target.value)}
-            />
+            {isPrimaryGroup ? (
+              <>
+                <label className="ss-label" htmlFor="ss-name">Shop name</label>
+                <input
+                  id="ss-name"
+                  data-testid="input-shop-name"
+                  className="ss-input"
+                  style={{ maxWidth: 520 }}
+                  value={name}
+                  data-dirty={Boolean(dirty.name)}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </>
+            ) : (
+              <>
+                <div className="ss-label">Roster group</div>
+                <div className="ss-h2">{shop.current_department}</div>
+              </>
+            )}
           </div>
           <div className="ss-unsaved">
             <div className="ss-label">Unsaved changes</div>
@@ -422,6 +472,51 @@ export default function Onboarding() {
             </p>
           </div>
         </div>
+
+        {isPrimaryGroup && <>
+        <div className="ss-section">
+          <h2 className="ss-h2">Roster groups <span>({departments.length})</span></h2>
+          <p className="ss-section-sub">
+            Create a separate roster and learning history for each part of the business — for
+            example Shop Floor, Deli or Forecourt. Employees may belong to more than one group.
+          </p>
+        </div>
+        <div className="ss-table" role="list" aria-label="Roster groups">
+          {departments.map((department) => (
+            <div className="ss-row ss-rolerow" role="listitem" key={department}>
+              <span className="ss-role">{department}</span>
+              <span aria-hidden="true" />
+              <span aria-hidden="true" />
+              <span aria-hidden="true" />
+              <span aria-hidden="true" />
+              <span className="ss-roleacts">
+                <button
+                  type="button"
+                  className="ss-remove"
+                  onClick={() => removeDepartment(department)}
+                  aria-label={`Remove ${department}`}
+                >
+                  Remove
+                </button>
+              </span>
+            </div>
+          ))}
+          <div className="ss-addrow">
+            <input
+              className="ss-addinput"
+              style={{ maxWidth: 420 }}
+              value={newDepartment}
+              placeholder="Add a roster group"
+              aria-label="Add a roster group"
+              onChange={(e) => setNewDepartment(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addDepartment(); } }}
+            />
+            <button type="button" className="ss-btn" onClick={addDepartment} disabled={!newDepartment.trim()}>
+              <Plus size={15} strokeWidth={2} /> Add
+            </button>
+          </div>
+        </div>
+        </>}
 
         <div className="ss-section">
           <h2 className="ss-h2">Roles &amp; seniority <span>({roles.length})</span></h2>

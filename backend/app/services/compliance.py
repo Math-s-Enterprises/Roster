@@ -128,6 +128,13 @@ def closing_role_breaches(
     holidays: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Trading days where the shop's closing role requirement is unmet."""
+    if (shop or {}).get("open_24h"):
+        # A 24-hour shop has no closing time, so there is nothing for a
+        # closing role rule to apply to. Naming supervisory roles is about
+        # who COUNTS as a supervisor elsewhere (hierarchy, solver scoring);
+        # it must not, by itself, invent a closing requirement here.
+        return []
+
     constraints = rule_parser.compiled_constraints(ai_rules or [])
     configured = "supervisory_roles" in (shop or {})
     if not configured and not any(
@@ -171,33 +178,29 @@ def closing_role_breaches(
         hours = hours_by_day.get(day)
         if not hours or hours.get("closed") or date_for.get(day) in closed_dates:
             continue
-        if (shop or {}).get("open_24h"):
-            message = (
-                f"The closing role rule cannot apply on {day}: this shop is "
-                f"configured as open 24 hours and has no closing time."
-            )
-        else:
-            open_m = to_minutes(hours["open"])
-            close_m = to_minutes(hours["close"])
-            if close_m <= open_m:
-                close_m += 24 * 60
+        # open_24h shops returned [] above, so every day reaching here has a
+        # real close time.
+        open_m = to_minutes(hours["open"])
+        close_m = to_minutes(hours["close"])
+        if close_m <= open_m:
+            close_m += 24 * 60
 
-            covered = False
-            for shift in _worked(shifts):
-                if shift.get("day") != day:
-                    continue
-                employee = by_id.get(shift.get("employee_id"), {})
-                if not hierarchy.is_supervisory(employee.get("role"), shop):
-                    continue
-                if covers_closing(shift["start"], shift["end"], close_m):
-                    covered = True
-                    break
-            if covered:
+        covered = False
+        for shift in _worked(shifts):
+            if shift.get("day") != day:
                 continue
-            message = (
-                f"Your closing rule requires at least one manager or supervisor "
-                f"at {hours['close']} on {day}, but none is rostered then."
-            )
+            employee = by_id.get(shift.get("employee_id"), {})
+            if not hierarchy.is_supervisory(employee.get("role"), shop):
+                continue
+            if covers_closing(shift["start"], shift["end"], close_m):
+                covered = True
+                break
+        if covered:
+            continue
+        message = (
+            f"Your closing rule requires at least one manager or supervisor "
+            f"at {hours['close']} on {day}, but none is rostered then."
+        )
 
         breaches.append({
             "employee_id": None,

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Menu, Wand2, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { api, mondayOf } from "@/lib/api";
+import { api, mondayOf, ROSTER_GROUP_KEY } from "@/lib/api";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
 
 /**
@@ -87,8 +87,36 @@ export default function AppLayout() {
   // Dark is the default — it is the palette every handoff specified.
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || "dark");
   const [rosterFlag, setRosterFlag] = useState(null);
+  const [shop, setShop] = useState(null);
+  const [department, setDepartment] = useState(
+    () => localStorage.getItem(ROSTER_GROUP_KEY) || "",
+  );
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+
+  useEffect(() => {
+    api.get("/shop").then(({ data }) => {
+      setShop(data);
+      const selected = data.current_department || data.departments?.[0] || "Shop Floor";
+      setDepartment(selected);
+      localStorage.setItem(ROSTER_GROUP_KEY, selected);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const primary = shop?.primary_department || shop?.departments?.[0];
+    if (shop && department && department !== primary && pathname === "/") {
+      navigate("/employees", { replace: true });
+    }
+  }, [shop, department, pathname, navigate]);
+
+  const switchDepartment = (next) => {
+    if (!next || next === department) return;
+    localStorage.setItem(ROSTER_GROUP_KEY, next);
+    const primary = shop?.primary_department || shop?.departments?.[0];
+    const target = pathname === "/" && next !== primary ? "/employees" : `${pathname}${search}`;
+    window.location.assign(target);
+  };
 
   const loadCounts = useCallback(async () => {
     const [emps, holidays, fixed, rules, rosters] = await Promise.all([
@@ -154,7 +182,25 @@ export default function AppLayout() {
         </div>
 
         <nav className="nv-nav" aria-label="Main">
-          {GROUPS.map((group) => (
+          {shop?.multi_department && (
+            <label className="nv-workspace">
+              <span>Roster group</span>
+              <select
+                value={department}
+                onChange={(event) => switchDepartment(event.target.value)}
+                aria-label="Current roster group"
+              >
+                {(shop.departments || []).map((name) => (
+                  <option key={name} value={name}>{shop.name} — {name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {GROUPS.map((group) => ({
+            ...group,
+            items: group.items.filter((item) => item.label !== "Dashboard"
+              || department === (shop?.primary_department || shop?.departments?.[0])),
+          })).filter((group) => group.items.length > 0).map((group) => (
             <div className="nv-group" key={group.label}>
               <div className="nv-group-label">{group.label}</div>
               <ul className="nv-list">

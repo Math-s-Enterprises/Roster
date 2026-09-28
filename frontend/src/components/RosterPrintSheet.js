@@ -36,7 +36,7 @@ export default function RosterPrintSheet({ roster, employees, shop, pages = 1 })
   // not rostered, is a blank row taking up height that the rows which matter
   // need in order to stay readable.
   const onRoster = new Set(
-    (roster.shifts || []).map((s) => s.employee_id),
+    [...(roster.shifts || []), ...(roster.external_shifts || [])].map((s) => s.employee_id),
   );
   const listed = employees.filter((e) => onRoster.has(e.employee_id));
 
@@ -60,6 +60,10 @@ export default function RosterPrintSheet({ roster, employees, shop, pages = 1 })
   (roster.shifts || []).forEach((shift) => {
     (byPerson[shift.employee_id] = byPerson[shift.employee_id] || {})[shift.day] = shift;
   });
+  (roster.external_shifts || []).forEach((shift) => {
+    const mine = (byPerson[shift.employee_id] = byPerson[shift.employee_id] || {});
+    if (!mine[shift.day]) mine[shift.day] = { ...shift, external: true };
+  });
 
   // One row per person, one per role heading, one for the day header.
   const rows = listed.length + groups.length + 1;
@@ -76,6 +80,7 @@ export default function RosterPrintSheet({ roster, employees, shop, pages = 1 })
     if (shift.paid_holiday) return "Holiday";
     if (shift.unpaid_holiday) return "N/A";
     if (shift.sick) return "Sick";
+    if (shift.external) return `${shift.department} · ${shift.start}–${shift.end}`;
     return `${shift.start}–${shift.end}`;
   };
 
@@ -114,7 +119,7 @@ export default function RosterPrintSheet({ roster, employees, shop, pages = 1 })
               </tr>
               {group.people.map((employee) => {
                 const mine = byPerson[employee.employee_id] || {};
-                const hours = Object.values(mine)
+                const hours = roster.shop_week_hours?.[employee.employee_id] ?? Object.values(mine)
                   .filter((s) => s.start && s.end
                     && !s.paid_holiday && !s.unpaid_holiday && !s.sick)
                   .reduce((total, s) => total + shiftPaidHours(

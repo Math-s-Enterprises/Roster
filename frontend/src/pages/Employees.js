@@ -146,6 +146,7 @@ const TOLERANCE_WORTH_QUESTIONING = 4;
 const emptyForm = {
   name: "", email: "", role: "Cashier", age: 22, hourly_rate: 15,
   max_weekly_hours: 40, preferred_days_off: [],
+  departments: ["Shop Floor"],
   is_active: true,
   availability: { ...emptyAvailability },
   employment_type: "hourly",
@@ -164,6 +165,7 @@ function toForm(employee) {
     ...employee,
     is_active: employee.is_active !== false,
     preferred_days_off: employee.preferred_days_off || [],
+    departments: employee.departments?.length ? employee.departments : ["Shop Floor"],
     availability: { ...emptyAvailability, ...(employee.availability || {}) },
     summer_break: { ...emptySummerBreak, ...(employee.summer_break || {}) },
     // Records written before employment_type existed still have is_student.
@@ -781,7 +783,13 @@ export default function Employees() {
             type="button"
             data-testid="btn-add-employee"
             className="esp-btn esp-btn-1"
-            onClick={() => { setForm(emptyForm); setModal("new"); }}
+            onClick={() => {
+              setForm({
+                ...emptyForm,
+                departments: [shop?.current_department || shop?.departments?.[0] || "Shop Floor"],
+              });
+              setModal("new");
+            }}
           >
             <Plus size={15} strokeWidth={2} /> Add employee
           </button>
@@ -931,6 +939,35 @@ export default function Employees() {
               Contracted hours are paid hours. Unpaid breaks sit on top, so a
               40h contract is rostered as roughly 44–45h of shift time.
             </p>
+
+            <Field label="Roster groups">
+              <div className="flex gap-2 flex-wrap">
+                {(shop?.departments?.length ? shop.departments : ["Shop Floor"]).map((department) => {
+                  const on = (form.departments || []).includes(department);
+                  return (
+                    <button
+                      type="button"
+                      key={department}
+                      aria-pressed={on}
+                      data-testid={`emp-department-${department}`}
+                      onClick={() => set({
+                        departments: on
+                          ? form.departments.filter((name) => name !== department)
+                          : [...(form.departments || []), department],
+                      })}
+                      className={`px-3 py-1.5 rounded-full text-xs ${on ? "neon-btn" : "glass-solid esp-ink-body"}`}
+                    >
+                      {department}
+                    </button>
+                  );
+                })}
+              </div>
+              {(form.departments || []).length === 0 && (
+                <p className="text-[11px] mt-2" style={{ color: "var(--danger)" }}>
+                  Choose at least one roster group.
+                </p>
+              )}
+            </Field>
 
             <Field label="Preferred days off">
               <div className="flex gap-2 flex-wrap">
@@ -1192,7 +1229,11 @@ export default function Employees() {
               </div>
             )}
 
-            <button data-testid="btn-save-employee" className="neon-btn w-full py-3 rounded-full text-sm">
+            <button
+              data-testid="btn-save-employee"
+              disabled={(form.departments || []).length === 0}
+              className="neon-btn w-full py-3 rounded-full text-sm"
+            >
               Save
             </button>
           </form>

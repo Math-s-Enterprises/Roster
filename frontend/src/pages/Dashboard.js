@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, errorMessage, fmtHours, fmtMoney, mondayOf } from "@/lib/api";
+import { api, errorMessage, fmtHours, fmtMoney, mondayOf, ROSTER_GROUP_KEY } from "@/lib/api";
 import { toast } from "sonner";
 import { CheckCircle2, AlertCircle, Wand2, Sparkles } from "lucide-react";
 
@@ -116,12 +116,18 @@ export default function Dashboard() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const navigate = useNavigate();
 
+  const openRoster = (roster) => {
+    const department = roster.department || shop?.departments?.[0] || "Shop Floor";
+    localStorage.setItem(ROSTER_GROUP_KEY, department);
+    window.location.assign(`/roster?week=${roster.week_start}&roster=${roster.roster_id}`);
+  };
+
   const load = useCallback(async () => {
     try {
       const [s, e, r, a, st] = await Promise.all([
         api.get("/shop"),
-        api.get("/employees"),
-        api.get("/rosters"),
+        api.get("/employees", { params: { all_departments: true } }),
+        api.get("/rosters", { params: { all_departments: true } }),
         api.get("/activity").catch(() => ({ data: [] })),
         api.get("/setup-status").catch(() => ({ data: null })),
       ]);
@@ -157,7 +163,12 @@ export default function Dashboard() {
    * actually for. Capped so a fully-rostered shop still gets an answer.
    */
   const nextOpenWeek = useMemo(() => {
-    const taken = new Set(rosters.map((r) => r.week_start));
+    const primary = shop?.primary_department || shop?.departments?.[0] || "Shop Floor";
+    const taken = new Set(
+      rosters
+        .filter((r) => (r.department || primary) === primary)
+        .map((r) => r.week_start),
+    );
     const d = new Date(`${thisWeek}T00:00:00`);
     for (let i = 0; i < 12; i += 1) {
       const week = iso(d);
@@ -165,7 +176,7 @@ export default function Dashboard() {
       d.setDate(d.getDate() + 7);
     }
     return thisWeek;
-  }, [rosters, thisWeek]);
+  }, [rosters, shop, thisWeek]);
 
   /** Approved rosters plus this week's drafts, newest first, capped at five. */
   const recent = useMemo(() => {
@@ -336,7 +347,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 className="db-link"
-                onClick={() => navigate(`/roster?week=${forced.week_start}&roster=${forced.roster_id}`)}
+                onClick={() => openRoster(forced)}
               >
                 See what broke
               </button>
@@ -392,12 +403,12 @@ export default function Dashboard() {
                     className="db-row db-rosterrow"
                     role="row"
                     data-testid={`roster-row-${r.roster_id}`}
-                    onClick={() => navigate(`/roster?week=${r.week_start}&roster=${r.roster_id}`)}
+                    onClick={() => openRoster(r)}
                     aria-label={`Week of ${fmtWeek(r.week_start)}, ${r.version}, ${r.approved ? "approved" : "draft"}. Open it.`}
                   >
                     <span role="cell" style={{ minWidth: 0 }}>
                       <span className="db-rowtitle">
-                        Week of {fmtWeek(r.week_start)} · {r.version}
+                        {r.department || shop?.departments?.[0] || "Shop Floor"} · Week of {fmtWeek(r.week_start)} · {r.version}
                       </span>
                       <span className="db-rowsub">
                         {r.approved

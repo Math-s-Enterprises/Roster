@@ -19,7 +19,7 @@ from pathlib import Path
 from collections import Counter
 
 
-EMPLOYEE_FIELDS = set("employee_id role departments age max_weekly_hours preferred_days_off is_active past_staff availability employment_type contract_span_hours contract_span_tolerance is_student term_time_max_hours summer_break".split())
+EMPLOYEE_FIELDS = set("employee_id role departments department_roles age max_weekly_hours preferred_days_off is_active past_staff availability employment_type contract_span_hours contract_span_tolerance is_student term_time_max_hours summer_break".split())
 SHOP_FIELDS = set("shop_id hours min_shift_hours max_shift_hours max_working_days roles departments multi_department open_24h shift_templates role_hierarchy min_rest_hours strict_days_off breaks_are_paid overstaff_tolerance".split())
 SHIFT_FIELDS = set("employee_id day start end pinned extra fixed locked sick paid_holiday unpaid_holiday temp_override".split())
 DECISION_SHIFT_FIELDS = SHIFT_FIELDS | {
@@ -134,7 +134,7 @@ def context(shop, employees, holidays, fixed_shifts, rules, *, week_start=None):
                      for h in _ordered(holidays, "date", "employee_id", "holiday_id")],
         "fixed_shifts": [select(f, SHIFT_FIELDS | {"fixed_shift_id", "enabled", "days"})
                          for f in _ordered(fixed_shifts, "employee_id", "fixed_shift_id")],
-        "rules": [select(r, {"rule_id", "enabled", "approved", "compiled", "compiled_by", "locked", "title", "description"})
+        "rules": [select(r, {"rule_id", "enabled", "approved", "compiled", "compiled_by", "locked", "title", "description", "departments"})
                   for r in _ordered(rules, "rule_id", "title")],
     }
     if week_start:
@@ -150,7 +150,7 @@ def context(shop, employees, holidays, fixed_shifts, rules, *, week_start=None):
 
 def generation_context(shop, employees, holidays, fixed_shifts, rules, history, *,
                        week_start, seed, only_day, department, locked_shifts,
-                       weights=None, demand=None):
+                       external_shifts=None, weights=None, demand=None):
     evidence = context(
         shop, employees, holidays, fixed_shifts, rules, week_start=week_start,
     )
@@ -163,6 +163,10 @@ def generation_context(shop, employees, holidays, fixed_shifts, rules, history, 
         "week_start": week_start, "seed": seed, "only_day": only_day,
         "department": department,
         "locked_shifts": [select(s, SHIFT_FIELDS) for s in locked_shifts],
+        "external_shifts": [
+            select(s, SHIFT_FIELDS | {"department", "roster_id"})
+            for s in (external_shifts or [])
+        ],
         "preference_weights": deepcopy(weights or {}),
         "demand_profile": deepcopy(demand.to_dict()) if demand is not None else None,
         "history_sources": [{

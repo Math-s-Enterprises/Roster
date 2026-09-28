@@ -9,7 +9,9 @@ signed-off record of it with somebody's password against it is discoverable.
 So it is refused with or without the password — and the refusal says so
 plainly, rather than implying the right credentials would help.
 """
-from app.services.compliance import HARD_FLOOR, audit, blocking, group_by_employee
+from app.services.compliance import (
+    HARD_FLOOR, audit, blocking, closing_role_breaches, group_by_employee,
+)
 
 SHOP = {"shop_id": "s", "max_working_days": 5}
 WEEK = "2026-10-05"
@@ -274,4 +276,70 @@ class TestTheRestGapFollowsTheShopSetting:
                       if b["rule"] == "rest_gap")
         assert "12h" in breach["message"], (
             f"the message still quotes a hardcoded figure: {breach['message']}"
+        )
+
+
+class TestClosingRoleOn24HourShops:
+    """A 24-hour shop has no closing time, so a closing role rule can never
+    apply to it. Naming a role "Supervisory" (for hierarchy/solver purposes,
+    unrelated to closing) must not invent a weekly, unoverridable-feeling
+    breach on every trading day — regression for the bug where approving a
+    24h shop's roster always failed with 7 "cannot apply" breaches."""
+
+    def test_supervisory_roles_alone_does_not_breach_a_24h_shop(self):
+        # Legacy 24h shops keep 00:00-23:59 in `hours` even though
+        # `open_24h` is what actually governs them - the breach loop must
+        # not reach that data at all for a 24h shop.
+        shop = {
+            **SHOP, "open_24h": True, "supervisory_roles": ["Manager"],
+            "hours": [
+                {"day": d, "open": "00:00", "close": "23:59"}
+                for d in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+            ],
+        }
+        shifts = [
+            {"employee_id": "e1", "day": d, "start": "09:00", "end": "17:00"}
+            for d in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+        ]
+        breaches = closing_role_breaches(
+            shifts, shop=shop, employees=_team(role="Manager"),
+            week_start=WEEK,
+        )
+        assert not breaches, (
+            "an open_24h shop has no closing time; supervisory_roles being "
+            f"configured must not manufacture breaches: {breaches}"
+        )
+
+    def test_a_compiled_closing_rule_still_does_nothing_on_a_24h_shop(self):
+        """Even a real, explicit closing rule can't apply to a shop with no
+        close time — same reasoning, different trigger."""
+        shop = {**SHOP, "open_24h": True}
+        ai_rules = [{"text": "a manager must be present at closing every day"}]
+        shifts = [
+            {"employee_id": "e1", "day": "mon", "start": "09:00", "end": "17:00"},
+        ]
+        breaches = closing_role_breaches(
+            shifts, shop=shop, employees=_team(role="Manager"),
+            ai_rules=ai_rules, week_start=WEEK,
+        )
+        assert not breaches
+
+    def test_a_non_24h_shop_with_supervisory_roles_still_enforces_closing(self):
+        """The fix must not silently disable the real check for ordinary
+        shops that do have a closing time."""
+        shop = {
+            **SHOP,
+            "supervisory_roles": ["Manager"],
+            "hours": [{"day": "mon", "open": "09:00", "close": "17:00"}],
+        }
+        shifts = [
+            {"employee_id": "e1", "day": "mon", "start": "09:00", "end": "16:00"},
+        ]
+        breaches = closing_role_breaches(
+            shifts, shop=shop, employees=_team(role="Manager"),
+            week_start=WEEK,
+        )
+        assert breaches, (
+            "a shop with a real close time and a supervisory role should "
+            "still require someone senior at close"
         )

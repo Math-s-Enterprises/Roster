@@ -12,7 +12,7 @@ DEFAULT_HOURS: List[Dict[str, Any]] = [
 ] + [{"day": "sun", "open": "10:00", "close": "18:00", "closed": False}]
 
 DEFAULT_ROLES = ["Manager", "Supervisor", "Cashier", "Floor Assistant", "Stocker"]
-DEFAULT_DEPARTMENTS = ["Shop Floor", "Deli"]
+DEFAULT_DEPARTMENTS = ["Shop Floor"]
 
 DEFAULT_24H_TEMPLATES = [
     {"template_id": "tpl_morning", "name": "Morning", "start": "07:00", "end": "15:00", "min_staff": 2},

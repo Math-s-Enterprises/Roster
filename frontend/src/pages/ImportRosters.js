@@ -110,6 +110,15 @@ export default function ImportRosters() {
   const [preview, setPreview] = useState(null);
   const [weekHint, setWeekHint] = useState("");
   const [reading, setReading] = useState("");
+  const [shop, setShop] = useState(null);
+  const [department, setDepartment] = useState("");
+
+  useEffect(() => {
+    api.get("/shop").then(({ data }) => {
+      setShop(data);
+      setDepartment(data.current_department || data.departments?.[0] || "Shop Floor");
+    }).catch(() => {});
+  }, []);
 
   // What this deployment can actually read. Checked up front so an
   // unavailable format is never offered — a 503 after a slow upload is a
@@ -135,10 +144,10 @@ export default function ImportRosters() {
 
   const [summary, setSummary] = useState(null);
   useEffect(() => {
-    api.get("/imports/learning-summary")
+    api.get("/imports/learning-summary", { params: department ? { department } : {} })
       .then((r) => setSummary(r.data))
       .catch(() => setSummary(null));
-  }, [committed]);
+  }, [committed, department]);
 
   const reset = () => {
     setPreview(null); setWeeks([]); setMapping({});
@@ -168,6 +177,10 @@ export default function ImportRosters() {
 
   const upload = async (file) => {
     if (!file) return;
+    if (shop?.multi_department && !department) {
+      toast.error("Choose the roster group this file belongs to");
+      return;
+    }
     const refusal = rejectReason(file);
     if (refusal) { toast.error(refusal); return; }
 
@@ -176,13 +189,17 @@ export default function ImportRosters() {
     try {
       const form = new FormData();
       form.append("file", file);
+      if (department) form.append("department", department);
       // Multi-sheet workbooks name their own weeks; a CSV export or a photo
       // of the wall sheet usually carries no date at all, so this dates
       // anything the file leaves undated.
       if (weekHint) form.append("week_start", weekHint);
       const [{ data }, staff] = await Promise.all([
         api.post("/imports", form, { headers: { "Content-Type": "multipart/form-data" } }),
-        api.get("/employees"),
+        // A person already working in another roster group must be available
+        // to map here; choosing them adds this group instead of creating a
+        // duplicate employee with a second weekly-hours budget.
+        api.get("/employees", { params: { all_departments: true } }),
       ]);
 
       setPreview(data);
@@ -429,6 +446,7 @@ export default function ImportRosters() {
       <ImportedWeeks
         refreshKey={committed}
         summary={summary}
+        department={department}
         onChange={() => setCommitted((n) => n + 1)}
         onReplace={() => fileRef.current?.click()}
       />
@@ -455,7 +473,7 @@ export default function ImportRosters() {
  * invisible afterwards except through the odd rosters it produces, and
  * without this it would be permanent.
  */
-function ImportedWeeks({ refreshKey, summary, onChange, onReplace }) {
+function ImportedWeeks({ refreshKey, summary, department, onChange, onReplace }) {
   const [weeks, setWeeks] = useState(null);
   const [removed, setRemoved] = useState([]);
   const [confirming, setConfirming] = useState(null);
@@ -467,13 +485,13 @@ function ImportedWeeks({ refreshKey, summary, onChange, onReplace }) {
   const [visible, setVisible] = useState(PAGE);
 
   const load = useCallback(() => {
-    api.get("/imports/history")
+    api.get("/imports/history", { params: department ? { department } : {} })
       .then((r) => setWeeks(r.data))
       .catch(() => setWeeks([]));
-    api.get("/imports/removed")
+    api.get("/imports/removed", { params: department ? { department } : {} })
       .then((r) => setRemoved(r.data))
       .catch(() => setRemoved([]));
-  }, []);
+  }, [department]);
   useEffect(() => { load(); }, [load, refreshKey]);
 
   const remove = async () => {
@@ -951,7 +969,7 @@ function Review({
                     <option value={PAST_STAFF}>🚫 No longer works here</option>
                     {employees.map((e) => (
                       <option key={e.employee_id} value={e.employee_id}>
-                        {e.name}
+                        {e.name} — {(e.departments || ["Shop Floor"]).join(", ")}
                       </option>
                     ))}
                   </select>
