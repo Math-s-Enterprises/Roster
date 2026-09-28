@@ -1050,3 +1050,26 @@ The restored tests also prove holiday-balance lists contain only the current
 group's people while the primary activity feed includes actions from both
 groups. This distinction is deliberate: the list is a workspace view; the
 dashboard is the owner's whole-shop view.
+
+---
+
+## 12. Delivery diagnostics must not repeat the message they failed to send
+
+CodeQL found two high-severity clear-text logging paths in `_send_one`.
+Failure handling logged the recipient address together with either the email
+provider's raw response body or the raw network exception. A provider may
+echo parts of a rejected payload, and exception text may contain request
+details, so truncating either to 200 characters did not make it safe. The
+disabled password-reset path also logged the account address.
+
+Delivery failures now record only a provider status code or an exception
+class. The dispatch result returned to the authenticated caller is sanitised
+the same way; recipient addresses, response bodies, exception messages,
+subjects, HTML and reset links never enter the diagnostic string.
+
+Regression tests use an address and a private marker deliberately embedded in
+provider and exception messages, then assert neither appears in logs or in the
+returned error. The password-reset-not-configured path has the same check.
+Sabotage reintroduced the recipient argument into the provider-status log and
+the regression failed on the exact leaked address before the safe line was
+restored.
