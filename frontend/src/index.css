@@ -3681,6 +3681,24 @@ label.ss-label-tight { letter-spacing: .04em; }
 }
 .ss-note strong { color: var(--t-body); font-weight: 700; }
 .ss-warn { color: var(--t-warn); }
+/* Roster groups are a name and a Remove — not the six columns of the roles
+   table, which left four empty cells and a Remove stranded far from the
+   name it belonged to. */
+.ss-deptrow {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 0; border-bottom: 1px solid var(--t-divider);
+  transition: background 120ms ease-out;
+}
+.ss-deptrow:hover { background: var(--t-hover); }
+.ss-deptrow .ss-role { flex: 1; min-width: 0; }
+.ss-deptrow .ss-roleacts { margin-left: auto; }
+.ss-dept-tag {
+  padding: 4px 9px; border-radius: 5px;
+  border: 1px solid var(--t-chip); color: var(--t-muted);
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+.ss-remove:disabled { opacity: .4; cursor: not-allowed; }
+.ss-remove:disabled:hover { color: var(--t-muted); }
 .ss-addrow { display: flex; gap: 12px; flex-wrap: wrap; padding: 16px 0 12px; }
 .ss-addinput {
   height: 46px; flex: 1; min-width: 180px;
@@ -3785,16 +3803,47 @@ label.ss-label-tight { letter-spacing: .04em; }
 }
 .nv-brand-name { font-size: 16.5px; font-weight: 800; letter-spacing: -.02em; color: var(--t-ink); }
 .nv-brand-sub { font-size: 12.5px; color: var(--t-muted); }
+/* The roster-group switcher. Set in the sidebar's own measurements — 22px
+   gutters, the 11px label of a group heading, the 6px radius used by every
+   other control — so it reads as part of the nav rather than a form
+   dropped into it. */
 .nv-workspace {
-  display: grid; gap: 6px; padding: 0 14px 14px;
-  color: var(--t-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+  display: grid; gap: 8px; padding: 0 22px 16px;
+}
+.nv-workspace > span {
+  font-size: 11px; font-weight: 700; letter-spacing: .16em;
+  color: var(--t-muted); text-transform: uppercase;
+}
+.nv-workspace-field {
+  position: relative;
+  display: flex; align-items: center;
+  height: 40px; padding: 0 34px 0 12px;
+  border: 1px solid var(--t-input); border-radius: 6px;
+  background: var(--t-inset);
+  transition: border-color 120ms ease-out;
+}
+.nv-workspace-field:hover { border-color: var(--t-offborder); }
+.nv-workspace-field:focus-within { border-color: var(--t-accent); }
+/* The native arrow is drawn by the OS and ignores the theme, so it is
+   replaced with one that follows the text colour. */
+.nv-workspace-field::after {
+  content: ""; position: absolute; right: 13px; top: 50%;
+  width: 7px; height: 7px; margin-top: -4px;
+  border-right: 1.6px solid var(--t-muted);
+  border-bottom: 1.6px solid var(--t-muted);
+  transform: rotate(45deg); pointer-events: none;
 }
 .nv-workspace select {
-  width: 100%; min-width: 0; padding: 8px 9px;
-  border: 1px solid var(--t-hairline); border-radius: 8px;
-  background: var(--t-input); color: var(--t-ink);
-  font-family: inherit; font-size: 12px; font-weight: 600;
-  text-transform: none; letter-spacing: 0;
+  width: 100%; min-width: 0;
+  align-self: stretch; height: auto;
+  -webkit-appearance: none; appearance: none;
+  background: transparent !important;
+  border: 0 !important; border-radius: 0 !important;
+  min-height: 0 !important; box-shadow: none !important; outline: none !important;
+  padding: 0; margin: 0; line-height: normal;
+  color: var(--t-ink) !important;
+  font-family: inherit; font-size: 14.5px; font-weight: 700;
+  text-overflow: ellipsis; cursor: pointer;
 }
 
 /* Nav -------------------------------------------------------------- */

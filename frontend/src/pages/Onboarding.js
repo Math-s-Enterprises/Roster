@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { api, errorMessage, DAY_LABELS, DAYS } from "@/lib/api";
+import React, { useCallback, useEffect, useState } from "react";
+import { api, errorMessage, DAY_LABELS, DAYS, announceShopChange } from "@/lib/api";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { ChevronRight, ChevronLeft, Check, ArrowUp, ArrowDown, GripVertical, Loader2, Plus, X } from "lucide-react";
@@ -59,8 +59,16 @@ export default function Onboarding() {
     toast.success(`Every day set to ${monday.open}–${monday.close}`);
   };
 
-  useEffect(() => {
-    Promise.all([api.get("/shop"), api.get("/shop/hierarchy")]).then(([r, h]) => {
+  /**
+   * Fill the form from the server's answer.
+   *
+   * Used on load and again after saving. Re-reading matters because the
+   * backend normalises what it stores — switching on 24h fills in the
+   * round-the-clock hours, and departments come back canonicalised — so
+   * the form would otherwise keep comparing itself against pre-save data
+   * and report unsaved changes that had already been saved.
+   */
+  const hydrate = useCallback((r, h) => {
       setShop(r.data); setName(r.data.name);
       setDepartments(
         r.data.multi_department && r.data.departments?.length
@@ -81,8 +89,15 @@ export default function Onboarding() {
       setSupervisory(h.data.supervisory);
       setCoverRoles(h.data.supervisory_roles || h.data.supervisory || []);
       setCounts(h.data.employee_counts || {});
-    });
   }, []);
+
+  const reload = useCallback(
+    () => Promise.all([api.get("/shop"), api.get("/shop/hierarchy")])
+      .then(([r, h]) => hydrate(r, h)),
+    [hydrate],
+  );
+
+  useEffect(() => { reload(); }, [reload]);
 
   const addObserver = () => {
     const email = observerEmail.trim();
@@ -151,6 +166,12 @@ export default function Onboarding() {
     setSaving(true);
     try {
       await save();
+      // Read it back, so the form compares against what was actually
+      // stored: Save switches off and "unsaved changes" clears.
+      await reload();
+      // And tell the rest of the app, so the sidebar's roster-group list
+      // updates without a page refresh.
+      announceShopChange();
       toast.success("Shop settings saved");
     } catch (err) {
       toast.error(errorMessage(err, "Could not save the settings"));
@@ -482,18 +503,19 @@ export default function Onboarding() {
           </p>
         </div>
         <div className="ss-table" role="list" aria-label="Roster groups">
-          {departments.map((department) => (
-            <div className="ss-row ss-rolerow" role="listitem" key={department}>
+          {departments.map((department, index) => (
+            <div className="ss-deptrow" role="listitem" key={department}>
               <span className="ss-role">{department}</span>
-              <span aria-hidden="true" />
-              <span aria-hidden="true" />
-              <span aria-hidden="true" />
-              <span aria-hidden="true" />
+              {index === 0 && <span className="ss-dept-tag">Main</span>}
               <span className="ss-roleacts">
                 <button
                   type="button"
                   className="ss-remove"
                   onClick={() => removeDepartment(department)}
+                  disabled={index === 0}
+                  title={index === 0
+                    ? "The first group is the main roster and cannot be removed"
+                    : undefined}
                   aria-label={`Remove ${department}`}
                 >
                   Remove

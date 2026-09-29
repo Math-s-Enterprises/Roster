@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Menu, Wand2, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { api, mondayOf, ROSTER_GROUP_KEY } from "@/lib/api";
+import { api, mondayOf, ROSTER_GROUP_KEY, SHOP_CHANGED } from "@/lib/api";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
 
 /**
@@ -94,7 +94,7 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
 
-  useEffect(() => {
+  const loadShop = useCallback(() => {
     api.get("/shop").then(({ data }) => {
       setShop(data);
       const selected = data.current_department || data.departments?.[0] || "Shop Floor";
@@ -102,6 +102,15 @@ export default function AppLayout() {
       localStorage.setItem(ROSTER_GROUP_KEY, selected);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => { loadShop(); }, [loadShop]);
+
+  // Shop Settings announces a save, so a roster group added there appears in
+  // the switcher straight away rather than after a page refresh.
+  useEffect(() => {
+    window.addEventListener(SHOP_CHANGED, loadShop);
+    return () => window.removeEventListener(SHOP_CHANGED, loadShop);
+  }, [loadShop]);
 
   useEffect(() => {
     const primary = shop?.primary_department || shop?.departments?.[0];
@@ -185,15 +194,20 @@ export default function AppLayout() {
           {shop?.multi_department && (
             <label className="nv-workspace">
               <span>Roster group</span>
-              <select
-                value={department}
-                onChange={(event) => switchDepartment(event.target.value)}
-                aria-label="Current roster group"
-              >
-                {(shop.departments || []).map((name) => (
-                  <option key={name} value={name}>{shop.name} — {name}</option>
-                ))}
-              </select>
+              <span className="nv-workspace-field">
+                <select
+                  data-testid="roster-group-switch"
+                  value={department}
+                  onChange={(event) => switchDepartment(event.target.value)}
+                  aria-label="Current roster group"
+                >
+                  {/* The shop name is already at the top of the sidebar, and
+                      repeating it here only truncates the group name. */}
+                  {(shop.departments || []).map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </span>
             </label>
           )}
           {GROUPS.map((group) => ({
