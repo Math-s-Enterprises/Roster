@@ -764,6 +764,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   --t-danger-wash-2: rgba(255, 143, 143, .12);
   --t-danger-ring: rgba(255, 143, 143, .18);
   --t-warn-ring: rgba(255, 176, 102, .35);
+  --t-warn-wash: rgba(255, 176, 102, .12);
   --t-accent-flash: rgba(61, 220, 145, .18);
   --t-on-accent-soft: rgba(4, 20, 12, .6);
   --t-fx-glow: rgba(47, 224, 143, .2);
@@ -844,6 +845,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   --t-danger-wash-2: rgba(154, 43, 30, .14);
   --t-danger-ring: rgba(154, 43, 30, .28);
   --t-warn-ring: rgba(138, 90, 18, .40);
+  --t-warn-wash: rgba(138, 90, 18, .10);
   --t-accent-flash: rgba(184, 74, 23, .16);
   --t-on-accent-soft: rgba(255, 246, 236, .72);
   --t-fx-glow: rgba(184, 74, 23, .18);
@@ -3996,6 +3998,13 @@ label.ss-label-tight { letter-spacing: .04em; }
 .ui-line { border-color: var(--t-hairline); }
 .ui-hover:hover { background: var(--t-hover); }
 .ui-hover-ink:hover { color: var(--t-ink); }
+/* Warnings. Tailwind's amber-400 is built for a black background and is
+   unreadable on the beige canvas; the theme's own warning colour is a dark
+   ochre in light mode and amber in dark. */
+.ui-warn { color: var(--t-warn); }
+.ui-hover-danger:hover { color: var(--t-danger); }
+.ui-warn-surface { background: var(--t-warn-wash); }
+.ui-warn-line { border-color: var(--t-warn); }
 
 /* ------------------------------------------------------------------
    Signed-out pages — sign in, forgot password, reset password

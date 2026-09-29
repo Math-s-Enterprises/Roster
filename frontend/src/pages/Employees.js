@@ -1223,7 +1223,7 @@ export default function Employees() {
             </Section>
 
             {form.age < 16 && (
-              <div className="text-xs text-amber-400 flex items-center gap-2">
+              <div className="text-xs ui-warn flex items-center gap-2">
                 <AlertTriangle size={12} />
                 Under-16 curfew will apply: no shifts before 08:00 or after 19:00.
               </div>
