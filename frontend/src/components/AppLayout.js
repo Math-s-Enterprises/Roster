@@ -4,6 +4,7 @@ import { Menu, Wand2, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { api, mondayOf, ROSTER_GROUP_KEY, SHOP_CHANGED } from "@/lib/api";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
+import RosterGroupSelect from "@/components/RosterGroupSelect";
 
 /**
  * App shell (handoff: Sidebar).
@@ -192,23 +193,16 @@ export default function AppLayout() {
 
         <nav className="nv-nav" aria-label="Main">
           {shop?.multi_department && (
-            <label className="nv-workspace">
-              <span>Roster group</span>
-              <span className="nv-workspace-field">
-                <select
-                  data-testid="roster-group-switch"
-                  value={department}
-                  onChange={(event) => switchDepartment(event.target.value)}
-                  aria-label="Current roster group"
-                >
-                  {/* The shop name is already at the top of the sidebar, and
-                      repeating it here only truncates the group name. */}
-                  {(shop.departments || []).map((name) => (
-                    <option key={name} value={name}>{name}</option>
-                  ))}
-                </select>
-              </span>
-            </label>
+            <div className="nv-workspace">
+              <span id="nv-ws-label">Roster group</span>
+              {/* The shop name is already at the top of the sidebar, so the
+                  options carry the group name alone. */}
+              <RosterGroupSelect
+                value={department}
+                options={shop.departments || []}
+                onChange={switchDepartment}
+              />
+            </div>
           )}
           {GROUPS.map((group) => ({
             ...group,
