@@ -1386,10 +1386,11 @@ export default function RosterView() {
           <p className="wr-note no-print">
             <strong>An approved week is read-only</strong> — reopening it starts a new draft and stops
             the week counting towards what the scheduler has learned. The one exception is somebody
-            calling in sick, which an approved week accepts directly. <strong>Bright green came from a
-            fixed template</strong>, mid green was placed by the solver, dark green is unsocial hours,
-            and a bordered cell is booked leave — the label under each time says which, so the colour is
-            never doing the work alone. <strong>Dashed cells are open slots</strong>: click one to fill it.
+            calling in sick, which an approved week accepts directly. The three shades of the
+            accent mark where a shift came from — <strong>the brightest is a fixed template</strong>,
+            the mid tone was placed by the solver, the darkest is unsocial hours — and a bordered cell
+            is booked leave. The label under each time says which, so the colour is never doing the
+            work alone. <strong>Dashed cells are open slots</strong>: click one to fill it.
           </p>
         </>
       )}

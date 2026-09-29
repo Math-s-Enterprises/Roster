@@ -3,6 +3,20 @@ import axios from "axios";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8001";
 export const API = `${BACKEND_URL}/api`;
 
+/*
+ * Shop-wide settings changed.
+ *
+ * The shell holds its own copy of /shop for the roster-group switcher and
+ * the sidebar counts. Saving in Shop Settings used to leave that copy
+ * stale until the page was reloaded, so a newly added group did not appear
+ * in the dropdown. A window event is enough here — one publisher, one
+ * subscriber, no shared cache to keep in sync.
+ */
+export const SHOP_CHANGED = "roster:shop-changed";
+export const announceShopChange = () => {
+  window.dispatchEvent(new Event(SHOP_CHANGED));
+};
+
 const TOKEN_KEY = "roster_token";
 export const ROSTER_GROUP_KEY = "roster_group";
 

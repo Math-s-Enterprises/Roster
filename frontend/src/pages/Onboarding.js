@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { api, errorMessage, DAY_LABELS, DAYS } from "@/lib/api";
+import React, { useCallback, useEffect, useState } from "react";
+import { api, errorMessage, DAY_LABELS, DAYS, announceShopChange } from "@/lib/api";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { ChevronRight, ChevronLeft, Check, ArrowUp, ArrowDown, GripVertical, Loader2, Plus, X } from "lucide-react";
@@ -19,6 +19,7 @@ export default function Onboarding() {
   const [newRole, setNewRole] = useState("");
   const [departments, setDepartments] = useState(["Shop Floor"]);
   const [newDepartment, setNewDepartment] = useState("");
+  const [renaming, setRenaming] = useState(null);   // { from, value }
   const [supervisory, setSupervisory] = useState([]);
   const [counts, setCounts] = useState({});
   const [strictDaysOff, setStrictDaysOff] = useState(true);
@@ -59,8 +60,16 @@ export default function Onboarding() {
     toast.success(`Every day set to ${monday.open}–${monday.close}`);
   };
 
-  useEffect(() => {
-    Promise.all([api.get("/shop"), api.get("/shop/hierarchy")]).then(([r, h]) => {
+  /**
+   * Fill the form from the server's answer.
+   *
+   * Used on load and again after saving. Re-reading matters because the
+   * backend normalises what it stores — switching on 24h fills in the
+   * round-the-clock hours, and departments come back canonicalised — so
+   * the form would otherwise keep comparing itself against pre-save data
+   * and report unsaved changes that had already been saved.
+   */
+  const hydrate = useCallback((r, h) => {
       setShop(r.data); setName(r.data.name);
       setDepartments(
         r.data.multi_department && r.data.departments?.length
@@ -81,8 +90,15 @@ export default function Onboarding() {
       setSupervisory(h.data.supervisory);
       setCoverRoles(h.data.supervisory_roles || h.data.supervisory || []);
       setCounts(h.data.employee_counts || {});
-    });
   }, []);
+
+  const reload = useCallback(
+    () => Promise.all([api.get("/shop"), api.get("/shop/hierarchy")])
+      .then(([r, h]) => hydrate(r, h)),
+    [hydrate],
+  );
+
+  useEffect(() => { reload(); }, [reload]);
 
   const addObserver = () => {
     const email = observerEmail.trim();
@@ -151,6 +167,12 @@ export default function Onboarding() {
     setSaving(true);
     try {
       await save();
+      // Read it back, so the form compares against what was actually
+      // stored: Save switches off and "unsaved changes" clears.
+      await reload();
+      // And tell the rest of the app, so the sidebar's roster-group list
+      // updates without a page refresh.
+      announceShopChange();
       toast.success("Shop settings saved");
     } catch (err) {
       toast.error(errorMessage(err, "Could not save the settings"));
@@ -262,6 +284,28 @@ export default function Onboarding() {
     }
     setDepartments([...departments, title]);
     setNewDepartment("");
+  };
+
+
+  /**
+   * Rename a roster group.
+   *
+   * The server has no rename. It compares the list you send against the one
+   * it holds, so a rename reads as "remove the old name, add a new one" —
+   * and it refuses to remove a group any employee or roster still uses.
+   * So this succeeds for a group nothing has been assigned to yet, and Save
+   * reports the server's own refusal otherwise. The hint under the list
+   * says as much, so nobody discovers it only at the point of saving.
+   */
+  const renameDepartment = (from, to) => {
+    const title = to.trim();
+    if (!title || title === from) { setRenaming(null); return; }
+    if (departments.some((name) => name !== from && name.toLowerCase() === title.toLowerCase())) {
+      toast.error(`${title} is already a roster group`);
+      return;
+    }
+    setDepartments(departments.map((name) => (name === from ? title : name)));
+    setRenaming(null);
   };
 
   const removeDepartment = (name) => {
@@ -482,23 +526,70 @@ export default function Onboarding() {
           </p>
         </div>
         <div className="ss-table" role="list" aria-label="Roster groups">
-          {departments.map((department) => (
-            <div className="ss-row ss-rolerow" role="listitem" key={department}>
+          {departments.map((department, index) => (
+            <div className="ss-deptrow" role="listitem" key={department}>
+              {renaming?.from === department ? (
+                <>
+                  <input
+                    className="ss-addinput"
+                    style={{ flex: 1, minWidth: 0 }}
+                    value={renaming.value}
+                    autoFocus
+                    aria-label={`Rename ${department}`}
+                    onChange={(e) => setRenaming({ ...renaming, value: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); renameDepartment(department, renaming.value); }
+                      if (e.key === "Escape") setRenaming(null);
+                    }}
+                  />
+                  <span className="ss-roleacts">
+                    <button
+                      type="button"
+                      className="ss-remove"
+                      style={{ color: "var(--t-accent)", fontWeight: 700 }}
+                      onClick={() => renameDepartment(department, renaming.value)}
+                    >
+                      Save name
+                    </button>
+                    <button type="button" className="ss-remove" onClick={() => setRenaming(null)}>
+                      Cancel
+                    </button>
+                  </span>
+                </>
+              ) : (
+              <>
               <span className="ss-role">{department}</span>
-              <span aria-hidden="true" />
-              <span aria-hidden="true" />
-              <span aria-hidden="true" />
-              <span aria-hidden="true" />
+              {index === 0 && <span className="ss-dept-tag">Main</span>}
               <span className="ss-roleacts">
+                {/* The main group cannot be removed — it is where the app
+                    opens and where new employees land — but it can be
+                    renamed, so a restaurant is not stuck calling itself a
+                    shop floor. */}
+                {index === 0 && (
+                  <button
+                    type="button"
+                    className="ss-remove"
+                    onClick={() => setRenaming({ from: department, value: department })}
+                    aria-label={`Rename ${department}`}
+                  >
+                    Rename
+                  </button>
+                )}
                 <button
                   type="button"
                   className="ss-remove"
                   onClick={() => removeDepartment(department)}
+                  disabled={index === 0}
+                  title={index === 0
+                    ? "The main group cannot be removed — rename it instead"
+                    : undefined}
                   aria-label={`Remove ${department}`}
                 >
                   Remove
                 </button>
               </span>
+              </>
+              )}
             </div>
           ))}
           <div className="ss-addrow">
@@ -515,6 +606,20 @@ export default function Onboarding() {
               <Plus size={15} strokeWidth={2} /> Add
             </button>
           </div>
+
+          <p className="ss-note">
+            Each group gets its own roster, its own staff and its own opening hours — a shop floor and
+            a deli are scheduled separately rather than as one week. The{" "}
+            <strong>first group is the main one</strong>: it is where the app opens, and new employees
+            join it unless you say otherwise.{" "}
+            It can be <strong>renamed</strong> — call it Restaurant, Shopfloor whatever fits — but
+            not removed.{" "}
+            <strong className="ss-warn">
+              Renaming only works while nothing uses the group.
+            </strong>{" "}
+            Once employees or rosters belong to it, the server refuses the change; that needs a rename
+            on the server rather than a new name in this list.
+          </p>
         </div>
         </>}
 
@@ -968,7 +1073,7 @@ export default function Onboarding() {
                   </button>
                   <button type="button" title="Remove"
                     onClick={() => setRoles(roles.filter((x) => x !== r))}
-                    className="p-1 rounded ui-faint hover:text-red-400">
+                    className="p-1 rounded ui-faint ui-hover-danger">
                     <X size={13} />
                   </button>
                 </li>

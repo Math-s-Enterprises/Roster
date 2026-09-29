@@ -845,8 +845,8 @@ function Review({
       {/* A model's reading of a picture is a guess; a parsed spreadsheet is
           not. The distinction decides how hard the user should look. */}
       {preview.needs_review && (
-        <div className="rounded-2xl p-5 bg-amber-500/10 border border-amber-500/40">
-          <div className="flex items-center gap-2 text-amber-400 mb-2">
+        <div className="rounded-2xl p-5 ui-warn-surface border ui-warn-line">
+          <div className="flex items-center gap-2 ui-warn mb-2">
             <AlertTriangle size={16} />
             <span className="text-sm font-medium">Read from a {preview.kind} — check it</span>
           </div>
@@ -910,7 +910,7 @@ function Review({
                         </span>
                       )}
                       {w.warnings?.length > 0 && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/25">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded ui-warn-surface ui-warn border ui-warn-line">
                           {w.warnings.length} warning{w.warnings.length === 1 ? "" : "s"}
                         </span>
                       )}
@@ -919,7 +919,7 @@ function Review({
                       <div className="text-[10px] ui-faint truncate">{w.sheet_name}</div>
                     )}
                     {w.warnings?.slice(0, 2).map((warning, i) => (
-                      <div key={i} className="text-[10px] text-amber-400/80 mt-0.5">{warning}</div>
+                      <div key={i} className="text-[10px] ui-warn mt-0.5">{warning}</div>
                     ))}
                   </div>
                 </label>
