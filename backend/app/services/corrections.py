@@ -30,12 +30,13 @@ events does not.
 
 WHAT THIS DOES NOT DO
 ---------------------
-It does not judge. Whether a correction means anything is decided later, and
-only after the same one has appeared several times — see
-`docs/CORRECTIONS_LEARNING.md`. A single edit is an event, not a preference.
+It does not judge. Whether a correction means anything is decided later by
+comparing corrections with the times the manager accepted the same proposal
+unchanged — see `docs/CORRECTIONS_LEARNING.md`.
 """
 from __future__ import annotations
 
+from math import sqrt
 from typing import Any, Dict, List, Optional, Tuple
 
 # A shift is identified by who works it and on what day. That pairing is
@@ -159,12 +160,11 @@ def edit_count(corrections: Optional[List[Dict[str, Any]]]) -> int:
 # short enough that a rota which changed two months ago is not still being
 # quoted back at the manager.
 CORRECTION_WINDOW = 12
-
-# How many times the SAME correction must appear before it is called a
-# pattern. Two is a coincidence; the third time is the manager telling you
-# something. Deliberately low, because every repeat is an edit they had to
-# make by hand and the whole point is to stop asking.
-MIN_REPEATS = 3
+# Recent decisions carry more evidence than old ones. This is deliberately a
+# small online model over the shop's own approvals, not a second scheduler.
+EVIDENCE_DECAY = 0.85
+EVIDENCE_Z = 1.0
+BASE_DECISION_RATE = 0.5
 
 
 def signature(correction: Dict[str, Any]) -> str:
@@ -197,6 +197,89 @@ def _approved_first(rosters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     weeks = [r for r in latest_per_week(list(rosters)) if r.get("approved")]
     return sorted(weeks, key=lambda r: r.get("week_start", ""), reverse=True)
+
+
+def _is_opportunity(
+    pattern: Dict[str, Any], generated: Dict[Key, Dict[str, Any]],
+) -> bool:
+    """Whether this proposal gave the manager the same decision again."""
+    kind = pattern.get("kind")
+    day = pattern.get("day")
+    employee_id = pattern.get("employee_id")
+    if kind == "added":
+        return (employee_id, day) not in generated
+    if kind == "swap":
+        shift = generated.get((pattern.get("replaced_employee_id"), day))
+        return bool(shift and _slot(shift) == pattern.get("slot"))
+    shift = generated.get((employee_id, day))
+    if not shift:
+        return False
+    expected = pattern.get("from_slot") if kind == "moved" else pattern.get("slot")
+    return _slot(shift) == expected
+
+
+def _wilson_lower(successes: float, opportunities: float) -> float:
+    """Conservative repeat probability; one observation scores exactly 50%."""
+    if opportunities <= 0:
+        return 0.0
+    rate = successes / opportunities
+    z2 = EVIDENCE_Z ** 2
+    denominator = 1 + z2 / opportunities
+    centre = rate + z2 / (2 * opportunities)
+    margin = EVIDENCE_Z * sqrt(
+        rate * (1 - rate) / opportunities
+        + z2 / (4 * opportunities ** 2)
+    )
+    return max(0.0, (centre - margin) / denominator)
+
+
+def _evidence(
+    pattern: Dict[str, Any], measurable: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    successes = opportunities = 0.0
+    raw_opportunities = 0
+    wanted = pattern["signature"]
+    for age, roster in enumerate(measurable):
+        generated = _worked(roster.get("generated_shifts") or [])
+        if not _is_opportunity(pattern, generated):
+            continue
+        raw_opportunities += 1
+        weight = EVIDENCE_DECAY ** age
+        opportunities += weight
+        if wanted in {signature(item) for item in roster.get("corrections") or []}:
+            successes += weight
+    rate = successes / opportunities if opportunities else 0.0
+    return {
+        "opportunities": raw_opportunities,
+        "correction_rate": round(rate, 3),
+        "confidence": round(_wilson_lower(successes, opportunities), 3),
+    }
+
+
+def model_info(decisions: Optional[List[Any]] = None) -> Dict[str, Any]:
+    """Decision boundary learned from how this manager treats suggestions."""
+    accepted = sum(
+        1 for item in decisions or []
+        if isinstance(item, dict) and item.get("applied_at")
+    )
+    refused = sum(
+        1 for item in decisions or []
+        if isinstance(item, dict) and item.get("dismissed_at")
+        and not item.get("applied_at")
+    )
+    # A manager who dismisses suggestions needs stronger evidence next time.
+    # Acceptance never lowers the bar below "more likely than not".
+    boundary = max(
+        BASE_DECISION_RATE,
+        (refused + 1) / (accepted + refused + 2),
+    )
+    return {
+        "kind": "recency_weighted_correction_evidence",
+        "decision_boundary": round(boundary, 3),
+        "approved_roster_window": CORRECTION_WINDOW,
+        "accepted_suggestions": accepted,
+        "dismissed_suggestions": refused,
+    }
 
 
 def edit_trend(rosters: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:
@@ -249,6 +332,9 @@ def summarise(rosters: List[Dict[str, Any]]) -> Dict[str, Any]:
             entry["count"] += 1
             entry["weeks"].append(roster.get("week_start"))
 
+    for pattern in grouped.values():
+        pattern.update(_evidence(pattern, measurable))
+
     total = sum(by_kind.values())
     return {
         "weeks_measured": len(measurable),
@@ -256,9 +342,9 @@ def summarise(rosters: List[Dict[str, Any]]) -> Dict[str, Any]:
         "total_corrections": total,
         "average_per_week": round(total / len(measurable), 1) if measurable else None,
         "by_kind": by_kind,
-        # Most repeated first: that ordering is the whole point of the screen.
+        # Strongest evidence first; count alone ignores accepted proposals.
         "patterns": sorted(
-            grouped.values(), key=lambda p: (-p["count"], p["signature"]),
+            grouped.values(), key=lambda p: (-p["confidence"], p["signature"]),
         ),
         "clean_weeks": sum(
             1 for r in measurable if not (r.get("corrections") or [])
@@ -347,7 +433,7 @@ def _suggest_from(pattern: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         # window. Only the START is read for THIS one: a finish time is just
         # when somebody goes home, but a start is what the shift IS to them.
         #
-        # Anything else the manager reshapes the same way three weeks running
+        # Anything else the manager repeatedly reshapes the same way
         # falls through to the fixed shift below. That used to return None,
         # which threw away the commonest edit of all — lengthening a shift,
         # 06:00-10:00 becoming 06:00-12:00 — because the start had not
@@ -419,20 +505,23 @@ def _suggest_from(pattern: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 def suggestions(
     rosters: List[Dict[str, Any]],
-    dismissed: Optional[List[str]] = None,
+    decisions: Optional[List[Any]] = None,
 ) -> List[Dict[str, Any]]:
-    """Repeated corrections worth offering as a settings change.
-
-    A single edit is an event, not a preference — MIN_REPEATS is what
-    separates the two. Anything the manager has already said no to stays said
-    no to, because asking again is how a helpful suggestion becomes nagging.
-    """
-    ignored = set(dismissed or [])
+    """Corrections whose repeat evidence clears this manager's learned bar."""
+    ignored = {
+        item if isinstance(item, str) else item.get("signature")
+        for item in decisions or []
+    }
+    boundary = model_info(decisions)["decision_boundary"]
     out = []
     for pattern in summarise(rosters)["patterns"]:
-        if pattern["count"] < MIN_REPEATS or pattern["signature"] in ignored:
+        if pattern["confidence"] <= boundary or pattern["signature"] in ignored:
             continue
         suggestion = _suggest_from(pattern)
         if suggestion:
+            suggestion.update({
+                key: pattern[key]
+                for key in ("opportunities", "correction_rate", "confidence")
+            })
             out.append(suggestion)
     return out

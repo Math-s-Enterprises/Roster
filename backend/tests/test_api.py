@@ -13,10 +13,20 @@ from datetime import date, timedelta
 
 import pytest
 
-os.environ.setdefault("MONGO_URL", "mongodb://localhost:27017")
-os.environ.setdefault("DB_NAME", "roster_test")
-os.environ.setdefault("JWT_SECRET", "test-secret-not-used-in-production")
-os.environ.setdefault("ENV", "test")
+os.environ.update({
+    "MONGO_URL": "mongodb://localhost:27017",
+    "DB_NAME": "roster_test",
+    "JWT_SECRET": "test-secret-not-used-in-production",
+    "ENV": "test",
+    # Tests must never inherit live integrations from backend/.env. Roster
+    # generation otherwise calls Anthropic for its optional summary, making
+    # every test slow, network-dependent and potentially billable.
+    "ANTHROPIC_API_KEY": "",
+    "RESEND_API_KEY": "",
+    "GOOGLE_CLIENT_ID": "",
+    "STRIPE_SECRET_KEY": "",
+    "STRIPE_WEBHOOK_SECRET": "",
+})
 
 
 @pytest.fixture()
@@ -123,6 +133,9 @@ def test_health_reports_feature_flags(client):
     body = client.get("/api/health").json()
     assert body["status"] == "ok"
     assert set(body["features"]) == {"llm", "email", "google_auth", "billing"}
+    assert not any(body["features"].values()), (
+        "tests must not inherit live integrations from backend/.env"
+    )
 
 
 def test_signup_then_login(client):
@@ -198,6 +211,30 @@ def test_employee_crud_round_trip(client):
 
     assert client.delete(f"/api/employees/{employee_id}", headers=auth(token)).status_code == 200
     assert client.get("/api/employees", headers=auth(token)).json() == []
+
+
+def test_marking_inactive_keeps_existing_rosters_and_blocks_new_generation(client):
+    token = register(client)
+    employee = client.post("/api/employees", json=EMPLOYEE, headers=auth(token)).json()
+    employee_id = employee["employee_id"]
+    week = _future_monday()
+    original = client.post("/api/roster/generate", json={"week_start": week},
+                           headers=auth(token)).json()
+    assert any(s["employee_id"] == employee_id for s in original["shifts"])
+    updated = client.put(f"/api/employees/{employee_id}",
+                         json={**employee, "is_active": False}, headers=auth(token))
+    assert updated.status_code == 200
+    assert updated.json()["is_active"] is False
+    generated = client.post("/api/roster/generate", json={"week_start": week},
+                            headers=auth(token)).json()
+    assert not any(s["employee_id"] == employee_id for s in generated["shifts"])
+    stored = client.get("/api/rosters", headers=auth(token)).json()
+    assert next(r for r in stored if r["roster_id"] == original["roster_id"])["shifts"] == original["shifts"]
+    assert any(e["employee_id"] == employee_id for e in
+               client.get("/api/employees", headers=auth(token)).json())
+    client.put(f"/api/employees/{employee_id}", json={**employee, "is_active": True}, headers=auth(token))
+    restored = client.post("/api/roster/generate", json={"week_start": week}, headers=auth(token)).json()
+    assert any(s["employee_id"] == employee_id for s in restored["shifts"])
 
 
 def test_advanced_employee_settings_survive_a_round_trip(client):
@@ -3038,6 +3075,11 @@ class TestCorrectionsReport:
         assert report["weeks_measured"] == 3
         assert report["total_corrections"] >= 3
         assert report["trend"], "the falling-edits line is the point of the screen"
+        assert report["model"]["kind"] == "recency_weighted_correction_evidence"
+        assert all(
+            "opportunities" in pattern and "confidence" in pattern
+            for pattern in report["patterns"]
+        )
 
     def test_names_are_resolved_for_display(self, client):
         token = register(client)
@@ -3087,6 +3129,10 @@ class TestCorrectionsReport:
 
         after = client.get("/api/reports/corrections", headers=auth(token)).json()
         assert offer["signature"] not in [s["signature"] for s in after["suggestions"]]
+        pattern = next(
+            p for p in after["patterns"] if p["signature"] == offer["signature"]
+        )
+        assert pattern["decision"] == "applied"
 
     def test_a_dismissed_offer_stays_dismissed(self, client):
         token = register(client)
@@ -3102,6 +3148,10 @@ class TestCorrectionsReport:
         after = client.get("/api/reports/corrections", headers=auth(token)).json()
         assert offer["signature"] not in [s["signature"] for s in after["suggestions"]]
         assert after["dismissed_count"] == 1
+        pattern = next(
+            p for p in after["patterns"] if p["signature"] == offer["signature"]
+        )
+        assert pattern["decision"] == "dismissed"
 
 
 class TestForceApproval:

@@ -1,5 +1,12 @@
 # Learning from corrections — plan
 
+> **Current implementation (4 October 2026):** the fixed three-repeat trigger
+> described below is historical. Suggestions now compare corrections with the
+> times the same generated proposal was accepted unchanged, weight recent
+> approvals more heavily, use a conservative confidence bound, and become more
+> cautious after manager dismissals. Nothing is applied without manager
+> approval, and accepted suggestions still write ordinary visible settings.
+
 **Goal, in the owner's words:** after a month of use, the manager should
 believe the roster it produces is better than one they would write themselves.
 
@@ -140,8 +147,8 @@ should say what it noticed and offer to write it down:
 
 **Why this largely dissolves the one-off risk:**
 
-- A one-off never reaches three, so it is never suggested. The manager is
-  never interrupted for noise.
+- A one-off cannot clear the conservative evidence bound, so it is never
+  suggested. The manager is not interrupted for noise.
 - A real pattern is suggested once, and **the manager decides**. Noise cannot
   become policy without somebody agreeing to it.
 - The result lands in a field that can be read and reversed, not an opaque
@@ -150,14 +157,17 @@ should say what it noticed and offer to write it down:
 - The scheduler visibly gets better at *this* shop, which is the dependency
   the owner is aiming for.
 
-**Safeguards that still apply**, for anything that remains a weight rather
-than a setting:
+**Safeguards that apply:**
 
 1. **Never a hard rule.** A correction is a preference, not a law.
-2. **Three occurrences** before anything is suggested — the same threshold
-   `demand.py` uses for shift patterns (`MIN_PATTERN_OCCURRENCES`).
-3. **Only inside the 24-week window**, so an old habit fades as staff change.
-4. **Declining is remembered.** "No, it's coincidence" must not be asked again
+2. **Corrections are divided by opportunities.** Three corrections out of
+   twelve comparable proposals are weaker than three out of three.
+3. **Recent approvals count more** inside the 12-week correction window, so an
+   old habit fades as staff change.
+4. **Confidence must clear the manager's decision bar.** Dismissed suggestions
+   raise that bar; accepted suggestions can bring it back toward 50%, but never
+   below "more likely than not".
+5. **Declining is remembered.** "No, it's coincidence" must not be asked again
    next week, or the prompt becomes noise of its own.
 
 **The failure mode this avoids:** a feedback loop. A hidden weight that stops
@@ -168,10 +178,10 @@ the manager declined is a decision on the record.
 **Files:** `services/corrections.py`, `routes/shop.py` (applying an accepted
 suggestion), frontend prompt.
 
-**Tests:** a correction repeated three times produces a suggestion and twice
-does not; accepting one writes the real setting; declining one suppresses it
-permanently; no suggestion can be created that would breach any of the seven
-rules.
+**Tests:** consistent corrections clear the evidence bar; the same count mixed
+with accepted proposals does not; recent evidence outweighs old evidence;
+dismissals raise the bar; accepting one writes the real setting; declining one
+suppresses it permanently.
 
 **Done when:** the scheduler tells you what it noticed, you agree or disagree,
 and the outcome is visible in the employee's record rather than hidden in a
@@ -230,7 +240,7 @@ learning them would add noise, and the rosters would get worse.
 
 **Why suggesting settings rather than learning weights removes most of it:**
 
-- A one-off never reaches three occurrences, so it is never suggested.
+- A one-off cannot clear the conservative evidence bound, so it is never suggested.
 - A pattern is suggested once and **the manager decides**. Nothing enters the
   system without a human agreeing to it, so noise cannot silently become
   policy.

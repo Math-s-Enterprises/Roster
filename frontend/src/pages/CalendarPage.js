@@ -965,8 +965,8 @@ function DeleteRunDialog({ run, onClose, onDone }) {
   };
 
   return (
-    <div className="hol-page fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-         onClick={onClose}>
+    <div className="hol-page fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+         onClick={() => { if (!busy) onClose(); }}>
       <div onClick={(e) => e.stopPropagation()} className="card elevated w-full max-w-md"
            style={{ padding: 24 }}>
         <div className="hol-kicker">Remove</div>

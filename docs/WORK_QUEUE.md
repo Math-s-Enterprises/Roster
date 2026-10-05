@@ -1,6 +1,6 @@
 # Roster work queue
 
-Updated: 10 September 2026.
+Updated: 4 October 2026.
 
 Success means a workable roster that follows the shop manager's rules and needs. Historical comparisons measure role coverage, arrivals, hours and edit burden; matching employee names is not the goal.
 
@@ -47,11 +47,11 @@ Done when the model demonstrates a useful improvement without increasing constra
 
 ### 5. Replace the fixed repeat-count suggestion trigger
 
-- [ ] Learn contextual patterns from manager changes and accepted/rejected suggestions rather than triggering solely after three repetitions.
-- [ ] Distinguish temporary cover or leave from a lasting preference; show the evidence behind each suggestion.
+- [x] Learn contextual patterns from manager changes and accepted/rejected suggestions rather than triggering solely after three repetitions.
+- [x] Distinguish temporary cover or leave from a lasting preference; show the evidence behind each suggestion.
 - [ ] Evaluate suggestions on later decisions and retain manager control over making a pattern fixed.
 
-Done when suggestions reflect supported preferences and their usefulness can be measured. Existing correction data is sparse, so evidence collection precedes this change.
+The fixed count has been replaced by a recency-weighted evidence model. It compares each repeated correction with opportunities where the manager accepted the same generated proposal, uses a conservative confidence bound, excludes leave, and raises its decision bar after dismissals. The screen shows confidence and opportunities; the manager must still accept before any visible setting changes. Predictive evaluation on later client decisions remains open because existing correction data is sparse.
 
 ## Supporting reports
 

@@ -1073,3 +1073,174 @@ returned error. The password-reset-not-configured path has the same check.
 Sabotage reintroduced the recipient argument into the provider-status log and
 the regression failed on the exact leaked address before the safe line was
 restored.
+
+---
+
+## 13. A correction count is not evidence until its opportunities are counted
+
+The fixed `MIN_REPEATS = 3` trigger in `corrections.suggestions` counted only
+the weeks where a manager made a correction. It never counted the comparable
+weeks where the generated proposal was accepted unchanged. That made three
+corrections out of twelve opportunities look identical to three out of three,
+and the UI then inferred refusal from the absence of an offer.
+
+The correction learner now compares each pattern with its real proposal
+opportunities in the last twelve approved rosters. Recent approvals receive
+more weight, a Wilson lower bound keeps one-offs below the offer bar, and the
+manager's applied/dismissed decisions calibrate how cautious later offers are.
+Leave remains outside correction evidence. The report returns opportunity
+count, correction rate, confidence and explicit applied/dismissed state; no
+setting changes until the manager accepts the suggestion.
+
+This is a small deterministic online evidence model over each shop's own
+approvals, not an LLM call or a deployed cross-shop ranking model. Its later-
+week predictive usefulness remains to be measured as clients create new data.
+
+**Sabotage evidence:** replacing the confidence decision with the former
+`count >= 3` rule made
+`test_three_corrections_do_not_win_against_five_accepted_proposals` fail: it
+offered a day-off setting despite five accepted proposals contradicting those
+three corrections. Restoring the evidence decision made the focused learner
+and correction-report API suites pass.
+
+---
+
+## 14. Test configuration must override `.env`, not politely defer to it
+
+The backend tests promised an in-memory database and no network, but their
+bootstrap used `os.environ.setdefault`. `config.py` then loaded `backend/.env`,
+so a developer with real Anthropic or Resend credentials silently enabled
+those integrations inside pytest. Every roster generation called Anthropic for
+an optional summary. The suite became slow, network-dependent and potentially
+billable even though scheduler execution itself was fast.
+
+Profiling disproved the first theory. Replacing the solver with a minimal stub
+left the five correction-report API tests at about 130 seconds. Printing only
+feature booleans then showed `llm_enabled: true` and `email_enabled: true` in
+the test process. The fix is at the shared bootstrap: tests now assign their
+database/JWT environment explicitly and blank every external integration key
+before importing the app. Production configuration is unchanged.
+
+The health test now requires all test integration flags to be false. Sabotage
+removed only the Anthropic override; the test failed with `llm: true` without
+making a live request. After restoration, the correction-report class fell
+from roughly 130 seconds to 10.6 seconds, and the complete backend suite ran in
+about 1 minute 42 seconds instead of roughly 12 minutes in the same session.
+All tests passed apart from the existing expected failure.
+
+---
+
+## 15. Destructive confirmations belong to the app, not the browser
+
+Employee deletion called `window.confirm` directly in `Employees.del`, which
+produced the browser-owned “localhost says” prompt and bypassed the app's
+modal styling. The page already had a reusable `Modal`, so no component library
+or new CSS was needed.
+
+Delete now opens an in-app `DeleteEmployeeDialog` with the same warning about
+retaining past rosters and preferring Inactive for leavers. Only its explicit
+“Remove employee” action calls the existing API deletion. Buttons and backdrop
+closing are disabled while removal is in progress, and the shared employee
+modal now exposes dialog semantics and labelled close controls.
+
+The regression renders the dialog and also asserts that `Employees.js` contains
+no `window.confirm`. Sabotage restored a browser confirmation in `del`; the test
+failed on that exact call before the app-only path was restored. Frontend tests
+and the production build then passed; the existing `RosterView.js` hook warning
+is unchanged.
+
+---
+
+## 16. Verify the served bundle, not just the edited source
+
+The employee app-dialog fix was present locally, but the user's browser still
+showed the old native confirmation. Fetching localhost:3000's actual
+`/static/js/bundle.js` confirmed it contained a browser Remove confirmation
+and did not contain `DeleteEmployeeDialog`. This is evidence of a stale or
+different served frontend, not evidence that the local source fix is live.
+The settings page also still contained three real `window.confirm` calls:
+roster-group, role and recipient removal. Those were missed in the earlier fix.
+
+Settings now uses the installed Radix alert dialog with the existing app styles,
+keyboard/focus handling and explicit Cancel/Remove actions. The existing server
+checks remain unchanged, and removal still requires Save changes. The regression
+clicks group removal, verifies Cancel preserves it, then verifies confirmation
+removes it only from the form and makes no save request. Sabotage bypassed the
+dialog and removed immediately; the test failed before restoration. All six
+frontend tests passed after restoration.
+
+Docker Desktop Start/Stop does not rebuild an image. Live updates require a
+source bind mount and a watching development process; code copied into an image
+requires rebuilding and recreating the relevant container. No Dockerfile or
+Compose configuration was found in this checkout, and Docker CLI was unavailable
+in this session. Do not claim the user's containers were rebuilt or live-tested;
+first locate their configuration and verify the bundle they actually serve.
+
+---
+
+## 17. One working checkout for VS Code, Codex and Docker
+
+Both the Desktop folder and `C:\Users\anees\Roster` are Git repositories at
+the same original commit. Folder naming was not evidence of a ZIP-only checkout.
+Docker files existed on `add-docker-setup`, not on the checked-out `main` branch.
+The user authorised committing all pending fixes and transferring them through
+Git, preserving both copies and the MongoDB backup. The fixes were committed in
+Desktop, then cherry-picked onto `working-fixes-docker`, based on the existing
+Docker branch, in `C:\Users\anees\Roster`. Nothing was pushed.
+
+**Use `C:\Users\anees\Roster` for subsequent work.** Open that folder in VS Code
+and Codex. Do not keep editing Desktop and assume Docker sees it. Docker inspect
+confirmed both running services mount this working checkout into `/app`; the
+existing frontend polling and backend reload are already configured correctly.
+Fetching the served frontend bundle after transfer confirmed both app dialogs
+were present, and all six frontend tests passed inside the running container.
+
+The first container backend test failed at setup because `mongomock_motor` was
+missing. The API tests already require it and the Desktop venv already had it;
+it was absent from requirements. It is now declared alongside pytest so a clean
+Docker build can run the same isolated tests. No database migration, backup
+deletion, environment-secret copying or new Docker volume is required.
+
+After rebuilding only the backend service, the full backend suite completed
+successfully inside Docker with the existing expected failure. Backend health
+returned `ok`, both source mounts still pointed at the working checkout, and
+MongoDB stayed healthy on its original volume. VS Code was opened on this folder.
+The earlier Docker-unavailable finding applied to the sandbox's PATH; the normal
+host environment exposes Docker Desktop's CLI. Check the actual host before
+concluding the user's installation is missing.
+
+---
+
+## 18. Leavers need an action, not advice buried in a removal prompt
+
+The user wanted the employee removal dialog to match the smaller shop-settings
+card in their second screenshot, not the rounded employee-edit modal. They also
+wanted a visible inactive action, a separate inactive list and blurred backgrounds
+for all delete confirmations. Employee deletion reused its page-specific edit
+modal while settings used Radix; other pages still called native confirmations.
+
+The shared `ConfirmDialog` reuses installed Radix and the existing `card elevated`
+colours/layout, with a blurred backdrop, focus handling, Cancel and an explicit
+destructive action. Employees, settings, AI rules, fixed templates, illness and
+imported-history removal now use it. Holiday deletion keeps its existing per-day
+controls and matching card while gaining the same blurred backdrop; its backdrop
+cannot dismiss while deleting. The shared dialog disables cancellation and repeat
+submissions while saving and stays open when a caught API failure returns false.
+
+The employee detail now offers Mark inactive/Reactivate; the removal dialog also
+offers Mark inactive instead. These persist the existing shop-wide `is_active`
+field, preserving employee details rather than deleting the person. Active filters
+exclude leavers and the Inactive section lists them separately. Scheduler guards
+already exclude inactive employees; no new scheduler ranking or rule was added.
+Already-created rosters remain unchanged, and reactivation makes the employee
+eligible again. The change applies across shops and roster groups.
+
+Frontend regressions exercise the inactive update, list separation, reactivation,
+alternative removal action, shared card, blur, safe cancellation and duplicate
+submit prevention. Sabotage removed the inactive filter and blur: both regressions
+failed, then all eight frontend tests passed after restoration. The new isolated
+API regression verifies stored inactivity, exclusion from new generated rosters,
+retention of old shifts and reactivation; it and the existing availability suite
+passed (62 tests). Frontend production compilation passed with only the existing
+RosterView effect-dependency warning. Changes are in the Docker-mounted working
+checkout, `C:\Users\anees\Roster`, not the Desktop copy.

@@ -30,7 +30,7 @@ This report audits code and proposes the first experiment. It does not establish
 | `backend/app/routes/rosters.py`, generation | Generated shifts, seed, creation time, department and solver results are saved | Captures the proposal; not a complete snapshot of the inputs or solver version |
 | Same file, approval | Corrections, edit count, approval time, gap count and override information are saved | Useful feedback; approval does not establish that every assignment is preferred or compliant |
 | `backend/app/services/corrections.py` | Differences for moved, swapped, removed and added shifts | Captures the final difference, not the reasons for ordinary edits or every intermediate decision |
-| Same file, suggestions | `MIN_REPEATS = 3` and fixed suggestion mapping | Three occurrences in the reporting window, not necessarily three consecutive weeks; no trained preference inference |
+| Same file, suggestions | Recency-weighted correction/opportunity evidence, conservative confidence and manager-response calibration | Online shop-specific evidence model; not a trained cross-shop preference model, and later-week predictive usefulness remains unevaluated |
 | `backend/app/tenancy.py` | Shop-scoped collections | Training reads must preserve shop isolation |
 
 The generation record does not preserve a complete copy of employees' availability/contracts, holidays, fixed shifts, shop settings and active compiled rules as they were then. Current employee records cannot safely reconstruct those facts for a historical week. A saved seed alone cannot reproduce a solve when its inputs and code change.
@@ -69,7 +69,7 @@ Top Oil has 31 employee records, 25 currently active under the `is_active` / `pa
 
 All three have stored `approved_with_gaps = 0` and no force-approval flag. These are recorded outcomes, not an independent revalidation of historical coverage or rules. ILS has one swap on 7 September. There are no measurable unchanged approvals in either shop. The remaining historical weeks lack generated proposals; they must not be labelled unchanged approvals.
 
-The 185 changes are clustered in three weeks, not 185 independent weekly preference observations. They do not yet establish reliable contextual suggestion learning. Top Oil has one stored suggestion-response record; ILS has none, so suggestion-acceptance evaluation is also very limited.
+The 185 changes are clustered in three weeks, not 185 independent weekly preference observations. They do not yet establish that the new contextual suggestion learner predicts later decisions reliably. Top Oil has one stored suggestion-response record; ILS has none, so suggestion-acceptance evaluation is also very limited.
 
 ### Data quality
 
@@ -129,6 +129,6 @@ Coverage evaluation should include actual intervals: the existing whole-hour cov
 
 ## Recommended sequence
 
-Access and the initial scoped inventory are complete. Next, agree the context-capture design and prepare a quality-filtered historical dataset with explicit provenance. An initial historical-pattern experiment is possible; reliable contextual correction learning is not yet demonstrated by three weeks. Verify closing-rule semantics end to end before evaluating compliance with that rule. Replace fixed suggestion triggers only once contextual learning can be evaluated. The older `docs/ML_PLAN.md` is historical: its assumptions that corrections are discarded and removals are always strong negative labels must not guide the new work.
+Access, context capture and the initial scoped inventory are complete. The fixed suggestion trigger has been replaced with an online evidence model, but reliable predictive value is not yet demonstrated by three weeks. Evaluate its suggestions on later approvals before calling it a trained preference model. The older `docs/ML_PLAN.md` is historical: its assumptions that corrections are discarded and removals are always strong negative labels must not guide the new work.
 
 No application behaviour was changed during this audit. Verification consisted of source inspection, two executed parser probes, a successful connection check and two read-only inventory queries; the application test suite was not run for this documentation-only change.

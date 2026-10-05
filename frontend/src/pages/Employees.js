@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, errorMessage, fmtMoney, CURRENCY, DAY_SHORT, DAY_LABELS, DAYS, shiftHours } from "@/lib/api";
 import { toast } from "sonner";
 import ContactImportPanel from "@/components/ContactImportPanel";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { Plus, Search, ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Sun, X, AlertTriangle } from "lucide-react";
 
 /**
@@ -51,6 +52,7 @@ const SORTS = [
   { key: "seniority", label: "Seniority" },
   { key: "managers", label: "Managers" },
   { key: "students", label: "Students" },
+  { key: "inactive", label: "Inactive" },
 ];
 
 const PAGE_SIZE = 12;
@@ -295,6 +297,9 @@ export default function Employees() {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [adjusting, setAdjusting] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+  const [removing, setRemoving] = useState(false);
+  const [changingStatus, setChangingStatus] = useState(false);
   const listRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -379,7 +384,7 @@ export default function Employees() {
   // --- list ---------------------------------------------------------
 
   const filtered = useMemo(() => {
-    let list = emps;
+    let list = emps.filter((e) => sort === "inactive" ? e.is_active === false : e.is_active !== false);
     const q = query.trim().toLowerCase();
     if (q) list = list.filter((e) =>
       e.name.toLowerCase().includes(q) || (e.role || "").toLowerCase().includes(q));
@@ -390,7 +395,7 @@ export default function Employees() {
   }, [emps, query, sort, isManager]);
 
   const groups = useMemo(() => {
-    if (sort !== "seniority") return [{ key: "all", label: null, list: filtered }];
+    if (sort !== "seniority") return [{ key: "all", label: sort === "inactive" ? "Inactive employees" : null, list: filtered }];
     return [
       { key: "managers", label: "Managers", list: filtered.filter(isManager) },
       { key: "team", label: "Team", list: filtered.filter((e) => !isManager(e)) },
@@ -446,22 +451,37 @@ export default function Employees() {
   };
 
   const del = async (employee) => {
-    if (!window.confirm(
-      `Remove ${employee.name}? Past rosters are kept.\n\n` +
-      "If they have left, switching them to Inactive in Edit is usually better — " +
-      "it keeps their history readable and stops them being rostered."
-    )) return;
     const i = flat.findIndex((x) => x.employee_id === employee.employee_id);
     const next = flat[i + 1] || flat[i - 1] || null;
+    setRemoving(true);
     try {
       await api.delete(`/employees/${employee.employee_id}`);
       toast.success("Removed");
+      setDeleting(null);
       if (next) navigate(`/employees/${next.employee_id}`, { replace: true });
       else navigate("/employees", { replace: true });
       load();
     } catch (err) {
       toast.error(errorMessage(err));
+      return false;
+    } finally {
+      setRemoving(false);
     }
+  };
+
+  const changeStatus = async (employee) => {
+    setChangingStatus(true);
+    try {
+      const active = employee.is_active === false;
+      await api.put(`/employees/${employee.employee_id}`, { ...employee, is_active: active });
+      setDeleting(null);
+      setSort(active ? "seniority" : "inactive");
+      toast.success(active ? "Employee reactivated" : "Employee marked inactive — excluded from generation");
+      await load();
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not change employee status"));
+      return false;
+    } finally { setChangingStatus(false); }
   };
 
   /** Drag writes shop.employee_order — reading order, not the ladder. */
@@ -585,7 +605,11 @@ export default function Employees() {
                 Adjust holiday
               </button>
             )}
-            <button type="button" className="esp-act esp-act-2" onClick={() => del(selected)}>
+            <button type="button" className="esp-act" disabled={changingStatus}
+              onClick={() => changeStatus(selected)}>
+              {selected.is_active === false ? "Reactivate" : "Mark inactive"}
+            </button>
+            <button type="button" className="esp-act esp-act-2" onClick={() => setDeleting(selected)}>
               Delete
             </button>
           </div>
@@ -883,7 +907,7 @@ export default function Employees() {
         person changes that order only; <strong>who gets hours first follows the job ladder</strong> and is
         set in shop settings. Amber marks something to act on: over max hours this week, or a holiday
         balance running low. <strong>Delete keeps past rosters</strong>; for someone who has left, Inactive
-        in Edit is usually the better switch.
+        is usually the better switch. Inactive employees are listed separately and are not generated onto new rosters.
       </p>
       {modal && (
         <Modal onClose={() => setModal(null)}>
@@ -1248,7 +1272,31 @@ export default function Employees() {
           onSaved={() => { setAdjusting(null); load(); }}
         />
       )}
+
+      {deleting && (
+        <DeleteEmployeeDialog
+          employee={deleting}
+          busy={removing || changingStatus}
+          onClose={() => { if (!removing) setDeleting(null); }}
+          onConfirm={() => del(deleting)}
+          onInactive={() => changeStatus(deleting)}
+        />
+      )}
     </div>
+  );
+}
+
+export function DeleteEmployeeDialog({ employee, busy, onClose, onConfirm, onInactive }) {
+  return (
+    <ConfirmDialog title={`Remove ${employee.name}?`} busy={busy} onClose={onClose} onConfirm={onConfirm}
+      confirmLabel="Remove employee"
+      description="Past rosters are kept. If they have left, mark them inactive instead to keep their history and exclude them from new rosters.">
+      {employee.is_active !== false && onInactive && (
+        <button type="button" disabled={busy} className="btn btn-secondary mb-4" onClick={onInactive}>
+          Mark inactive instead
+        </button>
+      )}
+    </ConfirmDialog>
   );
 }
 
@@ -1375,11 +1423,14 @@ function Toggle({ checked, onChange, label, hint, testId }) {
   );
 }
 
-function Modal({ children, onClose }) {
+function Modal({ children, onClose, ariaLabel = "Dialog" }) {
   return (
     <div className="fixed inset-0 z-50 esp-modal-scrim backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <div className="max-w-lg w-full my-8 esp-modal-panel border esp-line rounded-3xl p-8 relative" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onClose} className="absolute top-4 right-4 esp-ink-faint esp-hover-ink z-10">
+      <div role="dialog" aria-modal="true" aria-label={ariaLabel}
+        className="max-w-lg w-full my-8 esp-modal-panel border esp-line rounded-3xl p-8 relative"
+        onClick={(e) => e.stopPropagation()}>
+        <button type="button" aria-label="Close dialog" onClick={onClose}
+          className="absolute top-4 right-4 esp-ink-faint esp-hover-ink z-10">
           <X size={16} />
         </button>
         {children}

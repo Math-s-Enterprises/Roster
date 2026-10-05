@@ -4,6 +4,8 @@ These tests are the foundation of the whole corrections feature: if the diff
 is wrong, everything built on it learns the wrong lesson. So they assert the
 exact correction produced, not merely that something was detected.
 """
+from datetime import date, timedelta
+
 from app.services.corrections import diff_roster, edit_count
 
 
@@ -163,16 +165,28 @@ class TestMissingData:
 # ---------------------------------------------------------------------------
 # Phase 2 — reading the signal back
 # ---------------------------------------------------------------------------
-def _week(week_start, corrections_list, generated=True):
+def _week(week_start, corrections_list, generated=True, generated_shifts=None):
     roster = {
         "week_start": week_start, "approved": True,
         "corrections": corrections_list,
     }
     if generated:
-        roster["generated_shifts"] = [{
-            "employee_id": "x", "day": "mon",
-            "start": "09:00", "end": "17:00",
-        }]
+        proposals = [] if generated_shifts is None else list(generated_shifts)
+        if generated_shifts is None:
+            for correction in corrections_list:
+                kind = correction.get("kind")
+                if kind == "added":
+                    continue
+                employee_id = correction.get("replaced_employee_id") \
+                    if kind == "swap" else correction.get("employee_id")
+                slot = correction.get("from_slot") \
+                    if kind == "moved" else correction.get("slot")
+                start, _, end = (slot or "").partition("-")
+                if employee_id and correction.get("day") and start and end:
+                    proposals.append(shift(
+                        employee_id, correction["day"], start, end,
+                    ))
+        roster["generated_shifts"] = proposals or [shift("x", "mon")]
     return roster
 
 
@@ -242,27 +256,65 @@ class TestPatternsAreCounted:
 
 
 class TestSuggestions:
-    """A single edit is an event. The third time is the manager telling you
-    something."""
+    """The learner weighs corrections against opportunities and recency."""
 
     def _repeated(self, correction, times):
         return [
-            _week(f"2026-08-{3 + 7 * i:02d}", [correction]) for i in range(times)
+            _week((date(2026, 8, 3) + timedelta(weeks=i)).isoformat(), [correction])
+            for i in range(times)
         ]
 
-    def test_two_repeats_is_not_yet_a_pattern(self):
+    def test_one_edit_is_not_enough_evidence(self):
         from app.services.corrections import suggestions
 
-        assert suggestions(self._repeated(_removed(), 2)) == []
+        assert suggestions(self._repeated(_removed(), 1)) == []
 
-    def test_three_repeats_offers_a_day_off(self):
+    def test_two_consistent_corrections_can_offer_a_day_off(self):
         from app.services.corrections import suggestions
 
-        offers = suggestions(self._repeated(_removed(), 3))
+        offers = suggestions(self._repeated(_removed(), 2))
         assert len(offers) == 1
         assert offers[0]["action"] == "day_off"
         assert offers[0]["day"] == "wed"
-        assert "3 times" in offers[0]["because"]
+        assert offers[0]["opportunities"] == 2
+        assert offers[0]["confidence"] > 0.5
+
+    def test_three_corrections_do_not_win_against_five_accepted_proposals(self):
+        from app.services.corrections import suggestions
+
+        correction = _removed()
+        rosters = self._repeated(correction, 3)
+        rosters.extend(
+            _week(
+                (date(2026, 8, 24) + timedelta(weeks=i)).isoformat(),
+                [], generated_shifts=[shift("e1", "wed")],
+            )
+            for i in range(5)
+        )
+        assert suggestions(rosters) == []
+
+    def test_recent_corrections_outweigh_an_old_accepted_proposal(self):
+        from app.services.corrections import suggestions
+
+        correction = _removed()
+        rosters = [
+            _week("2026-08-03", [], generated_shifts=[shift("e1", "wed")]),
+            *[
+                _week(
+                    (date(2026, 8, 10) + timedelta(weeks=i)).isoformat(),
+                    [correction],
+                )
+                for i in range(4)
+            ],
+        ]
+        assert suggestions(rosters)[0]["action"] == "day_off"
+
+    def test_dismissals_make_the_learner_more_cautious(self):
+        from app.services.corrections import model_info, suggestions
+
+        decisions = [{"signature": "another", "dismissed_at": "now"}]
+        assert model_info(decisions)["decision_boundary"] > 0.5
+        assert suggestions(self._repeated(_removed(), 2), decisions) == []
 
     def test_a_repeated_addition_offers_a_fixed_shift(self):
         from app.services.corrections import suggestions
@@ -310,12 +362,12 @@ class TestSuggestions:
         assert offers[0]["day"] == "mon"
         assert "3 times" in offers[0]["because"]
 
-    def test_a_shift_lengthened_only_twice_is_not_yet_a_pattern(self):
+    def test_a_shift_lengthened_once_is_not_yet_a_pattern(self):
         from app.services.corrections import suggestions
 
         moved = {"kind": "moved", "day": "mon", "employee_id": "e6",
                  "from_slot": "06:00-10:00", "to_slot": "06:00-12:00"}
-        assert suggestions(self._repeated(moved, 2)) == []
+        assert suggestions(self._repeated(moved, 1)) == []
 
     def test_a_shortened_shift_counts_too(self):
         """The signal is the shape being wrong, not the direction. A shift cut
@@ -359,5 +411,5 @@ class TestSuggestions:
         offered = suggestions(rosters)
         assert offered
 
-        assert suggestions(rosters, dismissed=[offered[0]["signature"]]) == []
+        assert suggestions(rosters, decisions=[offered[0]["signature"]]) == []
         assert offered[0]["signature"] == signature(_removed())

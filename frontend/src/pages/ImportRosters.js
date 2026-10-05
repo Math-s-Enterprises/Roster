@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { toast } from "sonner";
 import {
   AlertTriangle, Calendar, CheckCircle2, FileSpreadsheet, FileText,
@@ -504,6 +505,7 @@ function ImportedWeeks({ refreshKey, summary, department, onChange, onReplace })
       onChange?.();
     } catch (err) {
       toast.error(errorMessage(err, "Could not remove that week"));
+      return false;
     } finally { setRemoving(false); }
   };
 
@@ -760,41 +762,14 @@ function ImportedWeeks({ refreshKey, summary, department, onChange, onReplace })
 }
 function ConfirmRemove({ week, busy, onCancel, onConfirm }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,.6)" }}
-      onClick={onCancel}
-    >
-      <div
-        className="card p-6 w-full max-w-md"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 mb-3">
-          <AlertTriangle size={18} style={{ color: "var(--warn)" }} />
-          <h2 className="text-base">Remove the week of {week.week_start}?</h2>
-        </div>
-        <p className="text-[13px] mb-3" style={{ color: "var(--ink-secondary)" }}>
-          {week.shifts} shift{week.shifts === 1 ? "" : "s"} will be deleted from
-          the roster history, and the scheduler will stop learning from them.
-        </p>
-        <p className="text-[12px] mb-5" style={{ color: "var(--ink-mute-2)" }}>
+    <ConfirmDialog title={`Remove the week of ${week.week_start}?`} busy={busy}
+      description={`${week.shifts} shift${week.shifts === 1 ? "" : "s"} will be deleted from the roster history, and the scheduler will stop learning from them.`}
+      confirmLabel="Remove week" onClose={onCancel} onConfirm={onConfirm}>
+        <p className="text-xs ui-muted mb-5">
           You can put it back afterwards — it stays readable from the file you
           uploaded, and appears under “Removed weeks”.
         </p>
-        <div className="flex gap-2">
-          <button onClick={onCancel} className="btn btn-secondary flex-1">Keep it</button>
-          <button
-            data-testid="btn-remove-week-confirm"
-            onClick={onConfirm}
-            disabled={busy}
-            className="btn btn-danger flex-1"
-          >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-            Remove week
-          </button>
-        </div>
-      </div>
-    </div>
+    </ConfirmDialog>
   );
 }
 

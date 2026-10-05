@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { api, DAYS, DAY_LABELS, DAY_SHORT, errorMessage, shiftHours } from "@/lib/api";
 import { toast } from "sonner";
 import { AlertTriangle, ChevronDown, Plus, X } from "lucide-react";
@@ -51,6 +52,7 @@ function listDays(dayKeys) {
 }
 
 export default function FixedShifts() {
+  const [deleting, setDeleting] = useState(null);
   const [items, setItems] = useState([]);
   const [emps, setEmps] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -217,15 +219,16 @@ export default function FixedShifts() {
    * means rebuilding it from the four days that remain. Same create-first
    * ordering, for the same reason.
    */
-  const removeDay = async (id, day) => {
+  const removeDay = async (id, day, confirmed = false) => {
     const template = items.find((t) => t.fixed_id === id);
     if (!template) return;
     const kept = (template.days || []).filter((d) => d !== day);
 
-    if (kept.length === 0) {
-      if (!window.confirm(
-        `${DAY_LABELS[day]} is the only day on this template — removing it clears the pinned shift entirely. Continue?`
-      )) return;
+    if (kept.length === 0 && !confirmed) {
+      setDeleting({ title: "Remove pinned shift?",
+        description: `${DAY_LABELS[day]} is the only day on this template — removing it clears the pinned shift entirely.`,
+        confirm: () => removeDay(id, day, true) });
+      return;
     }
 
     try {
@@ -247,6 +250,7 @@ export default function FixedShifts() {
     } catch (error) {
       toast.error(errorMessage(error, "Could not remove that day"));
       await load();
+      return false;
     }
   };
 
@@ -255,19 +259,24 @@ export default function FixedShifts() {
    * it — so the confirm says how many, otherwise clicking one cell silently
    * clears four.
    */
-  const remove = async (id) => {
+  const remove = async (id, confirmed = false) => {
     const template = items.find((t) => t.fixed_id === id);
     const spanned = template?.days?.length || 0;
     const detail = spanned > 1
       ? `This template covers ${spanned} days. Remove all of them?`
       : "Remove this pinned shift?";
-    if (!window.confirm(detail)) return;
+    if (!confirmed) {
+      setDeleting({ title: "Remove pinned shift?", description: detail,
+        confirm: () => remove(id, true) });
+      return;
+    }
     try {
       await api.delete(`/fixed-shifts/${id}`);
       toast.success("Pinned shift removed");
       await load();
     } catch (error) {
       toast.error(errorMessage(error, "Could not remove that shift"));
+      return false;
     }
   };
 
@@ -275,6 +284,8 @@ export default function FixedShifts() {
 
   return (
     <div className="fx-page">
+      {deleting && <ConfirmDialog title={deleting.title} description={deleting.description}
+        onClose={() => setDeleting(null)} onConfirm={deleting.confirm} />}
       <header className="fx-head">
         <div>
           <div className="fx-eyebrow">TEMPLATES · FIXED SHIFTS</div>
