@@ -1200,3 +1200,11 @@ missing. The API tests already require it and the Desktop venv already had it;
 it was absent from requirements. It is now declared alongside pytest so a clean
 Docker build can run the same isolated tests. No database migration, backup
 deletion, environment-secret copying or new Docker volume is required.
+
+After rebuilding only the backend service, the full backend suite completed
+successfully inside Docker with the existing expected failure. Backend health
+returned `ok`, both source mounts still pointed at the working checkout, and
+MongoDB stayed healthy on its original volume. VS Code was opened on this folder.
+The earlier Docker-unavailable finding applied to the sandbox's PATH; the normal
+host environment exposes Docker Desktop's CLI. Check the actual host before
+concluding the user's installation is missing.
