@@ -8,33 +8,26 @@
  * specific to them — a competitor cannot copy it, because it is built out of
  * their own corrections.
  *
- * The suggestions are the other half. When the same edit has been made three
- * times, the scheduler offers to change a real setting — a fixed shift, a day
- * off, an availability window — rather than quietly weighting something in the
- * background. Learning you cannot inspect is learning you cannot trust, and if
- * it has concluded something wrong the manager must be able to find out from a
- * screen rather than from a bad roster. Which is why every suggestion can be
- * refused, and refusing is permanent.
+ * The suggestions are the other half. The scheduler compares repeated edits
+ * with chances where the same proposal was accepted unchanged, weighting recent
+ * weeks more. Strong evidence can become a visible setting — a fixed shift, a
+ * day off, an availability window — but only after the manager accepts it.
  *
  * Layout is the handoff's, scoped to .wl-* in index.css: a three-stat band, a
  * two-column explanation split, one table of every logged change.
  *
  * DEVIATIONS
  *
- * 1. "Set up now" appears only once a pattern has reached the repeat
- *    threshold, not at ×2 as the handoff says. POST /reports/corrections/apply
- *    looks the signature up among the real suggestions and 404s otherwise, so
- *    an earlier button could only fail.
+ * 1. "Set up now" appears only when the evidence model marks a pattern ready.
+ *    POST /reports/corrections/apply rechecks the evidence and 404s otherwise.
  *
  * 2. There is no "Undo refusal". Refusals are stored, and the API has dismiss
  *    but nothing to reverse it — matching the product decision that refusing
  *    is permanent. Refused rows say so rather than offering an action that
  *    does not exist.
  *
- * 3. Refused rows are derived, not flagged: the report returns a count of
- *    refusals but not which ones. A pattern at or past the threshold that is
- *    absent from the suggestion list has been refused, which is the only way
- *    it can be missing.
+ * 3. Applied and refused rows are returned explicitly by the report; absence
+ *    from the suggestion list is not enough to infer either state.
  *
  * 4. Rows are a CSS grid with table roles rather than a real <table> — the
  *    handoff asks for both a real table and minmax() tracks, and a table
@@ -50,7 +43,7 @@ const SORT_KEY = "roster_learning_sort";
 const PAGE = 7;
 
 const SORTS = [
-  { key: "most-repeated", label: "Most repeated" },
+  { key: "most-repeated", label: "Strongest evidence" },
   { key: "by-day", label: "By day" },
   { key: "newest", label: "Newest" },
 ];
@@ -112,15 +105,8 @@ export default function LearningReport() {
 
   const chooseSort = (key) => { setSort(key); localStorage.setItem(SORT_KEY, key); };
 
-  const minRepeats = report?.min_repeats ?? 3;
   const patterns = useMemo(() => report?.patterns || [], [report]);
   const suggestions = useMemo(() => report?.suggestions || [], [report]);
-
-  /** Signatures the scheduler is currently willing to act on. */
-  const offered = useMemo(
-    () => new Set(suggestions.map((s) => s.signature)),
-    [suggestions],
-  );
 
   /** Only measured weeks count — a roster with no snapshot cannot be compared. */
   const measured = useMemo(
@@ -136,14 +122,13 @@ export default function LearningReport() {
   const rows = useMemo(() => {
     const list = patterns.map((p) => {
       const weeks = p.weeks || [];
-      const ready = p.count >= minRepeats;
-      const refused = ready && !offered.has(p.signature);
       return {
         ...p,
         lastWeek: weeks.length ? [...weeks].sort().at(-1) : "",
-        ready,
-        refused,
-        remaining: Math.max(0, minRepeats - p.count),
+        ready: Boolean(p.ready),
+        refused: p.decision === "dismissed",
+        applied: p.decision === "applied",
+        confidencePercent: Math.round((p.confidence || 0) * 100),
       };
     });
     if (sort === "by-day") {
@@ -155,8 +140,8 @@ export default function LearningReport() {
         String(b.lastWeek).localeCompare(String(a.lastWeek)) || (b.count - a.count));
     }
     return list.sort((a, b) =>
-      (b.count - a.count) || String(b.lastWeek).localeCompare(String(a.lastWeek)));
-  }, [patterns, sort, minRepeats, offered]);
+      (b.confidence - a.confidence) || String(b.lastWeek).localeCompare(String(a.lastWeek)));
+  }, [patterns, sort]);
 
   const shown = rows.slice(0, visible);
 
@@ -184,12 +169,14 @@ export default function LearningReport() {
       return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
     };
     const out = [
-      ["Times", "Day", "What you changed", "State", "Weeks seen"],
+      ["Times", "Day", "What you changed", "State", "Confidence", "Opportunities", "Weeks seen"],
       ...rows.map((p) => [
         p.count,
         DAY_LABELS[p.day] || p.day,
         describe(p),
-        p.refused ? "Refused" : p.ready ? "Ready to set up" : `${p.remaining} more to offer`,
+        p.applied ? "Applied" : p.refused ? "Refused" : p.ready ? "Ready to set up" : "Learning",
+        `${p.confidencePercent}%`,
+        p.opportunities,
         (p.weeks || []).join(" / "),
       ]),
     ];
@@ -262,9 +249,9 @@ export default function LearningReport() {
           {suggestions.length === 0 ? (
             <>
               <p className="wl-body">
-                <strong>Nothing yet.</strong> Make the same change {minRepeats} weeks running — moving
-                somebody off a day, adding a shift the generator missed, always lengthening the same
-                shift — and it will offer to set that up permanently.
+                <strong>Nothing is strong enough yet.</strong> The learner compares how often you
+                correct a proposal with how often you accept the same proposal unchanged, giving
+                recent weeks more weight.
               </p>
               {report.dismissed_count > 0 && (
                 <p className="wl-aside">
@@ -275,8 +262,8 @@ export default function LearningReport() {
           ) : (
             <>
               <p className="wl-body">
-                Each of these has come up at least {minRepeats} times. Setting one up changes a real
-                setting you can see and undo — nothing is hidden.
+                These patterns are more likely than not to be corrected again. Setting one up changes
+                a real setting you can see and undo — nothing is hidden.
               </p>
               <div className="wl-ready">
                 {suggestions.map((s) => (
@@ -345,7 +332,7 @@ export default function LearningReport() {
           <p className="wl-section-sub">
             Across your last {report.weeks_measured}{" "}
             approved {report.weeks_measured === 1 ? "roster" : "rosters"}. Shown whether or not it has
-            been repeated often enough to act on.
+            enough evidence to act on.
           </p>
         </div>
         <div className="wl-sorts" role="group" aria-label="Sort changes">
@@ -382,14 +369,16 @@ export default function LearningReport() {
             <span className="wl-day" role="cell">{DAY_LABELS[p.day] || p.day}</span>
             <span className="wl-what" role="cell">{describe(p)}</span>
             <span className="wl-state" role="cell" data-refused={p.refused}>
-              {p.refused
-                ? "Refused — not offered again"
+              {p.applied
+                ? "Applied"
+                : p.refused
+                  ? "Refused — not offered again"
                 : p.ready
                   ? "Ready to set up"
-                  : `${p.remaining} more to offer`}
+                  : `Learning · ${p.confidencePercent}% confidence`}
             </span>
             <span className="wl-acts" role="cell">
-              {p.refused ? (
+              {p.refused || p.applied ? (
                 <span className="wl-state">—</span>
               ) : p.ready ? (
                 <button
@@ -428,13 +417,11 @@ export default function LearningReport() {
       </div>
 
       <p className="wl-note">
-        A change has to repeat across <strong>{minRepeats} approved rosters</strong> before it is
-        offered — <strong>one-offs are noise, repeats are policy</strong>. Drafts never count, so
-        regenerating a week twice cannot fake a pattern. <strong>Set up now</strong> writes the real
-        setting behind the change — a fixed shift, a day off, an availability window — where anyone
-        can find and undo it in the ordinary screens; nothing is weighted invisibly.{" "}
-        <strong>Refusing removes a pattern from consideration for good</strong>, so it will not be
-        raised again.
+        The learner weighs corrections against chances to make the same decision, with recent
+        approved rosters counting more. One-offs stay below the evidence bar, and refusals make the
+        learner more cautious. Drafts never count, so regenerating cannot fake a pattern. <strong>Set
+        up now</strong> writes a real setting — a fixed shift, a day off, or an availability window —
+        that anyone can find and undo in the ordinary screens.
       </p>
 
       {suggestion && (

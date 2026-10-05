@@ -295,6 +295,8 @@ export default function Employees() {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [adjusting, setAdjusting] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+  const [removing, setRemoving] = useState(false);
   const listRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -446,21 +448,20 @@ export default function Employees() {
   };
 
   const del = async (employee) => {
-    if (!window.confirm(
-      `Remove ${employee.name}? Past rosters are kept.\n\n` +
-      "If they have left, switching them to Inactive in Edit is usually better — " +
-      "it keeps their history readable and stops them being rostered."
-    )) return;
     const i = flat.findIndex((x) => x.employee_id === employee.employee_id);
     const next = flat[i + 1] || flat[i - 1] || null;
+    setRemoving(true);
     try {
       await api.delete(`/employees/${employee.employee_id}`);
       toast.success("Removed");
+      setDeleting(null);
       if (next) navigate(`/employees/${next.employee_id}`, { replace: true });
       else navigate("/employees", { replace: true });
       load();
     } catch (err) {
       toast.error(errorMessage(err));
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -585,7 +586,7 @@ export default function Employees() {
                 Adjust holiday
               </button>
             )}
-            <button type="button" className="esp-act esp-act-2" onClick={() => del(selected)}>
+            <button type="button" className="esp-act esp-act-2" onClick={() => setDeleting(selected)}>
               Delete
             </button>
           </div>
@@ -1248,7 +1249,42 @@ export default function Employees() {
           onSaved={() => { setAdjusting(null); load(); }}
         />
       )}
+
+      {deleting && (
+        <DeleteEmployeeDialog
+          employee={deleting}
+          busy={removing}
+          onClose={() => { if (!removing) setDeleting(null); }}
+          onConfirm={() => del(deleting)}
+        />
+      )}
     </div>
+  );
+}
+
+export function DeleteEmployeeDialog({ employee, busy, onClose, onConfirm }) {
+  return (
+    <Modal onClose={onClose} ariaLabel={`Remove ${employee.name}`}>
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 ui-warn">
+          <AlertTriangle size={17} /> Remove employee
+        </div>
+        <h2 className="text-2xl font-light">Remove {employee.name}?</h2>
+        <p className="text-sm esp-ink-mute">Past rosters are kept.</p>
+        <div className="glass-solid rounded-xl p-4 text-sm esp-ink-body">
+          If they have left, switching them to <strong>Inactive</strong> in Edit is usually better —
+          it keeps their history readable and stops them being rostered.
+        </div>
+        <div className="flex items-center justify-end gap-2 pt-2">
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-danger" disabled={busy} onClick={onConfirm}>
+            {busy ? "Removing…" : "Remove employee"}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1375,11 +1411,14 @@ function Toggle({ checked, onChange, label, hint, testId }) {
   );
 }
 
-function Modal({ children, onClose }) {
+function Modal({ children, onClose, ariaLabel = "Dialog" }) {
   return (
     <div className="fixed inset-0 z-50 esp-modal-scrim backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <div className="max-w-lg w-full my-8 esp-modal-panel border esp-line rounded-3xl p-8 relative" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onClose} className="absolute top-4 right-4 esp-ink-faint esp-hover-ink z-10">
+      <div role="dialog" aria-modal="true" aria-label={ariaLabel}
+        className="max-w-lg w-full my-8 esp-modal-panel border esp-line rounded-3xl p-8 relative"
+        onClick={(e) => e.stopPropagation()}>
+        <button type="button" aria-label="Close dialog" onClick={onClose}
+          className="absolute top-4 right-4 esp-ink-faint esp-hover-ink z-10">
           <X size={16} />
         </button>
         {children}

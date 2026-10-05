@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { api, errorMessage, DAY_LABELS, DAYS, announceShopChange } from "@/lib/api";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
@@ -36,6 +37,7 @@ export default function Onboarding() {
   const [observerName, setObserverName] = useState("");
   const [observerEmail, setObserverEmail] = useState("");
   const [saving, setSaving] = useState(false);
+  const [removal, setRemoval] = useState(null);
   // Explicit per-role supervisory flags, seeded from what the server
   // derives. See the note under the table: the value is sent on save but
   // PUT /shop does not accept it yet.
@@ -313,23 +315,27 @@ export default function Onboarding() {
       toast.error("Keep at least one roster group");
       return;
     }
-    if (!window.confirm(
-      `Remove ${name}?\n\nThis can only be saved if no employees or rosters still use it.`
-    )) return;
-    setDepartments(departments.filter((item) => item !== name));
+    setRemoval({
+      title: `Remove ${name}?`,
+      description: "This can only be saved if no employees or rosters still use it. Save changes to apply the removal.",
+      confirm: () => setDepartments(departments.filter((item) => item !== name)),
+    });
   };
 
   const removeRole = (role) => {
-    if (!window.confirm(
-      `Remove ${role} from the ladder?\n\n`
-      + "Nobody loses the title — staff with a role that is not listed simply rank last."
-    )) return;
-    setRoles(roles.filter((r) => r !== role));
+    setRemoval({
+      title: `Remove ${role} from the ladder?`,
+      description: "Nobody loses the title — staff with a role that is not listed simply rank last. Save changes to apply the removal.",
+      confirm: () => setRoles(roles.filter((r) => r !== role)),
+    });
   };
 
   const removeObserver = (email) => {
-    if (!window.confirm(`Stop sending the roster to ${email}?`)) return;
-    setObservers(observers.filter((o) => o.email !== email));
+    setRemoval({
+      title: `Stop sending the roster to ${email}?`,
+      description: "This recipient will be removed when you save changes.",
+      confirm: () => setObservers(observers.filter((o) => o.email !== email)),
+    });
   };
 
   const setDay = (day, patch) =>
@@ -345,6 +351,19 @@ export default function Onboarding() {
   if (editing) {
     return (
       <div className="ss-page">
+        <AlertDialog.Root open={!!removal} onOpenChange={(open) => { if (!open) setRemoval(null); }}>
+          <AlertDialog.Portal>
+            <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
+            <AlertDialog.Content className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md card elevated p-6">
+              <AlertDialog.Title className="text-lg font-semibold mb-2">{removal?.title}</AlertDialog.Title>
+              <AlertDialog.Description className="text-sm ui-muted mb-6">{removal?.description}</AlertDialog.Description>
+              <div className="flex justify-between gap-3">
+                <AlertDialog.Cancel className="btn btn-secondary">Cancel</AlertDialog.Cancel>
+                <AlertDialog.Action className="btn btn-danger" onClick={() => removal?.confirm()}>Remove</AlertDialog.Action>
+              </div>
+            </AlertDialog.Content>
+          </AlertDialog.Portal>
+        </AlertDialog.Root>
         <header className="ss-head">
           <div className="ss-eyebrow">SETUP</div>
           <h1 className="ss-h1">

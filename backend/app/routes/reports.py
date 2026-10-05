@@ -30,6 +30,14 @@ async def _group_rosters(scope: ShopScope) -> List[Dict[str, Any]]:
         if departments.matches(roster, scope.department, scope.base_shop)
     ]
 
+
+async def _group_decisions(scope: ShopScope) -> List[Dict[str, Any]]:
+    return [
+        decision for decision in await scope.correction_dismissals.find(limit=500)
+        if (decision.get("department") or departments.DEFAULT_DEPARTMENT)
+        == scope.department
+    ]
+
 @router.get("/reports/sick-balance")
 async def sick_balance_report(scope: ShopScope = CurrentScope):
     """Paid sick entitlement, used and remaining, per employee.
@@ -167,19 +175,16 @@ async def corrections_report(scope: ShopScope = CurrentScope):
     the moment a week is unapproved.
     """
     rosters = await _group_rosters(scope)
-    dismissed = [
-        dismissal["signature"]
-        for dismissal in await scope.correction_dismissals.find(limit=500)
-        if (dismissal.get("department") or departments.DEFAULT_DEPARTMENT)
-        == scope.department
-    ]
+    decisions = await _group_decisions(scope)
     employees = {
         e["employee_id"]: e.get("name", e["employee_id"])
         for e in await scope.employees.find(limit=1000)
     }
 
     summary = corrections.summarise(rosters)
-    offers = corrections.suggestions(rosters, dismissed)
+    offers = corrections.suggestions(rosters, decisions)
+    offered = {offer["signature"] for offer in offers}
+    decided = {decision["signature"]: decision for decision in decisions}
 
     # Names are resolved here rather than in the service, which stays a pure
     # function over rosters and is testable without a database.
@@ -191,6 +196,14 @@ async def corrections_report(scope: ShopScope = CurrentScope):
             out["replaced_employee_name"] = employees.get(
                 item["replaced_employee_id"], "Someone who has left",
             )
+        if item.get("signature"):
+            decision = decided.get(item["signature"], {})
+            out["ready"] = item["signature"] in offered
+            out["decision"] = (
+                "applied" if decision.get("applied_at")
+                else "dismissed" if decision.get("dismissed_at")
+                else None
+            )
         return out
 
     return {
@@ -198,8 +211,11 @@ async def corrections_report(scope: ShopScope = CurrentScope):
         "trend": corrections.edit_trend(rosters),
         "patterns": [named(p) for p in summary["patterns"]],
         "suggestions": [named(s) for s in offers],
-        "dismissed_count": len(dismissed),
-        "min_repeats": corrections.MIN_REPEATS,
+        "dismissed_count": sum(
+            1 for decision in decisions
+            if decision.get("dismissed_at") and not decision.get("applied_at")
+        ),
+        "model": corrections.model_info(decisions),
     }
 
 
@@ -236,8 +252,9 @@ async def apply_suggestion(
     who has never heard of this feature can see it and change it back.
     """
     rosters = await _group_rosters(scope)
+    decisions = await _group_decisions(scope)
     offer = next(
-        (s for s in corrections.suggestions(rosters)
+        (s for s in corrections.suggestions(rosters, decisions)
          if s["signature"] == payload.signature),
         None,
     )
