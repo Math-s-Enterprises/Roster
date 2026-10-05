@@ -1175,3 +1175,28 @@ requires rebuilding and recreating the relevant container. No Dockerfile or
 Compose configuration was found in this checkout, and Docker CLI was unavailable
 in this session. Do not claim the user's containers were rebuilt or live-tested;
 first locate their configuration and verify the bundle they actually serve.
+
+---
+
+## 17. One working checkout for VS Code, Codex and Docker
+
+Both the Desktop folder and `C:\Users\anees\Roster` are Git repositories at
+the same original commit. Folder naming was not evidence of a ZIP-only checkout.
+Docker files existed on `add-docker-setup`, not on the checked-out `main` branch.
+The user authorised committing all pending fixes and transferring them through
+Git, preserving both copies and the MongoDB backup. The fixes were committed in
+Desktop, then cherry-picked onto `working-fixes-docker`, based on the existing
+Docker branch, in `C:\Users\anees\Roster`. Nothing was pushed.
+
+**Use `C:\Users\anees\Roster` for subsequent work.** Open that folder in VS Code
+and Codex. Do not keep editing Desktop and assume Docker sees it. Docker inspect
+confirmed both running services mount this working checkout into `/app`; the
+existing frontend polling and backend reload are already configured correctly.
+Fetching the served frontend bundle after transfer confirmed both app dialogs
+were present, and all six frontend tests passed inside the running container.
+
+The first container backend test failed at setup because `mongomock_motor` was
+missing. The API tests already require it and the Desktop venv already had it;
+it was absent from requirements. It is now declared alongside pytest so a clean
+Docker build can run the same isolated tests. No database migration, backup
+deletion, environment-secret copying or new Docker volume is required.
