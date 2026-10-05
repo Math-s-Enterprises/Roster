@@ -1208,3 +1208,39 @@ MongoDB stayed healthy on its original volume. VS Code was opened on this folder
 The earlier Docker-unavailable finding applied to the sandbox's PATH; the normal
 host environment exposes Docker Desktop's CLI. Check the actual host before
 concluding the user's installation is missing.
+
+---
+
+## 18. Leavers need an action, not advice buried in a removal prompt
+
+The user wanted the employee removal dialog to match the smaller shop-settings
+card in their second screenshot, not the rounded employee-edit modal. They also
+wanted a visible inactive action, a separate inactive list and blurred backgrounds
+for all delete confirmations. Employee deletion reused its page-specific edit
+modal while settings used Radix; other pages still called native confirmations.
+
+The shared `ConfirmDialog` reuses installed Radix and the existing `card elevated`
+colours/layout, with a blurred backdrop, focus handling, Cancel and an explicit
+destructive action. Employees, settings, AI rules, fixed templates, illness and
+imported-history removal now use it. Holiday deletion keeps its existing per-day
+controls and matching card while gaining the same blurred backdrop; its backdrop
+cannot dismiss while deleting. The shared dialog disables cancellation and repeat
+submissions while saving and stays open when a caught API failure returns false.
+
+The employee detail now offers Mark inactive/Reactivate; the removal dialog also
+offers Mark inactive instead. These persist the existing shop-wide `is_active`
+field, preserving employee details rather than deleting the person. Active filters
+exclude leavers and the Inactive section lists them separately. Scheduler guards
+already exclude inactive employees; no new scheduler ranking or rule was added.
+Already-created rosters remain unchanged, and reactivation makes the employee
+eligible again. The change applies across shops and roster groups.
+
+Frontend regressions exercise the inactive update, list separation, reactivation,
+alternative removal action, shared card, blur, safe cancellation and duplicate
+submit prevention. Sabotage removed the inactive filter and blur: both regressions
+failed, then all eight frontend tests passed after restoration. The new isolated
+API regression verifies stored inactivity, exclusion from new generated rosters,
+retention of old shifts and reactivation; it and the existing availability suite
+passed (62 tests). Frontend production compilation passed with only the existing
+RosterView effect-dependency warning. Changes are in the Docker-mounted working
+checkout, `C:\Users\anees\Roster`, not the Desktop copy.

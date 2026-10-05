@@ -213,6 +213,30 @@ def test_employee_crud_round_trip(client):
     assert client.get("/api/employees", headers=auth(token)).json() == []
 
 
+def test_marking_inactive_keeps_existing_rosters_and_blocks_new_generation(client):
+    token = register(client)
+    employee = client.post("/api/employees", json=EMPLOYEE, headers=auth(token)).json()
+    employee_id = employee["employee_id"]
+    week = _future_monday()
+    original = client.post("/api/roster/generate", json={"week_start": week},
+                           headers=auth(token)).json()
+    assert any(s["employee_id"] == employee_id for s in original["shifts"])
+    updated = client.put(f"/api/employees/{employee_id}",
+                         json={**employee, "is_active": False}, headers=auth(token))
+    assert updated.status_code == 200
+    assert updated.json()["is_active"] is False
+    generated = client.post("/api/roster/generate", json={"week_start": week},
+                            headers=auth(token)).json()
+    assert not any(s["employee_id"] == employee_id for s in generated["shifts"])
+    stored = client.get("/api/rosters", headers=auth(token)).json()
+    assert next(r for r in stored if r["roster_id"] == original["roster_id"])["shifts"] == original["shifts"]
+    assert any(e["employee_id"] == employee_id for e in
+               client.get("/api/employees", headers=auth(token)).json())
+    client.put(f"/api/employees/{employee_id}", json={**employee, "is_active": True}, headers=auth(token))
+    restored = client.post("/api/roster/generate", json={"week_start": week}, headers=auth(token)).json()
+    assert any(s["employee_id"] == employee_id for s in restored["shifts"])
+
+
 def test_advanced_employee_settings_survive_a_round_trip(client):
     """Everything the Advanced Options panel writes must come back intact.
 

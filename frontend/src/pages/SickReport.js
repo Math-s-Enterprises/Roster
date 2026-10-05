@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { api, errorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Calendar, Download, Plus } from "lucide-react";
@@ -91,6 +92,7 @@ function readReason(label) {
 }
 
 export default function SickReport() {
+  const [deleting, setDeleting] = useState(null);
   const [log, setLog] = useState([]);
   const [balance, setBalance] = useState(null);
   const [emps, setEmps] = useState([]);
@@ -380,7 +382,7 @@ export default function SickReport() {
    * which is what both this log and the allowance figures are built from,
    * so the whole page recomputes afterwards.
    */
-  const removeIncident = async (incident) => {
+  const removeIncident = async (incident, confirmed = false) => {
     if (!incident.id) {
       toast.error("This record has no id and cannot be removed here");
       return;
@@ -388,11 +390,12 @@ export default function SickReport() {
     const span = incident.days > 1
       ? `${incident.days} days from ${fmtDay(incident.start)}`
       : fmtDay(incident.start);
-    if (!window.confirm(
-      `Delete ${incident.name}'s illness — ${span}?\n\n` +
-      "It is removed from the record entirely and their allowance is recalculated. " +
-      "No roster is changed."
-    )) return;
+    if (!confirmed) {
+      setDeleting({ title: `Delete ${incident.name}'s illness — ${span}?`,
+        description: "It is removed from the record entirely and their allowance is recalculated. No roster is changed.",
+        confirm: () => removeIncident(incident, true) });
+      return;
+    }
     try {
       await api.delete(`/holidays/${incident.id}`);
       toast.success("Illness record deleted");
@@ -400,6 +403,7 @@ export default function SickReport() {
     } catch (err) {
       toast.error(errorMessage(err, "Could not delete that record"));
       await load();
+      return false;
     }
   };
 
@@ -415,6 +419,8 @@ export default function SickReport() {
 
   return (
     <div className="sk-page">
+      {deleting && <ConfirmDialog title={deleting.title} description={deleting.description}
+        confirmLabel="Delete" onClose={() => setDeleting(null)} onConfirm={deleting.confirm} />}
       <header className="sk-head">
         <div>
           <div className="sk-eyebrow">HR REPORT</div>

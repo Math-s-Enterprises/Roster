@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { api, errorMessage, DAY_LABELS, DAYS, announceShopChange } from "@/lib/api";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
@@ -351,19 +351,8 @@ export default function Onboarding() {
   if (editing) {
     return (
       <div className="ss-page">
-        <AlertDialog.Root open={!!removal} onOpenChange={(open) => { if (!open) setRemoval(null); }}>
-          <AlertDialog.Portal>
-            <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
-            <AlertDialog.Content className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md card elevated p-6">
-              <AlertDialog.Title className="text-lg font-semibold mb-2">{removal?.title}</AlertDialog.Title>
-              <AlertDialog.Description className="text-sm ui-muted mb-6">{removal?.description}</AlertDialog.Description>
-              <div className="flex justify-between gap-3">
-                <AlertDialog.Cancel className="btn btn-secondary">Cancel</AlertDialog.Cancel>
-                <AlertDialog.Action className="btn btn-danger" onClick={() => removal?.confirm()}>Remove</AlertDialog.Action>
-              </div>
-            </AlertDialog.Content>
-          </AlertDialog.Portal>
-        </AlertDialog.Root>
+        {removal && <ConfirmDialog title={removal.title} description={removal.description}
+          onClose={() => setRemoval(null)} onConfirm={removal.confirm} />}
         <header className="ss-head">
           <div className="ss-eyebrow">SETUP</div>
           <h1 className="ss-h1">

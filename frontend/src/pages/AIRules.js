@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { api, errorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
@@ -100,6 +101,7 @@ function understood(rule) {
 }
 
 export default function AIRules() {
+  const [deleting, setDeleting] = useState(null);
   const [rules, setRules] = useState([]);
   const [shop, setShop] = useState(null);
   const [filter, setFilter] = useState("all");
@@ -215,15 +217,13 @@ export default function AIRules() {
   };
 
   const remove = async (rule) => {
-    if (!window.confirm(
-      `Remove ${rule.title}?\n\nRosters already generated are unchanged.`
-    )) return;
     try {
       await api.delete(`/ai-rules/${rule.rule_id}`);
       toast.success("Rule removed");
       await load();
     } catch (err) {
       toast.error(errorMessage(err, "Could not remove the rule"));
+      return false;
     }
   };
 
@@ -301,7 +301,7 @@ export default function AIRules() {
       );
       acts.push(
         <button key="d" type="button" className="air-act air-act-2 air-act-del"
-          onClick={() => remove(rule)} aria-label={`Delete ${rule.title}`}>
+          onClick={() => setDeleting(rule)} aria-label={`Delete ${rule.title}`}>
           Delete
         </button>
       );
@@ -346,6 +346,9 @@ export default function AIRules() {
 
   return (
     <div className="air-page">
+      {deleting && <ConfirmDialog title={`Remove ${deleting.title}?`}
+        description="Rosters already generated are unchanged."
+        onClose={() => setDeleting(null)} onConfirm={() => remove(deleting)} />}
       <header className="air-head">
         <div>
           <div className="air-eyebrow">POLICY</div>
