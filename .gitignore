@@ -90,3 +90,5 @@ credentials.json
 *.key
 .credentials
 .gstack/
+
+mongo-backup/
