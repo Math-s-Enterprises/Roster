@@ -65,13 +65,17 @@ test("inactive action persists status, separates leavers and allows reactivation
   api.put.mockImplementation((path, data) => { employee = data; return Promise.resolve({ data }); });
   await act(async () => root.render(<Employees />));
   expect(host.querySelector('[data-testid="employee-card-leaver"]')).toBeNull();
+  expect([...host.querySelectorAll("button")].find(b => b.textContent === "Mark inactive").className)
+    .toBe("esp-act esp-act-2");
   await click([...host.querySelectorAll("button")].find(b => b.textContent === "Mark inactive"));
   expect(api.put).toHaveBeenCalledWith("/employees/martin", expect.objectContaining({
     is_active: false, name: "Martin", max_weekly_hours: 40, departments: ["Shop Floor"],
   }));
   expect(host.textContent).toContain("Inactive employees");
   expect(host.querySelector('[data-testid="employee-card-leaver"]')).not.toBeNull();
-  await click([...host.querySelectorAll("button")].find(b => b.textContent === "Reactivate"));
+  const reactivate = [...host.querySelectorAll("button")].find(b => b.textContent === "Reactivate");
+  expect(reactivate.className).toBe("esp-act esp-act-2");
+  await click(reactivate);
   expect(employee.is_active).toBe(true);
   expect(host.querySelector('[data-testid="employee-card-martin"]')).not.toBeNull();
   expect(host.querySelector('[data-testid="employee-card-leaver"]')).toBeNull();

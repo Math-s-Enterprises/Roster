@@ -1244,3 +1244,20 @@ retention of old shifts and reactivation; it and the existing availability suite
 passed (62 tests). Frontend production compilation passed with only the existing
 RosterView effect-dependency warning. Changes are in the Docker-mounted working
 checkout, `C:\Users\anees\Roster`, not the Desktop copy.
+
+---
+
+## 19. New employee actions must reuse the existing action typography
+
+The user reported that Mark inactive looked different from Edit, Adjust holiday
+and Delete, and asked to maintain the existing style/theme. Its button had only
+`esp-act`, which inherits the font family but does not specify the neighbouring
+actions' size, weight or colour. Adding the existing `esp-act-2` class applies
+the same 14.5px size, 600 weight, theme colour and hover styling to both Mark
+inactive and Reactivate. No new CSS, palette or behaviour was introduced.
+
+The employee workflow regression now checks the shared action classes in both
+states. It failed before the fix with `esp-act` instead of `esp-act esp-act-2`,
+providing the same negative control as removing the fix. All frontend tests
+passed after applying the class. Keep new actions in the page's established
+style instead of introducing another typography variant.
