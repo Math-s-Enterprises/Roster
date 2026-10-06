@@ -605,7 +605,7 @@ export default function Employees() {
                 Adjust holiday
               </button>
             )}
-            <button type="button" className="esp-act" disabled={changingStatus}
+            <button type="button" className="esp-act esp-act-2" disabled={changingStatus}
               onClick={() => changeStatus(selected)}>
               {selected.is_active === false ? "Reactivate" : "Mark inactive"}
             </button>
