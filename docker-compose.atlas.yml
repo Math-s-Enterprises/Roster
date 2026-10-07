@@ -1,0 +1,8 @@
+# Opt-in only: the default Compose file continues using local MongoDB.
+# docker compose --env-file backend/.env -f docker-compose.yml -f docker-compose.atlas.yml up -d
+services:
+  backend:
+    environment:
+      MONGO_URL: ${ATLAS_MONGO_URL:?Set ATLAS_MONGO_URL in backend/.env}
+      # A local development UI must not expose reset/seed operations on shared data.
+      DEV_ROUTES_ENABLED: "false"

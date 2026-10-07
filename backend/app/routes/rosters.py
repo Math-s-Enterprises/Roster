@@ -100,12 +100,14 @@ def _department_employees(
 
 async def _external_commitments(
     scope: ShopScope, week_start: str, department: str, *, exclude: str = "",
+    candidates: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Latest visible shifts from every other department in this week."""
-    candidates = await scope.rosters.find(
-        {"week_start": week_start, "archived": {"$ne": True}},
-        limit=500, sort=[("created_at", -1)],
-    )
+    if candidates is None:
+        candidates = await scope.rosters.find(
+            {"week_start": week_start, "archived": {"$ne": True}},
+            limit=500, sort=[("created_at", -1)],
+        )
     latest: Dict[str, Dict[str, Any]] = {}
     for roster in candidates:
         if roster.get("roster_id") == exclude:
@@ -517,8 +519,10 @@ async def list_rosters(
     limit: int = Query(200, ge=1, le=500),
     skip: int = Query(0, ge=0),
     all_departments: bool = Query(False),
+    week_start: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
 ):
     rosters = await scope.rosters.find(
+        {"week_start": week_start} if week_start else None,
         limit=limit, skip=skip, sort=[("created_at", -1)],
     )
     employees = await scope.employees.find(limit=1000)
@@ -527,6 +531,18 @@ async def list_rosters(
             roster for roster in rosters
             if department_service.matches(roster, scope.department, scope.base_shop)
         ]
+    # One request-scoped read, not a remote query for every historical version.
+    # Read all matching weeks before grouping; a global page limit could drop cover.
+    weeks = list({roster.get("week_start") for roster in rosters})
+    by_week: Dict[str, List[Dict[str, Any]]] = {}
+    if weeks:
+        cursor = scope.rosters.stream({
+            "week_start": {"$in": weeks}, "archived": {"$ne": True},
+        }).sort("created_at", -1)
+        async for candidate in cursor:
+            group = by_week.setdefault(candidate.get("week_start"), [])
+            if len(group) < 500:  # Preserve the existing per-week lookup ceiling.
+                group.append(candidate)
     result = []
     for roster in rosters:
         department = department_service.roster_department(roster, scope.base_shop)
@@ -534,6 +550,7 @@ async def list_rosters(
         external = await _external_commitments(
             scope, roster.get("week_start"), department,
             exclude=roster.get("roster_id", ""),
+            candidates=by_week.get(roster.get("week_start"), []),
         )
         result.append(_with_current_break_setting(
             roster, roster_shop, employees, external_shifts=external,
