@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { errorMessage } from "@/lib/api";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import AuthShell from "@/components/AuthShell";
+import { ConsentCheckbox, LegalNote } from "@/components/LegalConsent";
 import { LOGIN } from "@/constants/testIds/auth";
 
 /**
@@ -308,6 +309,9 @@ export default function Login() {
           </div>
         )}
 
+        {/* Unticked, this stops the sign-up form submitting on its own. */}
+        {isSignup && <ConsentCheckbox />}
+
         <p className="si-form-error" aria-live="polite">{error}</p>
 
         <button
@@ -336,7 +340,7 @@ export default function Login() {
           </>
         )}
 
-        <p className="si-note">Staff do not sign in — they get their roster by email.</p>
+        <LegalNote />
       </form>
 
       <div className="si-chips">

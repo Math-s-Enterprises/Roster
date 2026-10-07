@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ConfirmDialog from "../components/ConfirmDialog";
 import { toast } from "sonner";
 import {
   AlertTriangle, Calendar, CheckCircle2, FileSpreadsheet, FileText,
@@ -505,7 +504,6 @@ function ImportedWeeks({ refreshKey, summary, department, onChange, onReplace })
       onChange?.();
     } catch (err) {
       toast.error(errorMessage(err, "Could not remove that week"));
-      return false;
     } finally { setRemoving(false); }
   };
 
@@ -762,14 +760,41 @@ function ImportedWeeks({ refreshKey, summary, department, onChange, onReplace })
 }
 function ConfirmRemove({ week, busy, onCancel, onConfirm }) {
   return (
-    <ConfirmDialog title={`Remove the week of ${week.week_start}?`} busy={busy}
-      description={`${week.shifts} shift${week.shifts === 1 ? "" : "s"} will be deleted from the roster history, and the scheduler will stop learning from them.`}
-      confirmLabel="Remove week" onClose={onCancel} onConfirm={onConfirm}>
-        <p className="text-xs ui-muted mb-5">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,.6)" }}
+      onClick={onCancel}
+    >
+      <div
+        className="card p-6 w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <AlertTriangle size={18} style={{ color: "var(--warn)" }} />
+          <h2 className="text-base">Remove the week of {week.week_start}?</h2>
+        </div>
+        <p className="text-[13px] mb-3" style={{ color: "var(--ink-secondary)" }}>
+          {week.shifts} shift{week.shifts === 1 ? "" : "s"} will be deleted from
+          the roster history, and the scheduler will stop learning from them.
+        </p>
+        <p className="text-[12px] mb-5" style={{ color: "var(--ink-mute-2)" }}>
           You can put it back afterwards — it stays readable from the file you
           uploaded, and appears under “Removed weeks”.
         </p>
-    </ConfirmDialog>
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="btn btn-secondary flex-1">Keep it</button>
+          <button
+            data-testid="btn-remove-week-confirm"
+            onClick={onConfirm}
+            disabled={busy}
+            className="btn btn-danger flex-1"
+          >
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+            Remove week
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -802,7 +827,7 @@ function Review({
     <div className="space-y-6">
       <div className="glass rounded-2xl p-6 flex items-start justify-between gap-4">
         <div className="flex items-start gap-4">
-          <Icon size={22} className="text-cyan-400 mt-1" />
+          <Icon size={22} className="ui-accent mt-1" />
           <div>
             <div className="font-medium">{preview.filename}</div>
             <div className="text-xs ui-muted mt-1">
@@ -972,7 +997,7 @@ function Review({
 
       <div className="glass rounded-2xl p-6 flex items-center justify-between gap-4">
         <div className="text-xs ui-body">
-          Importing <span className="text-cyan-400">{weeks.length}</span> week
+          Importing <span className="ui-accent">{weeks.length}</span> week
           {weeks.length === 1 ? "" : "s"} · {selectedShifts} shifts
           {newPeople > 0 && <> · creating <span style={{ color: "var(--primary)" }}>{newPeople}</span> new employee{newPeople === 1 ? "" : "s"}</>}
           {pastCount > 0 && <> · <span style={{ color: "var(--ink-mute)" }}>{pastCount}</span> kept as past staff</>}

@@ -77,7 +77,7 @@ export default function GoogleSignInButton({ clientId, onCredential, disabled })
   if (!clientId) return null;
 
   if (error) {
-    return <p className="text-xs text-red-400 text-center">{error}</p>;
+    return <p className="text-xs ui-danger text-center">{error}</p>;
   }
 
   return (

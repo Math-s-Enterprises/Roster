@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"session_id":{"$numberInt":"1"}},"name":"uniq_stripe_session","unique":true}],"uuid":"99370eb786ef404583edfae8e610c2e9","collectionName":"payment_transactions","type":"collection"}

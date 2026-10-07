@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"shop_id":{"$numberInt":"1"},"week_start":{"$numberInt":"-1"},"created_at":{"$numberInt":"-1"}},"name":"idx_rosters_shop_week"}],"uuid":"261d431090144f6689def1665ddc34ed","collectionName":"rosters","type":"collection"}

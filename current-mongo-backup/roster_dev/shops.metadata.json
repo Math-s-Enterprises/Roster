@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"owner_id":{"$numberInt":"1"}},"name":"idx_shops_owner"},{"v":{"$numberInt":"2"},"key":{"shop_id":{"$numberInt":"1"}},"name":"uniq_shop_id","unique":true}],"uuid":"47581bba1e8d4f9296ca1fbc17b3e2b6","collectionName":"shops","type":"collection"}
