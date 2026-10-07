@@ -101,17 +101,27 @@ The backend tests are the ones that matter most: they encode the scheduling
 rules, and a change that breaks one is a change to what the shop is allowed
 to do.
 
-## Before you change anything
+## Documentation
 
-Three documents are worth reading first, because they record decisions that
-look arbitrary until you know why:
+Read in this order before changing anything. Most of it records decisions that
+look arbitrary until you know why.
 
-- **[AGENTS.md](AGENTS.md)** — the scheduling rules and the reasoning behind
-  them. Which rules never bend, why an approved week is locked, why state is
-  derived rather than stored.
-- **[DESIGN.md](DESIGN.md)** — the visual system. Colour encodes seniority,
-  not identity; the grid is data, not decoration.
-- **[SETUP.md](SETUP.md)** — running it, and troubleshooting.
+| File | Answers |
+|---|---|
+| **[CLAUDE.md](CLAUDE.md)** | The working agreement: rules that are never relaxed, and traps that have bitten before. ([AGENTS.md](AGENTS.md) carries the same material for tools that read that name.) |
+| **[feedback.md](feedback.md)** | How to work on this project, and mistakes already made. |
+| **[docs/PRD.md](docs/PRD.md)** | What is being built, for whom, and what is out of scope. |
+| **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | How it is built, and the rules for changing it. |
+| **[docs/DECISIONS.md](docs/DECISIONS.md)** | Why it is built that way. |
+| **[docs/MEMORY.md](docs/MEMORY.md)** | What is true right now, and what is known to be broken. |
+| **[docs/TEST_PLAN.md](docs/TEST_PLAN.md)** | What is tested automatically, and the checklist for what is not. |
+| **[docs/SECURITY.md](docs/SECURITY.md)** | What is protected, and the known gaps. |
+| **[docs/WORK_QUEUE.md](docs/WORK_QUEUE.md)** | Planned scheduler work, in order. |
+| **[SETUP.md](SETUP.md)** | Running it, and troubleshooting. |
+| **[DESIGN.md](DESIGN.md)** | The original dark visual system. The light theme and current colour rules are in DECISIONS.md (ADR-016); a rewrite is pending. |
+
+Working with an AI assistant? **[docs/AI_WORKFLOW.md](docs/AI_WORKFLOW.md)** has
+the prompts and the order to give it context.
 
 Two conventions that cause the most trouble when missed:
 
@@ -121,5 +131,6 @@ hardcoded hex looks right in the theme you developed in and wrong in the
 other. `yarn check:css` catches undefined variables, not literal colours —
 that one is on you.
 
-**Approved rosters are records, not plans.** Reopening one starts a new
-version and stops the week counting towards what the scheduler has learned.
+**Approved rosters are records, not plans.** Unapproving reopens a week and
+takes it back out of what the scheduler learns from; a week that has finished
+cannot be reopened.

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import ConfirmDialog from "../components/ConfirmDialog";
 import { api, errorMessage, DAY_LABELS, DAYS, announceShopChange } from "@/lib/api";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { ChevronRight, ChevronLeft, Check, ArrowUp, ArrowDown, GripVertical, Loader2, Plus, X } from "lucide-react";
@@ -37,7 +37,6 @@ export default function Onboarding() {
   const [observerName, setObserverName] = useState("");
   const [observerEmail, setObserverEmail] = useState("");
   const [saving, setSaving] = useState(false);
-  const [removal, setRemoval] = useState(null);
   // Explicit per-role supervisory flags, seeded from what the server
   // derives. See the note under the table: the value is sent on save but
   // PUT /shop does not accept it yet.
@@ -45,6 +44,7 @@ export default function Onboarding() {
   const [dragRole, setDragRole] = useState(null);
   const [overRole, setOverRole] = useState(null);
   const nav = useNavigate();
+  const confirm = useConfirm();
 
   /**
    * A shop already through setup sees every section at once with one Save,
@@ -310,32 +310,45 @@ export default function Onboarding() {
     setRenaming(null);
   };
 
-  const removeDepartment = (name) => {
+  // Each of these only edits the list on screen — nothing is removed until
+  // Save changes — so the dialogs say so rather than implying it is instant.
+  const removeDepartment = async (name) => {
     if (departments.length === 1) {
       toast.error("Keep at least one roster group");
       return;
     }
-    setRemoval({
+    const ok = await confirm({
       title: `Remove ${name}?`,
-      description: "This can only be saved if no employees or rosters still use it. Save changes to apply the removal.",
-      confirm: () => setDepartments(departments.filter((item) => item !== name)),
+      body: "This takes the roster group off the list. It is removed for good when you press Save changes.",
+      detail: "The server only allows that if no employees or rosters still use it.",
+      confirmLabel: "Remove group",
+      cancelLabel: "Keep it",
     });
+    if (!ok) return;
+    setDepartments((current) => current.filter((item) => item !== name));
   };
 
-  const removeRole = (role) => {
-    setRemoval({
+  const removeRole = async (role) => {
+    const ok = await confirm({
       title: `Remove ${role} from the ladder?`,
-      description: "Nobody loses the title — staff with a role that is not listed simply rank last. Save changes to apply the removal.",
-      confirm: () => setRoles(roles.filter((r) => r !== role)),
+      body: "Nobody loses the title — staff with a role that is not listed simply rank last.",
+      detail: "It leaves the list when you press Save changes.",
+      confirmLabel: "Remove role",
+      cancelLabel: "Keep it",
     });
+    if (!ok) return;
+    setRoles((current) => current.filter((r) => r !== role));
   };
 
-  const removeObserver = (email) => {
-    setRemoval({
+  const removeObserver = async (email) => {
+    const ok = await confirm({
       title: `Stop sending the roster to ${email}?`,
-      description: "This recipient will be removed when you save changes.",
-      confirm: () => setObservers(observers.filter((o) => o.email !== email)),
+      body: "They will no longer receive it once you press Save changes.",
+      confirmLabel: "Stop sending",
+      cancelLabel: "Keep them",
     });
+    if (!ok) return;
+    setObservers((current) => current.filter((o) => o.email !== email));
   };
 
   const setDay = (day, patch) =>
@@ -351,8 +364,6 @@ export default function Onboarding() {
   if (editing) {
     return (
       <div className="ss-page">
-        {removal && <ConfirmDialog title={removal.title} description={removal.description}
-          onClose={() => setRemoval(null)} onConfirm={removal.confirm} />}
         <header className="ss-head">
           <div className="ss-eyebrow">SETUP</div>
           <h1 className="ss-h1">
@@ -620,7 +631,7 @@ export default function Onboarding() {
             a deli are scheduled separately rather than as one week. The{" "}
             <strong>first group is the main one</strong>: it is where the app opens, and new employees
             join it unless you say otherwise.{" "}
-            It can be <strong>renamed</strong> — call it Restaurant, Shopfloor whatever fits — but
+            It can be <strong>renamed</strong> — call it Restaurant, Shopfloor, whatever fits — but
             not removed.{" "}
             <strong className="ss-warn">
               Renaming only works while nothing uses the group.
@@ -710,12 +721,9 @@ export default function Onboarding() {
 
           <p className="ss-note">
             <strong>Supervisory</strong> marks a role as counting for cover — at least one such person
-            is rostered on every close.{" "}
-            <strong className="ss-warn">
-              It is not saved yet: the server works cover out from the job title and the top third of
-              the ladder, and does not accept a per-role flag.
-            </strong>{" "}
-            Until that is added, a change here lasts until you reload.
+            is rostered on every close. Once you have set it here, the server uses your choice rather
+            than working cover out from job titles, so switching off every role leaves nobody
+            qualified to close.
           </p>
 
           <div className="ss-addrow">
@@ -1065,7 +1073,7 @@ export default function Onboarding() {
                     </span>
                   )}
                   {supervisory.includes(r) && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shrink-0">
+                    <span className="text-[10px] px-2 py-0.5 rounded-md ui-accent-surface border ui-accent-line ui-accent shrink-0">
                       Supervisory
                     </span>
                   )}

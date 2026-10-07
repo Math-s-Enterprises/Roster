@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"shop_id":{"$numberInt":"1"}},"name":"idx_correction_dismissals_shop"}],"uuid":"d4cf7fb976924268ab659f40fde63ba7","collectionName":"correction_dismissals","type":"collection"}

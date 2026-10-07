@@ -765,6 +765,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   --t-danger-ring: rgba(255, 143, 143, .18);
   --t-warn-ring: rgba(255, 176, 102, .35);
   --t-warn-wash: rgba(255, 176, 102, .12);
+  --t-accent-wash: rgba(61, 220, 145, .10);
   --t-accent-flash: rgba(61, 220, 145, .18);
   --t-on-accent-soft: rgba(4, 20, 12, .6);
   --t-fx-glow: rgba(47, 224, 143, .2);
@@ -846,6 +847,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   --t-danger-ring: rgba(154, 43, 30, .28);
   --t-warn-ring: rgba(138, 90, 18, .40);
   --t-warn-wash: rgba(138, 90, 18, .10);
+  --t-accent-wash: rgba(165, 64, 18, .08);
   --t-accent-flash: rgba(184, 74, 23, .16);
   --t-on-accent-soft: rgba(255, 246, 236, .72);
   --t-fx-glow: rgba(184, 74, 23, .18);
@@ -4003,8 +4005,69 @@ label.ss-label-tight { letter-spacing: .04em; }
    ochre in light mode and amber in dark. */
 .ui-warn { color: var(--t-warn); }
 .ui-hover-danger:hover { color: var(--t-danger); }
+/* Accent and danger. Tailwind's cyan-400 and red-400 are built for a black
+   background: cyan-400 reads at 1.61:1 on the beige canvas, red-400 at 2.7:1
+   on the sign-in card. */
+.ui-accent { color: var(--t-accent); }
+.ui-accent-surface { background: var(--t-accent-wash); }
+.ui-accent-line { border-color: var(--t-accent); }
+.ui-danger { color: var(--t-danger); }
 .ui-warn-surface { background: var(--t-warn-wash); }
 .ui-warn-line { border-color: var(--t-warn); }
+
+/* Confirmation dialog
+   ------------------------------------------------------------------
+   Replaces window.confirm, which the browser draws in its own font and
+   colours whatever the theme. Measurements and tokens follow the
+   Dashboard's reset dialog (.db-dialog), so the two read as one family.
+   Rendered into document.body, outside every page scope, so it carries its
+   own font and focus ring. */
+.cf-scrim {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(0, 0, 0, .65);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.cf-dialog {
+  width: 460px; max-width: 100%;
+  background: var(--t-hover);
+  border: 1px solid var(--t-hairline); border-radius: 6px;
+  padding: 26px 28px;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  color: var(--t-ink);
+  outline: none;
+}
+.cf-title {
+  margin: 0 0 10px; font-size: 24px; font-weight: 800;
+  letter-spacing: -.025em; line-height: 1.15; overflow-wrap: anywhere;
+}
+.cf-body { margin: 0 0 10px; font-size: 14.5px; line-height: 1.55; color: var(--t-body2); }
+.cf-detail { margin: 0 0 10px; font-size: 14px; line-height: 1.55; color: var(--t-muted); }
+.cf-acts { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 22px; }
+
+.cf-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 44px; padding: 0 18px; border-radius: 6px;
+  font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+  white-space: nowrap;
+}
+/* Destructive but quiet: outlined, never a filled red block. */
+.cf-btn-danger { background: none; border: 1px solid var(--t-danger-line); color: var(--t-danger); }
+.cf-btn-danger:hover { background: var(--t-danger-wash); }
+.cf-btn-default { background: var(--t-accent); border: 0; color: var(--t-on-accent); font-weight: 700; }
+.cf-cancel {
+  border: 0; background: none; padding: 4px 2px;
+  font-family: inherit; font-size: 15px; font-weight: 600;
+  color: var(--t-muted); cursor: pointer;
+}
+.cf-cancel:hover { color: var(--t-ink); }
+.cf-dialog :focus-visible { outline: none; box-shadow: 0 0 0 3px var(--t-focus); border-radius: 6px; }
+
+@keyframes cf-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cf-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: no-preference) {
+  .cf-scrim { animation: cf-fade 120ms ease-out; }
+  .cf-dialog { animation: cf-rise 140ms ease-out; }
+}
 
 /* ------------------------------------------------------------------
    Signed-out pages — sign in, forgot password, reset password

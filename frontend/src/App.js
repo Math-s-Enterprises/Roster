@@ -4,10 +4,12 @@ import { Toaster } from "sonner";
 
 import "@/App.css";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { ConfirmProvider } from "@/components/ConfirmDialog";
 import AppLayout from "@/components/AppLayout";
 import Login from "@/pages/Login";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
+import { PrivacyPage, TermsPage } from "@/pages/Legal";
 import Dashboard from "@/pages/Dashboard";
 import Onboarding from "@/pages/Onboarding";
 import Employees from "@/pages/Employees";
@@ -51,11 +53,25 @@ function PublicOnly({ children }) {
   return user ? <Navigate to="/" replace /> : children;
 }
 
-export default function App() {
+/** Everything the whole app shares, in one place. Auth outside, so a dialog can
+ *  one day depend on who is signed in; confirmations outside the router. */
+function Providers({ children }) {
   return (
     <AuthProvider>
+      <ConfirmProvider>{children}</ConfirmProvider>
+    </AuthProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <Providers>
       <BrowserRouter>
         <Routes>
+          {/* Readable signed in or out: the sign-up form links here, and the
+              law expects the privacy notice to be reachable at all times. */}
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
           <Route
             path="/login"
             element={
@@ -109,6 +125,6 @@ export default function App() {
         </Routes>
         <Toaster theme="dark" position="top-right" richColors />
       </BrowserRouter>
-    </AuthProvider>
+    </Providers>
   );
 }
