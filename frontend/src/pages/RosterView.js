@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorMessage, refusalReasons, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, shiftHours, shiftPaidHours, dateForDay, fmtDayDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import RosterPrintSheet from "@/components/RosterPrintSheet";
@@ -69,6 +69,9 @@ export default function RosterView() {
   };
   const [roster, setRoster] = useState(null);
   const [emps, setEmps] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const loadRequest = useRef(0);
   const [shop, setShop] = useState(null);
   const [department, setDepartment] = useState(null);
   const [generating, setGenerating] = useState(false);
@@ -114,23 +117,39 @@ export default function RosterView() {
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [highlight, setHighlight] = useState(null);
 
-  const load = async () => {
-    const [e, r, s] = await Promise.all([api.get("/employees"), api.get("/rosters"), api.get("/shop")]);
-    setEmps(e.data); setRosters(r.data); setShop(s.data);
-    // An explicit ?roster= wins over the week lookup. Past Rosters links a
-    // specific version, and matching on week alone would open whichever
-    // roster for that week came back first — usually the approved one,
-    // which is precisely not the version that was clicked.
-    const byId = rosterParam && r.data.find((x) => x.roster_id === rosterParam);
-    const selectedDepartment = byId?.department
-      || s.data.current_department || department || s.data.departments?.[0] || "Shop Floor";
-    if (department !== selectedDepartment) setDepartment(selectedDepartment);
-    const found = byId
-      || r.data.find((x) => x.week_start === week
-        && (x.department || s.data.departments?.[0] || "Shop Floor") === selectedDepartment);
-    setRoster(found || null);
-  };
-  useEffect(() => { load(); }, [week, department, rosterParam]);
+  const load = useCallback(async () => {
+    const request = ++loadRequest.current;
+    setLoading(true);
+    setLoadError("");
+    try {
+      const [e, r, s, selected] = await Promise.all([
+        api.get("/employees"), api.get("/rosters", { params: { week_start: week } }),
+        api.get("/shop"), rosterParam ? api.get(`/rosters/${rosterParam}`) : null,
+      ]);
+      if (request !== loadRequest.current) return;
+      setEmps(e.data); setRosters(r.data); setShop(s.data);
+      // An explicit ?roster= wins over the week lookup. Past Rosters links a
+      // specific version, not whichever version happens to be newest.
+      const byId = selected?.data;
+      const selectedDepartment = byId?.department
+        || s.data.current_department || s.data.departments?.[0] || "Shop Floor";
+      setDepartment(selectedDepartment);
+      const found = byId
+        || r.data.find((x) => x.week_start === week
+          && (x.department || s.data.departments?.[0] || "Shop Floor") === selectedDepartment);
+      setRoster(found || null);
+    } catch (err) {
+      if (request === loadRequest.current) {
+        setLoadError(errorMessage(err, "Could not load roster. Please try again."));
+      }
+    } finally {
+      if (request === loadRequest.current) setLoading(false);
+    }
+  }, [week, rosterParam]);
+  useEffect(() => {
+    load();
+    return () => { loadRequest.current += 1; };
+  }, [load]);
 
   const totalRosters = rosters.length;
   const freeLimit = 4;
@@ -605,6 +624,20 @@ export default function RosterView() {
     pdf.text(`Compliance ${roster.compliance_score}/100 · Labour ${fmtMoney(roster.labor_cost)} · ${roster.total_hours}h total`, 14, 205);
     pdf.save(`roster-${week}-${roster.version}.pdf`);
   };
+
+  if (loading || loadError) {
+    return (
+      <div className="wr-page">
+        <div className="wr-empty" role={loadError ? "alert" : "status"}>
+          {loadError ? <>
+            <p className="wr-item-title mb-2">Could not load roster</p>
+            <p className="ui-muted mb-5">{loadError}</p>
+            <button className="wr-btn wr-btn-1" onClick={load}>Try again</button>
+          </> : "Loading roster…"}
+        </div>
+      </div>
+    );
+  }
 
   if (emps.length === 0) {
     return (

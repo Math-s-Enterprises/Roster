@@ -1261,3 +1261,94 @@ states. It failed before the fix with `esp-act` instead of `esp-act esp-act-2`,
 providing the same negative control as removing the fix. All frontend tests
 passed after applying the class. Keep new actions in the page's established
 style instead of introducing another typography variant.
+
+---
+
+## 20. A shared cloud database requires a verified copy and an explicit Docker switch
+
+The user requested database-only cloud migration, leaving frontend/backend hosting
+for later, and authorised pausing Docker writes and copying existing data. Atlas
+authentication was verified privately, then the empty target and source population
+were checked: 3 accounts, 33 employees, 112 rosters and 458 total documents across
+13 collections. Keep existing IDs, password hashes and tenant relationships; do not
+re-register accounts or transfer only employee records.
+
+Base Compose hardcodes `MONGO_URL=mongodb://mongo:27017`, overriding backend `.env`.
+The opt-in `docker-compose.atlas.yml` resolves `ATLAS_MONGO_URL` from the explicitly
+supplied private env file, fails when missing, and disables development reset/seed
+routes for shared data. Default local Compose and the original MongoDB volume stay
+unchanged. Start/recreate with both files; Desktop stop/start keeps current container
+configuration, while a plain Compose recreation can switch back to the old local DB.
+The two databases do not synchronise themselves.
+
+Backend writes were paused for the native backup/restore. Docker's restore process
+could not access its private credential config even when explicitly run as root;
+the installed Windows tool passed a no-write dry run and performed the restore.
+The local backend was restarted while diagnosing failed attempts. No local data
+was deleted, and Atlas was confirmed empty before retrying. Raw credential-bearing
+tool output was suppressed/redacted; the temporary credential config was removed.
+
+Before switching, every copied document/ID and index was checked against the frozen
+source manifest, not merely collection counts. A negative control changed only an
+in-memory expected account count and correctly failed verification, without altering
+either database. The running backend then confirmed Atlas connection, matching core
+counts, disabled development reset routes and HTTP 200 health. This is migration
+verification, not a claim that the full scheduler suite or a browser login was run.
+
+The sensitive archive remains under ignored `mongo-backup/atlas-transfer/` as a
+fallback. Cloud backup scheduling and app hosting are still separate work. Keep
+teammate secrets private and isolate experiments from the shared customer database.
+
+---
+
+## 21. Pending roster data is not an empty shop; avoid per-version cloud reads
+
+After the Atlas migration, the roster page said "No employees yet" while the
+sidebar showed 25. The diagnostic returned all 25 employees in 0.20s, but the
+parallel roster request took 3.95s and transferred 84 complete versions (2.9MB).
+`RosterView` initialised employees to an empty array, rendered the empty state
+before `Promise.all` completed, and did not catch load failures. Setting its
+department after loading also triggered a redundant fetch. This was not lost data.
+
+The page now distinguishes loading, failed/retry, and successfully empty states.
+It requests only the selected week; explicit archived-version links still fetch
+their named roster directly. A stable load callback avoids the department-triggered
+duplicate request, and a request counter prevents older responses from overwriting
+new navigation. Existing page styling is reused, with status/alert semantics.
+
+`list_rosters` now accepts an optional week filter, preserving the unfiltered API
+for other callers. Its cross-group cover previously queried MongoDB once for each
+version. It now reads the relevant weeks once through the tenant-scoped collection,
+then reuses those candidates in the existing cover helper. No persistent cache,
+scheduler ranking change, or loss of current cross-group commitments was introduced.
+The previous per-week 500-candidate ceiling and latest-visible-version ordering
+remain intact; the batched query itself is not globally truncated.
+
+The regression checks week filtering, tenant isolation, latest Deli coverage for
+both Shop Floor versions, and exactly two roster reads. Frontend tests check a
+pending populated list, caught failures/retry, a genuinely empty response, no second
+department-triggered load, and direct archived-version fetching. Sabotage restored
+per-version reads: the backend failed with four queries instead of two. Disabling
+the loading/error UI made both frontend state tests fail. All fixes were restored;
+the API and roster-group suites, all 11 frontend tests and production build passed.
+
+Measured against Atlas afterwards: employees 0.184s, selected-week roster request
+0.219s (that week has no saved versions), and shop 0.178s. The unfiltered historical
+request fell from 3.95s to 1.65s but still transfers 2.9MB; this is not a claim that
+every page now loads in 0.22s. Do not hide that denominator or equate API timing with
+a browser-render benchmark. Data, credentials and original migration backups remain
+unchanged. Product changes are in the Docker-mounted working checkout.
+
+---
+
+## 22. Loading screens must use the page's typography, not the legacy global heading
+
+The user reported another font mismatch after the roster-loading fix. The new
+early return used a generic card and `h2` outside `.wr-page`: that bypassed the
+roster's Plus Jakarta Sans font and selected the global Inter heading instead.
+Loading and error states now reuse `.wr-page`/`.wr-empty`, and the error title
+and retry button use existing roster classes. No new fonts, CSS or palette were
+added; fetch/error behaviour is unchanged. The regression asserts the roster
+font wrapper and existing retry classes and rejects the generic loading heading.
+Both state tests failed before the styling change, then passed after it. Keep
+transient states inside the same page theme as loaded content.

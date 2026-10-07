@@ -79,6 +79,55 @@ def auth(token):
     return {"Authorization": f"Bearer {token}"}
 
 
+def test_roster_list_filters_week_and_batches_cross_group_reads(client, monkeypatch):
+    import asyncio
+    from app import db
+    from app.tenancy import ScopedCollection
+
+    token = register(client)
+    headers = auth(token)
+    shop = client.put("/api/shop", json={"departments": ["Shop Floor", "Deli"]},
+                      headers=headers).json()
+    records = [
+        {"roster_id": "floor-old", "department": "Shop Floor", "week_start": "2026-10-05",
+         "created_at": "2026-10-01", "shifts": []},
+        {"roster_id": "floor-new", "department": "Shop Floor", "week_start": "2026-10-05",
+         "created_at": "2026-10-02", "shifts": []},
+        {"roster_id": "deli-old", "department": "Deli", "week_start": "2026-10-05",
+         "created_at": "2026-10-01", "shifts": [{"employee_id": "shared", "day": "mon", "start": "09:00", "end": "15:00"}]},
+        {"roster_id": "deli-new", "department": "Deli", "week_start": "2026-10-05",
+         "created_at": "2026-10-02", "shifts": [{"employee_id": "shared", "day": "mon", "start": "10:00", "end": "16:00"}]},
+        {"roster_id": "next-week", "department": "Shop Floor", "week_start": "2026-10-12",
+         "created_at": "2026-10-03", "shifts": []},
+        {"roster_id": "other-shop", "shop_id": "unrelated", "department": "Deli",
+         "week_start": "2026-10-05", "created_at": "2026-10-04", "shifts": []},
+    ]
+    asyncio.run(db.rosters.insert_many([{"shop_id": shop["shop_id"], **r} for r in records]))
+    reads = []
+    original_find, original_stream = ScopedCollection.find, ScopedCollection.stream
+
+    async def counted_find(self, extra=None, **kwargs):
+        if self._collection is db.rosters:
+            reads.append(extra)
+        return await original_find(self, extra, **kwargs)
+
+    def counted_stream(self, extra=None):
+        if self._collection is db.rosters:
+            reads.append(extra)
+        return original_stream(self, extra)
+
+    monkeypatch.setattr(ScopedCollection, "find", counted_find)
+    monkeypatch.setattr(ScopedCollection, "stream", counted_stream)
+    response = client.get("/api/rosters", params={"week_start": "2026-10-05"}, headers=headers)
+    assert response.status_code == 200, response.text
+    assert {r["roster_id"] for r in response.json()} == {"floor-old", "floor-new"}
+    assert len(reads) == 2, "roster versions must share one batched external-cover read"
+    for roster in response.json():
+        assert [(s["department"], s["start"]) for s in roster["external_shifts"]] == [("Deli", "10:00")]
+    all_weeks = client.get("/api/rosters", headers=headers).json()
+    assert {r["roster_id"] for r in all_weeks} == {"floor-old", "floor-new", "next-week"}
+
+
 def _seed_imported_week(client, token, week_start: str) -> str:
     """Import one week through the real upload-and-commit path.
 
