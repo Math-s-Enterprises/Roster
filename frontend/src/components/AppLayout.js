@@ -5,6 +5,8 @@ import { useAuth } from "@/context/AuthContext";
 import { api, mondayOf, ROSTER_GROUP_KEY, SHOP_CHANGED } from "@/lib/api";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
 import RosterGroupSelect from "@/components/RosterGroupSelect";
+import NotificationsDrawer from "@/components/NotificationsDrawer";
+import { NotificationsProvider, useNotifications } from "@/lib/notifications";
 
 /**
  * App shell (handoff: Sidebar).
@@ -80,8 +82,14 @@ const coversToday = (record) => {
   return Boolean(start) && start <= day && day <= end;
 };
 
-export default function AppLayout() {
+/**
+ * The shell. Kept apart from the exported AppLayout at the foot of the file so
+ * it can read the notification list, which only exists inside the provider.
+ */
+function Shell() {
   const { user, logout } = useAuth();
+  const { unread, clear: clearNotifications } = useNotifications();
+  const [notesOpen, setNotesOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [counts, setCounts] = useState({});
@@ -161,6 +169,8 @@ export default function AppLayout() {
   }, [theme]);
 
   const signOut = async () => {
+    // The messages name people, so none is left behind for the next person.
+    clearNotifications();
     await logout();
     navigate("/login");
   };
@@ -241,6 +251,23 @@ export default function AppLayout() {
           ))}
         </nav>
 
+        {/* Between the menu and the account: it belongs to the person, not to a
+            screen, and it is reachable from every screen and roster group. */}
+        <div className="nt-slot">
+          <button
+            type="button"
+            data-testid="btn-notifications"
+            className="nv-item nt-trigger"
+            aria-haspopup="dialog"
+            onClick={() => { setNotesOpen(true); setOpen(false); }}
+          >
+            <span>Notifications</span>
+            {unread > 0 && (
+              <span className="nv-count" aria-label={`${unread} unread`}>{unread}</span>
+            )}
+          </button>
+        </div>
+
         <div className="nv-account">
           <div className="nv-acc-name" title={user?.name}>{user?.name}</div>
           <div className="nv-acc-mail" title={user?.email}>{user?.email}</div>
@@ -292,6 +319,17 @@ export default function AppLayout() {
       <main className="nv-main">
         <Outlet />
       </main>
+
+      {notesOpen && <NotificationsDrawer onClose={() => setNotesOpen(false)} />}
     </div>
+  );
+}
+
+export default function AppLayout() {
+  const { user } = useAuth();
+  return (
+    <NotificationsProvider userId={user?.user_id}>
+      <Shell />
+    </NotificationsProvider>
   );
 }
