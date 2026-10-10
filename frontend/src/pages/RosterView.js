@@ -6,7 +6,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import jsPDF from "jspdf";
-import { Calendar, Wand2, Send, Check, Printer, AlertTriangle, RefreshCw, X, UserX, UserPlus, ChevronUp, ChevronDown, Pin, Unlock } from "lucide-react";
+import { Calendar, Wand2, Send, Check, Printer, AlertTriangle, RefreshCw, X, UserX, UserPlus, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pin, Unlock } from "lucide-react";
+import "@/styles/roster-weeknav.css";
 
 /** "Mon 7 – Sun 13 Sept" — the week itself, which is the page's title. */
 function weekRangeLabel(weekStart) {
@@ -41,6 +42,30 @@ function isUnsocial(shift) {
   if (shift.end < shift.start) return true;
   return shift.start < "07:00" || shift.end > "22:00";
 }
+
+/**
+ * The Monday `weeks` weeks away from `monday` (both YYYY-MM-DD).
+ *
+ * Worked in UTC, where every day is 24 hours long, so the clock change in
+ * spring or autumn cannot nudge the result onto a Sunday.
+ */
+const shiftWeek = (monday, weeks) => {
+  const date = new Date(`${monday}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + weeks * 7);
+  return date.toISOString().slice(0, 10);
+};
+
+/**
+ * The scheduler's note that it stretched a shift to cover a thin hour:
+ *
+ *     Aneesh's sun shift was changed from 09:00-17:00 to 08:00-17:00 to cover sun 08:00.
+ *
+ * The hour IS covered, so listing it only makes a manager read about work the
+ * generator already did. Matched on the fixed shape of that sentence — two
+ * times, then "to cover" — so the genuine gap warnings stay: "one short of the
+ * usual cover…" and "moved from X to Y — closer to the hours…" do not match.
+ */
+const COVER_STRETCH = /shift was changed from \d{2}:\d{2}-\d{2}:\d{2} to \d{2}:\d{2}-\d{2}:\d{2} to cover /;
 
 export default function RosterView() {
   const { user } = useAuth();
@@ -686,7 +711,9 @@ export default function RosterView() {
   const critical = roster?.critical_issues || [];
   const confirmations = roster?.confirmations || [];
   const editWarnings = roster?.edit_warnings || [];
-  const advisories = roster?.issues || [];
+  // Shift stretches are left out: the hour they cover is no longer a problem.
+  // Filtering here, once, fixes the list and the tab's count together.
+  const advisories = (roster?.issues || []).filter((text) => !COVER_STRETCH.test(String(text)));
   const staffing = audit?.staffing || [];
   const unrostered = roster?.unrostered || [];
   const weekVersions = rosters.filter((r) => r.week_start === week
@@ -995,22 +1022,46 @@ export default function RosterView() {
         </div>
 
         <div className="wr-headacts">
-          <label
-            className="wr-picker"
-            onClick={(e) => {
-              const input = e.currentTarget.querySelector("input");
-              try { input?.showPicker?.(); } catch { /* not supported here */ }
-            }}
-          >
-            <Calendar size={14} color="var(--t-muted)" strokeWidth={1.6} aria-hidden="true" />
-            <input
-              data-testid="week-picker"
-              type="date"
-              value={week}
-              onChange={(e) => chooseWeek(e.target.value)}
-              aria-label="Week"
-            />
-          </label>
+          {/* The arrows go through chooseWeek, the same path as picking a date,
+              so the address bar and the loaded roster follow them too. */}
+          <div className="wr-weeknav" role="group" aria-label="Choose week">
+            <button
+              type="button"
+              data-testid="week-prev"
+              className="wr-weeknav-btn"
+              onClick={() => chooseWeek(shiftWeek(week, -1))}
+              aria-label="Previous week"
+              title="Previous week"
+            >
+              <ChevronLeft size={16} strokeWidth={2} aria-hidden="true" />
+            </button>
+            <label
+              className="wr-picker"
+              onClick={(e) => {
+                const input = e.currentTarget.querySelector("input");
+                try { input?.showPicker?.(); } catch { /* not supported here */ }
+              }}
+            >
+              <Calendar size={14} color="var(--t-muted)" strokeWidth={1.6} aria-hidden="true" />
+              <input
+                data-testid="week-picker"
+                type="date"
+                value={week}
+                onChange={(e) => chooseWeek(e.target.value)}
+                aria-label="Week"
+              />
+            </label>
+            <button
+              type="button"
+              data-testid="week-next"
+              className="wr-weeknav-btn"
+              onClick={() => chooseWeek(shiftWeek(week, 1))}
+              aria-label="Next week"
+              title="Next week"
+            >
+              <ChevronRight size={16} strokeWidth={2} aria-hidden="true" />
+            </button>
+          </div>
 
           {roster?.approved ? (
             <button
