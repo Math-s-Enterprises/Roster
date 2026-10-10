@@ -1352,3 +1352,48 @@ added; fetch/error behaviour is unchanged. The regression asserts the roster
 font wrapper and existing retry classes and rejects the generic loading heading.
 Both state tests failed before the styling change, then passed after it. Keep
 transient states inside the same page theme as loaded content.
+
+---
+
+## 23. Launch safeguards must hold at authentication and upload boundaries
+
+The user authorised four fixes after the launch review: authentication rate limits,
+safe Google linking, removing Emergent scripts/analytics, and bounded upload reads.
+Diagnostics found no rate limiter; Google sign-in matched email and overwrote
+`google_sub`, including its concurrent-signup fallback; public HTML loaded Emergent
+and initialised PostHog against its endpoint; both roster and contact uploads read
+the entire file before checking size. Google clock tolerance and Stripe billing
+were deliberately outside this requested patch.
+
+Authentication now uses shared atomic MongoDB fixed-window counters, hashed client
+addresses, expiring indexes, HTTP 429 with Retry-After, and fail-closed database
+errors. Never substitute per-process counters that reset with workers/restarts.
+Deployment must validate the trusted proxy/client address; arbitrary forwarded
+headers must not become a bypass. Shared office IPs share limits, and application
+limits do not replace ingress DDoS/body-size/timeout controls.
+
+Google sign-in looks up the verified stable subject first. A conflicting subject
+cannot replace an existing link; unlinked local accounts may link automatically
+only when Google is authoritative for the email (Gmail or Workspace). Other existing
+accounts use password sign-in. The signup-race fallback applies the same checks,
+and linking uses compare-and-set plus a unique partial subject index. Do not delete
+accounts to make an index build over conflicting historical identities.
+
+Roster/contact handlers read only their existing size allowance plus one byte and
+return 413 before parsing oversized input. Multipart disk spooling and compressed
+spreadsheet expansion still need separate deployment protection. Emergent scripting,
+analytics and its error-suppression hook were removed; existing fonts/styles remain.
+
+Twenty focused backend security regressions passed. Disabling limits, bypassing
+link validation and restoring unbounded reads only inside an isolated test process
+made all nine targeted negative controls fail. The wider API/security run passed
+203 tests before three additional focused concurrency/index tests were added (those
+also passed). The frontend script-removal regression passed. The full frontend run
+found three existing RosterLoading failures; strict CI compilation stopped on the
+existing RosterView useEffect/load dependency warning. A normal production build
+passed with that warning. Neither page was changed by this patch. Do not report
+the whole application green or launch-ready.
+
+The complete backend suite subsequently passed (937 passed, one existing expected
+failure). The original committed HTML also failed the script-removal guard, while
+the generated production HTML passed it. No code was committed or pushed.

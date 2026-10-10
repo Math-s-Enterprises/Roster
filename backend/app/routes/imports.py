@@ -103,7 +103,9 @@ async def upload_roster_file(
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             f"Unknown roster group: {department}.")
     import_shop = department_service.effective_shop(scope.base_shop, department)
-    data = await file.read()
+    data = await file.read(file_import.MAX_UPLOAD_BYTES + 1)
+    if len(data) > file_import.MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "That file is larger than 25MB.")
 
     employees = await scope.employees.find(limit=1000)
     known_names = [e["name"] for e in employees]

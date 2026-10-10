@@ -26,6 +26,7 @@ db = client[config.DB_NAME]
 users = db.users
 user_sessions = db.user_sessions
 password_resets = db.password_resets
+auth_rate_limits = db.auth_rate_limits
 shops = db.shops
 employees = db.employees
 holidays = db.holidays
@@ -79,6 +80,11 @@ async def ensure_indexes() -> None:
     # Uniqueness that application code cannot guarantee on its own.
     await users.create_index("email", unique=True, name="uniq_email")
     await users.create_index("user_id", unique=True, name="uniq_user_id")
+    await users.create_index("google_sub", unique=True,
+                             partialFilterExpression={"google_sub": {"$type": "string"}},
+                             name="uniq_google_sub")
+    await auth_rate_limits.create_index("expires_at", expireAfterSeconds=0,
+                                       name="ttl_auth_rate_limits")
 
     # Every tenant-scoped query filters on shop_id, so index it everywhere.
     for coll, name in (

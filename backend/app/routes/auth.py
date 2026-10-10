@@ -25,11 +25,13 @@ from app.security import (
     verify_password,
 )
 from app.services import google_auth
+from app.services.auth_rate_limit import check_auth_rate_limit
 from app.services.mailer import send_password_reset_email
 from app.services.shop_service import ensure_shop
 
 log = logging.getLogger("roster.auth")
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["auth"],
+                   dependencies=[Depends(check_auth_rate_limit)])
 
 _INVALID_CREDENTIALS = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
@@ -107,15 +109,11 @@ async def google_sign_in(payload: GoogleAuthReq):
     except google_auth.GoogleAuthInvalid as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc))
 
-    user = await db.users.find_one({"email": profile["email"]}, {"_id": 0})
+    user = await db.users.find_one({"google_sub": profile["google_sub"]}, {"_id": 0})
+    if not user:
+        user = await db.users.find_one({"email": profile["email"]}, {"_id": 0})
     if user:
-        # Link the Google identity to the existing local account and refresh
-        # the profile picture, but never overwrite an existing password.
-        await db.users.update_one(
-            {"user_id": user["user_id"]},
-            {"$set": {"google_sub": profile["google_sub"], "picture": profile["picture"]}},
-        )
-        user = {**user, "picture": profile["picture"]}
+        user = await _link_google_profile(user, profile)
     else:
         user = {
             "user_id": f"user_{uuid.uuid4().hex[:12]}",
@@ -130,9 +128,12 @@ async def google_sign_in(payload: GoogleAuthReq):
             await db.users.insert_one(dict(user))
         except DuplicateKeyError:
             # Lost a race with a concurrent signup for the same address.
-            user = await db.users.find_one({"email": profile["email"]}, {"_id": 0})
+            user = await db.users.find_one({"google_sub": profile["google_sub"]}, {"_id": 0})
+            if not user:
+                user = await db.users.find_one({"email": profile["email"]}, {"_id": 0})
             if not user:
                 raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not create account")
+            user = await _link_google_profile(user, profile)
 
     await ensure_shop(user)
     return {
@@ -141,6 +142,22 @@ async def google_sign_in(payload: GoogleAuthReq):
         ),
         "user": _public_user(user),
     }
+
+
+async def _link_google_profile(user, profile):
+    subject = user.get("google_sub")
+    if subject and subject != profile["google_sub"]:
+        raise HTTPException(401, "This account is linked to a different Google identity.")
+    if not subject and not profile["email_authoritative"]:
+        raise HTTPException(401, "Please sign in with your password to access this existing account.")
+    # Compare-and-set prevents concurrent linking from replacing an identity.
+    updated = await db.users.update_one(
+        {"user_id": user["user_id"], "google_sub": subject},
+        {"$set": {"google_sub": profile["google_sub"], "picture": profile["picture"]}},
+    )
+    if not updated.matched_count:
+        raise HTTPException(409, "Account sign-in changed. Please try again.")
+    return {**user, "picture": profile["picture"]}
 
 
 @router.post("/forgot-password")

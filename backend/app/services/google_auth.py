@@ -80,15 +80,18 @@ def verify_id_token(credential: str) -> Dict[str, Any]:
     if not email:
         raise GoogleAuthInvalid("Google account has no email address.")
 
-    # Google asserts whether it has verified ownership of the address. An
-    # unverified address must not be trusted to identify an account, or a
-    # third party could register it and take over the matching local user.
+    # Verified email alone does not establish current ownership outside Gmail/Workspace.
     if not claims.get("email_verified"):
         raise GoogleAuthInvalid("This Google account's email address is not verified.")
+
+    subject = claims.get("sub")
+    if not isinstance(subject, str) or not subject:
+        raise GoogleAuthInvalid("Google account has no valid identity.")
 
     return {
         "email": email.lower(),
         "name": claims.get("name") or email.split("@")[0],
         "picture": claims.get("picture"),
-        "google_sub": claims.get("sub"),
+        "google_sub": subject,
+        "email_authoritative": email.lower().endswith("@gmail.com") or bool(claims.get("hd")),
     }
