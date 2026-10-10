@@ -1397,3 +1397,36 @@ the whole application green or launch-ready.
 The complete backend suite subsequently passed (937 passed, one existing expected
 failure). The original committed HTML also failed the script-removal guard, while
 the generated production HTML passed it. No code was committed or pushed.
+
+---
+
+## 24. Restore lost loading safeguards without undoing newer approval behaviour
+
+Step one of the launch preparation was to fix three RosterLoading test failures
+and the Google timestamp rejection. Git history identified commit `5b542ad` as
+removing the previously working load/error state, selected-week query, direct
+archived-version read and stale-response guard from `9c51bd3`. Restore only those
+parts, not the whole page: the newer approved-only export/print behaviour remains.
+The original three tests failed before restoration and passed afterwards. Two new
+tests also verify that older successful or failed requests cannot replace a newer
+week. Loading and retry reuse the existing roster typography and theme.
+
+Google's token was one second ahead of backend time, and the verifier defaulted
+to zero skew. The shared verifier now passes a bounded five-second tolerance;
+this also allows five seconds past expiry, so never describe it as an unlimited
+clock workaround. Tests use genuinely signed RSA tokens, Google's real verifier
+and local certificates: one/five seconds pass, six/sixty seconds in the future
+or past expiry fail, and bad audiences, issuers, signatures and unverified email
+remain rejected. Disabling tolerance only in an isolated process made the one-
+and five-second tests fail, then the unchanged on-disk source passed.
+
+The issuer regression exposed another boundary issue: GoogleAuthError was not
+caught by the old ValueError-only handler. It now becomes the app's credential
+error; transport failures instead become temporary unavailability. Raw library
+timestamps/provider details no longer reach sign-in errors. Do not relax signature
+checks or tell a customer that restarting their browser fixes backend clock skew.
+
+All 14 frontend tests and the strict CI production build passed without the previous
+hook-dependency warning. Google/launch-security tests passed with external services
+disabled and a fake database; no live Google account login or production proxy
+verification was performed. Billing and deployment are still separate next steps.

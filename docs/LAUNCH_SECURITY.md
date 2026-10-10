@@ -37,5 +37,11 @@ Emergent's external script and PostHog bootstrap were removed from the public HT
 Google fonts and Google sign-in remain intentionally enabled. No replacement
 analytics or consent system was added.
 
-This patch does not repair Stripe entitlement handling or Google's timestamp
-tolerance, and is not a completed penetration test or dependency vulnerability audit.
+Google verification now allows five seconds of timestamp skew, including expiry,
+while preserving signature, audience and issuer verification. Larger clock errors
+still require server/host time synchronisation. Verification failures return a
+friendly message rather than raw timestamps; certificate transport failures return
+temporary-unavailability errors instead of blaming the credential.
+
+Stripe entitlement handling remains outstanding. These checks are not a completed
+penetration test or dependency vulnerability audit.

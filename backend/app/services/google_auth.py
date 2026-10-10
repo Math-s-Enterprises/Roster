@@ -59,6 +59,7 @@ def verify_id_token(credential: str) -> Dict[str, Any]:
 
     try:
         from google.oauth2 import id_token as google_id_token
+        from google.auth.exceptions import GoogleAuthError, TransportError
     except ImportError as exc:
         raise GoogleAuthUnavailable(
             "The 'google-auth' package is not installed. Run: pip install -r requirements.txt"
@@ -68,10 +69,12 @@ def verify_id_token(credential: str) -> Dict[str, Any]:
         # Checks the signature against Google's rotating public keys, the
         # expiry, and that `aud` matches our client ID.
         claims = google_id_token.verify_oauth2_token(
-            credential, _request(), config.GOOGLE_CLIENT_ID
+            credential, _request(), config.GOOGLE_CLIENT_ID, clock_skew_in_seconds=5
         )
-    except ValueError as exc:
-        raise GoogleAuthInvalid(f"Invalid Google credential: {exc}") from exc
+    except TransportError as exc:
+        raise GoogleAuthUnavailable("Google sign-in is temporarily unavailable. Please try again later.") from exc
+    except (ValueError, GoogleAuthError) as exc:
+        raise GoogleAuthInvalid("Google sign-in could not be verified. Please try again.") from exc
 
     if claims.get("iss") not in _VALID_ISSUERS:
         raise GoogleAuthInvalid("Unexpected token issuer.")

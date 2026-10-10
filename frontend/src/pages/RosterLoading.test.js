@@ -20,6 +20,7 @@ let host, root;
 beforeEach(() => {
   global.IS_REACT_ACT_ENVIRONMENT = true;
   jest.clearAllMocks();
+  mockParams.set("week", "2026-10-05");
   mockParams.delete("roster");
   host = document.createElement("div"); document.body.appendChild(host);
   root = createRoot(host);
@@ -67,4 +68,23 @@ test("a link to a specific archived version still fetches that version directly"
       ? { roster_id: "saved-version", department: "Shop Floor" } : [] }));
   await act(async () => root.render(<RosterView />));
   expect(api.get).toHaveBeenCalledWith("/rosters/saved-version");
+});
+
+test.each([false, true])("an older request cannot replace newer week data (failure=%s)", async (failure) => {
+  let finish, fail;
+  const pending = new Promise((resolve, reject) => { finish = resolve; fail = reject; });
+  let employeeRequests = 0;
+  api.get.mockImplementation(path => {
+    if (path === "/employees" && employeeRequests++ === 0) return pending;
+    return Promise.resolve({ data: path === "/shop" ? { departments: ["Shop Floor"] }
+      : path === "/employees" ? [{ employee_id: "new", name: "Employee", role: "Cashier" }] : [] });
+  });
+  await act(async () => root.render(<RosterView />));
+  mockParams.set("week", "2026-10-12");
+  await act(async () => root.render(<RosterView />));
+  expect(api.get).toHaveBeenCalledWith("/rosters", { params: { week_start: "2026-10-12" } });
+  await act(async () => failure ? fail(new Error("Old request failed")) : finish({ data: [] }));
+  expect(host.textContent).not.toContain("No employees yet");
+  expect(host.textContent).not.toContain("Loading roster…");
+  expect(host.querySelector('[role="alert"]')).toBeNull();
 });
