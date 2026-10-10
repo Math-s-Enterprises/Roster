@@ -59,6 +59,7 @@ def verify_id_token(credential: str) -> Dict[str, Any]:
 
     try:
         from google.oauth2 import id_token as google_id_token
+        from google.auth.exceptions import GoogleAuthError, TransportError
     except ImportError as exc:
         raise GoogleAuthUnavailable(
             "The 'google-auth' package is not installed. Run: pip install -r requirements.txt"
@@ -68,10 +69,12 @@ def verify_id_token(credential: str) -> Dict[str, Any]:
         # Checks the signature against Google's rotating public keys, the
         # expiry, and that `aud` matches our client ID.
         claims = google_id_token.verify_oauth2_token(
-            credential, _request(), config.GOOGLE_CLIENT_ID
+            credential, _request(), config.GOOGLE_CLIENT_ID, clock_skew_in_seconds=5
         )
-    except ValueError as exc:
-        raise GoogleAuthInvalid(f"Invalid Google credential: {exc}") from exc
+    except TransportError as exc:
+        raise GoogleAuthUnavailable("Google sign-in is temporarily unavailable. Please try again later.") from exc
+    except (ValueError, GoogleAuthError) as exc:
+        raise GoogleAuthInvalid("Google sign-in could not be verified. Please try again.") from exc
 
     if claims.get("iss") not in _VALID_ISSUERS:
         raise GoogleAuthInvalid("Unexpected token issuer.")
@@ -80,15 +83,18 @@ def verify_id_token(credential: str) -> Dict[str, Any]:
     if not email:
         raise GoogleAuthInvalid("Google account has no email address.")
 
-    # Google asserts whether it has verified ownership of the address. An
-    # unverified address must not be trusted to identify an account, or a
-    # third party could register it and take over the matching local user.
+    # Verified email alone does not establish current ownership outside Gmail/Workspace.
     if not claims.get("email_verified"):
         raise GoogleAuthInvalid("This Google account's email address is not verified.")
+
+    subject = claims.get("sub")
+    if not isinstance(subject, str) or not subject:
+        raise GoogleAuthInvalid("Google account has no valid identity.")
 
     return {
         "email": email.lower(),
         "name": claims.get("name") or email.split("@")[0],
         "picture": claims.get("picture"),
-        "google_sub": claims.get("sub"),
+        "google_sub": subject,
+        "email_authoritative": email.lower().endswith("@gmail.com") or bool(claims.get("hd")),
     }

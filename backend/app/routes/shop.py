@@ -563,12 +563,12 @@ async def preview_contacts(
     replace: bool = Form(False),
     scope: ShopScope = CurrentScope,
 ):
-    data = await file.read()
+    data = await file.read(5 * 1024 * 1024 + 1)
     if not data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That file is empty.")
     if len(data) > 5 * 1024 * 1024:
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             "That file is larger than 5MB — this expects a list of names, not "
             "a document.",
         )
