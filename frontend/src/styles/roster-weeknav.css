@@ -1,0 +1,24 @@
+/* Previous / next week arrows either side of the roster's date picker,
+   joined to it as one control. Theme tokens throughout, so it follows
+   light and dark like the picker it wraps. */
+.wr-weeknav { display: inline-flex; align-items: stretch; }
+
+.wr-weeknav-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 44px; padding: 0;
+  background: none; border: 1px solid var(--t-input);
+  color: var(--t-body2); cursor: pointer; font: inherit;
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+.wr-weeknav-btn:first-child { border-radius: 6px 0 0 6px; }
+.wr-weeknav-btn:last-child { border-radius: 0 6px 6px 0; }
+.wr-weeknav-btn:hover { background: var(--t-hover); color: var(--t-ink); }
+.wr-weeknav-btn:focus-visible {
+  outline: none; border-color: var(--t-accent);
+  position: relative; z-index: 1;
+}
+
+/* The picker sits between the arrows: square corners, and its side borders
+   overlap theirs so the three read as one box with single dividers. */
+.wr-weeknav .wr-picker { border-radius: 0; margin: 0 -1px; }
+.wr-weeknav .wr-picker:focus-within { position: relative; z-index: 1; }
