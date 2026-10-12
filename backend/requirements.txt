@@ -16,9 +16,9 @@ motor>=3.3
 pymongo>=4.6
 
 # --- Auth ------------------------------------------------------------------
-pyjwt>=2.8
+pyjwt[crypto]>=2.8
 bcrypt>=4.0
-google-auth>=2.35          # verifies Google Identity Services ID tokens
+google-auth[requests]>=2.35 # verifies Google Identity Services ID tokens
 
 # --- Integrations ----------------------------------------------------------
 anthropic>=0.104.1         # structured-output rule compilation, summaries, OCR

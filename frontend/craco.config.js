@@ -66,6 +66,15 @@ if (config.enableHealthCheck) {
 }
 
 let webpackConfig = {
+  jest: {
+    configure: (jestConfig) => {
+      jestConfig.moduleNameMapper = {
+        "^@/(.*)$": "<rootDir>/src/$1",
+        ...jestConfig.moduleNameMapper,
+      };
+      return jestConfig;
+    },
+  },
   eslint: {
     configure: {
       extends: ["plugin:react-hooks/recommended"],
