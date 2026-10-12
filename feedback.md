@@ -1430,3 +1430,42 @@ All 14 frontend tests and the strict CI production build passed without the prev
 hook-dependency warning. Google/launch-security tests passed with external services
 disabled and a fake database; no live Google account login or production proxy
 verification was performed. Billing and deployment are still separate next steps.
+
+---
+
+## 25. CI must test the real app, not hide imports that stop its tests loading
+
+After step one's fixes were merged, PR #31 added an `@/styles/roster-weeknav.css`
+import. The stylesheet existed and the production build worked, but Jest could
+not resolve that alias and the roster-loading suite stopped at collection. CRACO
+configured the alias only for Webpack. Its Jest configuration now resolves the
+same `@/` root, preserving CRA's existing module mappings and stylesheet handling.
+Do not mask this with a virtual CSS mock: NotificationsDrawer uses the same alias
+and another page would simply hit the problem again.
+
+The user authorised CI before the Railway-first deployment. The workflow runs two
+independent checks on main-targeting PRs, main pushes and manual runs: full backend
+tests and frontend tests plus strict production compilation. It uses the existing
+Python 3.11/Node 20 runtimes, frozen frontend lockfile, cached dependency downloads,
+read-only permissions, commit-pinned Actions, no persisted checkout credentials,
+cancellation of superseded runs and bounded job duration. No deployment credentials
+or automation was added; initial production releases remain manual.
+
+Fresh installations also need JWT's cryptography extra and Google auth's requests
+extra. Both are now explicit requirements; the existing signed-token regressions
+must not depend on whichever libraries happen to remain in a developer's Docker
+image. CI uses test-only environment values and the existing MongoDB mock fixtures,
+never Atlas or live API keys. No MongoDB service is needed just to run these tests.
+
+The alias regression failed before the shared mapping and all 14 frontend tests
+passed afterwards; strict compilation also passed. Workflow YAML was parsed and
+asserted to contain the intended triggers, two checks, pinned actions, read-only
+permissions, test/build commands and no secret references. GitHub-hosted execution
+and required-check enforcement are not claimed: after the first successful PR run,
+the existing main ruleset must explicitly require both checks. Keep all pre-existing
+branch protections and do not bypass checks merely to meet a launch date.
+
+The complete backend run passed: 951 passed, one skipped and one existing expected
+failure in 96 seconds. Updated dependency extras also passed pip's no-install
+resolution check. These are local Docker results, not a claim that GitHub Actions
+has already run or that production deployments are gated.
