@@ -1,10 +1,16 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "@/context/AuthContext";
 import { errorMessage } from "@/lib/api";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import AuthShell from "@/components/AuthShell";
+import { ConsentCheckbox, LegalNote } from "@/components/LegalConsent";
+import ResetPrompt from "@/components/ResetPrompt";
+import {
+  LOCK_AT, LOCK_MINUTES, PROMPT_AT, clearGuard, minutesLeft, readGuard, recordFailure,
+} from "@/lib/loginGuard";
+import "@/styles/login-guard.css";
 import { LOGIN } from "@/constants/testIds/auth";
 
 /**
@@ -87,9 +93,27 @@ export default function Login() {
     email: "", password: "", name: "", shopName: "", keepSignedIn: true,
   });
   const [showPassword, setShowPassword] = useState(false);
+  // Ticked the Terms and Privacy box? "Create account" stays off until it is.
+  const [agreed, setAgreed] = useState(false);
   const [status, setStatus] = useState("idle"); // idle | submitting | error
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
+
+  // The pop-up after the 3rd and 5th wrong password: null, or { failures, email }.
+  const [resetPrompt, setResetPrompt] = useState(null);
+  // Wrong passwords for this email address, as the browser remembers them. Read fresh
+  // each render; the counter below only exists to make the page draw again when it changes.
+  const guard = readGuard(form.email);
+  const [guardTick, setGuardTick] = useState(0);
+  // While sign-in is paused, wake up to update the minutes left, and again when it ends.
+  // Each wake-up bumps guardTick, which is what arms the next one: without it in the
+  // list the effect would run once and the countdown would freeze.
+  useEffect(() => {
+    if (!guard.locked) return undefined;
+    const wait = Math.min(Math.max(guard.until - Date.now(), 0), 30000) + 50;
+    const timer = setTimeout(() => setGuardTick((n) => n + 1), wait);
+    return () => clearTimeout(timer);
+  }, [guard.locked, guard.until, guardTick]);
 
   const isSignup = mode === "signup";
   const submitting = status === "submitting";
@@ -128,9 +152,16 @@ export default function Login() {
     return Object.keys(next).length === 0;
   };
 
+  /** Going to reset ends the count, so the new password can be used at once. */
+  const goReset = (email) => {
+    clearGuard(email);
+    setResetPrompt(null);
+    navigate("/forgot-password");
+  };
+
   const submit = async (event) => {
     event.preventDefault();
-    if (submitting || !validate()) return;
+    if (submitting || (isSignup && !agreed) || (!isSignup && guard.locked) || !validate()) return;
     setStatus("submitting");
     setError(null);
     try {
@@ -143,6 +174,7 @@ export default function Login() {
         });
       } else {
         await login(form.email.trim(), form.password, form.keepSignedIn);
+        clearGuard(form.email);
       }
       navigate(returnTo, { replace: true });
     } catch (err) {
@@ -156,7 +188,18 @@ export default function Login() {
           : "That email and password do not match.",
       );
       // The email is never cleared; the password is where the fix goes.
-      if (!isSignup) requestAnimationFrame(() => passwordRef.current?.focus());
+      // Only a wrong password counts - not a dropped connection or a server fault.
+      let asked = false;
+      if (!isSignup && err?.response?.status === 401) {
+        const { failures } = recordFailure(form.email);
+        setGuardTick((n) => n + 1);
+        if (failures === PROMPT_AT || failures === LOCK_AT) {
+          asked = true;
+          setResetPrompt({ failures, email: form.email });
+        }
+      }
+      // (Not when the reset pop-up is about to take the focus.)
+      if (!isSignup && !asked) requestAnimationFrame(() => passwordRef.current?.focus());
     }
   };
 
@@ -308,11 +351,55 @@ export default function Login() {
           </div>
         )}
 
+        {/* "Create account" stays off until this is ticked. */}
+        {isSignup && <ConsentCheckbox checked={agreed} onChange={setAgreed} />}
+
         <p className="si-form-error" aria-live="polite">{error}</p>
+
+        {!isSignup && guard.failures >= PROMPT_AT && (
+          <div
+            className="lg-guard"
+            id="login-guard-msg"
+            data-testid="login-guard"
+            data-locked={guard.locked}
+            role="status"
+          >
+            {guard.locked ? (
+              <>
+                <strong>
+                  Sign-in is paused for about {minutesLeft(guard.remainingMs)}{" "}
+                  {minutesLeft(guard.remainingMs) === 1 ? "minute" : "minutes"}
+                </strong>{" "}
+                after {LOCK_AT} wrong passwords. To get back in now,{" "}
+                <Link to="/forgot-password" data-testid="login-guard-reset" onClick={() => { clearGuard(form.email); setGuardTick((n) => n + 1); }}>
+                  reset your password
+                </Link>.
+              </>
+            ) : (
+              <>
+                <strong>That is {guard.failures} wrong passwords in a row.</strong> Forgotten it?{" "}
+                <Link to="/forgot-password" data-testid="login-guard-reset" onClick={() => { clearGuard(form.email); setGuardTick((n) => n + 1); }}>
+                  Reset your password
+                </Link>
+              </>
+            )}
+          </div>
+        )}
+
+        {resetPrompt && (
+          <ResetPrompt
+            paused={resetPrompt.failures >= LOCK_AT}
+            failures={resetPrompt.failures}
+            minutes={LOCK_MINUTES}
+            onReset={() => goReset(resetPrompt.email)}
+            onClose={() => setResetPrompt(null)}
+          />
+        )}
 
         <button
           type="submit" data-testid="submit-auth" className="si-cta"
-          disabled={submitting} aria-busy={submitting}
+          disabled={submitting || (isSignup && !agreed) || (!isSignup && guard.locked)} aria-busy={submitting}
+          aria-describedby={!isSignup && guard.locked ? "login-guard-msg" : undefined}
         >
           {submitting ? (
             <>
@@ -331,12 +418,12 @@ export default function Login() {
             <GoogleSignInButton
               clientId={providers.google_client_id}
               onCredential={handleGoogleCredential}
-              disabled={submitting}
+              disabled={submitting || (isSignup && !agreed)}
             />
           </>
         )}
 
-        <p className="si-note">Staff do not sign in — they get their roster by email.</p>
+        <LegalNote signup={isSignup} />
       </form>
 
       <div className="si-chips">

@@ -1,0 +1,60 @@
+/* The notice on the sign-in page after repeated wrong passwords. Sits inside the
+   signed-out frame, so it uses that page's palette, each with a fallback. */
+.lg-guard {
+  margin: 0 0 12px; padding: 12px 14px; border-radius: 9px;
+  background: var(--si-chip, #fffaf3);
+  border: 1px solid var(--si-border, #e3d6c6);
+  border-left: 3px solid var(--si-accent, #b84415);
+  color: var(--si-body, #3d372f);
+  font-size: 14px; line-height: 1.5;
+}
+/* Paused: the stripe goes red, and the words say so as well, so it is never colour alone. */
+.lg-guard[data-locked="true"] { border-left-color: #c0392b; }
+.lg-guard strong { color: var(--si-ink, #1c1a17); }
+.lg-guard a {
+  color: var(--si-accent, #b84415); font-weight: 700;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.lg-guard a:hover { color: var(--si-deep, #8c3410); }
+
+/* The pop-up (components/ResetPrompt.js) ------------------------------------------
+   Drawn into <body>, outside the sign-in page's scope, so it carries its own copy of
+   that page's palette. The sign-in page is always light. */
+.lg-scrim {
+  --si-card: #fffdf9; --si-ring: #ece0d0;
+  --si-ink: #1c1a17; --si-body: #3d372f; --si-muted: #6b6155;
+  --si-accent: #b84415; --si-deep: #8c3410;
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: rgba(28, 20, 10, .55);
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+.lg-dlg {
+  width: 420px; max-width: 100%; box-sizing: border-box;
+  padding: 24px 26px 22px;
+  background: var(--si-card); border: 1px solid var(--si-ring); border-radius: 14px;
+  box-shadow: 0 30px 70px rgba(90, 58, 26, .28);
+  color: var(--si-body); outline: none;
+}
+.lg-dlg-title { margin: 0 0 8px; font-size: 22px; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; color: var(--si-ink); }
+.lg-dlg-body { margin: 0; font-size: 15px; line-height: 1.55; }
+.lg-dlg-acts { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 20px; }
+.lg-dlg-primary {
+  height: 44px; padding: 0 18px; border: 0; border-radius: 8px;
+  background: var(--si-accent); color: #fff;
+  font: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+}
+.lg-dlg-primary:hover { background: var(--si-deep); }
+.lg-dlg-secondary {
+  padding: 4px 2px; border: 0; background: none;
+  font: inherit; font-size: 15px; font-weight: 600; color: var(--si-muted); cursor: pointer;
+}
+.lg-dlg-secondary:hover { color: var(--si-ink); }
+.lg-dlg :focus-visible { outline: none; border-radius: 8px; box-shadow: 0 0 0 3px rgba(184, 68, 21, .3); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .lg-scrim { animation: lg-fade 120ms ease-out; }
+  .lg-dlg { animation: lg-rise 140ms ease-out; }
+}
+@keyframes lg-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lg-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

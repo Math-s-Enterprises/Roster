@@ -2,7 +2,6 @@ import React, {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from "react";
 import { useSonner } from "sonner";
-import { getToken } from "@/lib/api";
 
 /**
  * A short memory for the pop-up messages.
@@ -28,20 +27,27 @@ import { getToken } from "@/lib/api";
  *     becomes "Saved"). The Recorder keeps the outcome and not the loading
  *     step, and keeps an update only when its content actually changed.
  *
+ * SIGNING OUT DOES NOT CLEAR IT
+ *
+ * Sign out and sign back in and the same twenty are still there: the point of
+ * the list is to look back at what was done, and that includes yesterday. It is
+ * cleared only by "Clear all", or as newer messages push the oldest out.
+ *
+ * (An earlier version cleared it at sign-out, and kept it in sessionStorage when
+ * "Keep me signed in" was unticked. Both made it vanish on sign-in. The second
+ * was subtler: signing out removes the token, so the code could no longer tell
+ * which storage to look in, and fell back to the wrong one.)
+ *
  * PRIVACY
  *
  * These messages name people ("Recorded for Aoife", "Removed Aaron's shift"),
- * and some concern sick leave, so the list is treated as personal data:
+ * and some concern sick leave, so the list is still treated as personal data:
  *   - It is kept per signed-in user, so another account on the same browser
  *     never sees it.
- *   - It lives in the same kind of storage as the sign-in token. Leave "Keep
- *     me signed in" unticked and the token is in sessionStorage, so the list
- *     goes when the browser closes, as the sign-in does. Ticked, both
- *     persist.
- *   - Signing out clears it. So does the layout unmounting with no token
- *     left, which covers a session that expired rather than a deliberate
- *     sign-out.
- * The Privacy Policy mentions this.
+ *   - It stays on this device, in localStorage, until it is cleared.
+ * The cost of keeping it past sign-out is that on a shared computer it stays in
+ * that browser until cleared. Anyone sharing a computer can press "Clear all"
+ * first. The Privacy Policy says this.
  */
 
 export const MAX_NOTIFICATIONS = 20;
@@ -50,18 +56,18 @@ const KEY_PREFIX = "roster_notifications:";
 const VERSION = 1;
 const KINDS = ["success", "error", "warning", "info"];
 
-// The sign-in token's storage key, from lib/api.js. Kept in step by hand: this
-// file only needs to know WHICH storage the token is in, not the token.
-const TOKEN_KEY = "roster_token";
-
 // --- storage ---------------------------------------------------------------
 
-/** The storage the token is in; localStorage unless the token is session-only. */
+/**
+ * Always localStorage, whatever the sign-in is stored in, so the list is looked for
+ * in the same place before and after a sign-out. Null if storage is blocked
+ * (private browsing): then the list lives in memory for the session.
+ */
 function storeFor() {
   try {
-    return sessionStorage.getItem(TOKEN_KEY) ? sessionStorage : localStorage;
+    return localStorage;
   } catch {
-    return null; // storage blocked (private mode): the list is memory-only
+    return null;
   }
 }
 
@@ -107,7 +113,7 @@ function writeState(key, state) {
   }
 }
 
-/** Remove from both storages, so a sign-out leaves nothing in either. */
+/** Remove from both storages, which also tidies up anything an earlier version left in sessionStorage. */
 function removeState(key) {
   if (!key) return;
   [() => localStorage, () => sessionStorage].forEach((get) => {
@@ -195,12 +201,6 @@ export function NotificationsProvider({ userId, children }) {
   }
 
   useEffect(() => { writeState(key, state); }, [key, state]);
-
-  // Unmounting with no token left means the session ended — sign-out, or an
-  // expired token — so nothing is left behind for the next person.
-  useEffect(() => () => {
-    if (key && !getToken()) removeState(key);
-  }, [key]);
 
   const record = useCallback((entries) => {
     setState((current) => ({

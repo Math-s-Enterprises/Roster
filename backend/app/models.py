@@ -10,6 +10,9 @@ a route handler runs, so handlers can assume well-formed input.
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic_core import PydanticCustomError
+
+from app.services.contract_pay import hourly_equivalent
 
 DayKey = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
@@ -249,6 +252,18 @@ class EmployeeIn(BaseModel):
         description="How far under the contract a week may land. Defaults to 1.5.",
     )
 
+    # Full-time only. A salaried contract is paid a fixed amount, so it is
+    # entered as that amount per week or per month rather than as an hourly
+    # rate. Both or neither: a salary with no period, or a period with no
+    # salary, says nothing about what anyone is paid.
+    contract_pay_period: Optional[Literal["weekly", "monthly"]] = Field(
+        None, description="What contract_salary is per: 'weekly' or 'monthly'.",
+    )
+    contract_salary: Optional[float] = Field(
+        None, gt=0, le=1_000_000,
+        description="The salary per contract_pay_period. Replaces hourly_rate when set.",
+    )
+
     # Kept for records written before employment_type existed.
     is_student: bool = False
     term_time_max_hours: Optional[float] = Field(
@@ -263,6 +278,39 @@ class EmployeeIn(BaseModel):
         self.is_student = self.employment_type == "student" or self.is_student
         if self.is_student and self.employment_type == "hourly":
             self.employment_type = "student"
+        return self
+
+    @model_validator(mode="after")
+    def _contract_pay(self) -> "EmployeeIn":
+        """Turn a contract's salary into the hourly rate everything is costed with.
+
+        Every cost in the app is hours x hourly_rate, so the salary is worked
+        out into that rate here, once, when the record is saved. Nothing else
+        needs to know a salary exists, and no two screens can disagree. See
+        services/contract_pay.py for the arithmetic and what it approximates.
+
+        Only a full-time contract has a salary. For anyone else both fields are
+        cleared rather than refused: changing somebody's type must not leave a
+        figure behind that looks as though it still applies. A contract saved
+        with neither is a record from before this existed, and keeps the
+        hourly_rate it was sent with.
+        """
+        if self.employment_type != "full_time_contract":
+            self.contract_pay_period = None
+            self.contract_salary = None
+            return self
+        if (self.contract_pay_period is None) != (self.contract_salary is None):
+            # A whole sentence: a rule across two fields has no single field
+            # name for the screen to put in front of it.
+            raise PydanticCustomError(
+                "contract_pay",
+                "Contract pay needs both a period (weekly or monthly) and a "
+                "salary, or neither.",
+            )
+        if self.contract_salary is not None:
+            self.hourly_rate = hourly_equivalent(
+                self.contract_pay_period, self.contract_salary, self.max_weekly_hours,
+            )
         return self
 
     # Balance carried in from whatever the shop used before. Set once at
