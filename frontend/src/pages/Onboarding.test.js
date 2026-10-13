@@ -46,3 +46,61 @@ test("roster group removal requires app confirmation and Cancel preserves the gr
     host.remove();
   }
 });
+
+test("removing the last supervisory role clears its saved closing selection", async () => {
+  global.IS_REACT_ACT_ENVIRONMENT = true;
+  api.put.mockClear();
+  api.put.mockResolvedValue({ data: {} });
+  const shop = {
+    onboarded: true, name: "Test shop", hours: [],
+    min_shift_hours: 4, max_shift_hours: 9,
+    departments: ["Shop Floor"], roles: ["Manager", "Crew"],
+  };
+  api.get.mockImplementation(path => Promise.resolve({ data: path === "/shop"
+    ? shop : { hierarchy: ["Manager", "Crew"], supervisory: ["Manager"], supervisory_roles: ["Manager"] } }));
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<Onboarding />));
+    const row = [...host.querySelectorAll(".ss-rolerow")].find(el => el.textContent.includes("Manager"));
+    await act(async () => [...row.querySelectorAll("button")].find(el => el.textContent === "Remove").click());
+    const dialog = document.querySelector('[role="alertdialog"]');
+    await act(async () => [...dialog.querySelectorAll("button")].find(el => el.textContent === "Remove").click());
+    await act(async () => host.querySelector('[data-testid="btn-save-settings"]').click());
+    expect(api.put).toHaveBeenCalledWith("/shop", expect.objectContaining({ roles: ["Crew"], supervisory_roles: [] }));
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+test("first-run setup keeps the shared supervisory switch and saves an empty selection", async () => {
+  global.IS_REACT_ACT_ENVIRONMENT = true;
+  api.put.mockClear();
+  api.put.mockResolvedValue({ data: {} });
+  api.get.mockImplementation(path => Promise.resolve({ data: path === "/shop"
+    ? { onboarded: false, name: "Test shop", hours: [], min_shift_hours: 4, max_shift_hours: 9, departments: ["Shop Floor"] }
+    : { hierarchy: ["Manager", "Crew"], supervisory: ["Manager"], supervisory_roles: ["Manager"] } }));
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<Onboarding />));
+    for (let step = 0; step < 3; step++) {
+      await act(async () => host.querySelector('[data-testid="btn-next"]').click());
+    }
+    expect(host.querySelector('[aria-label="Roles and seniority"]')).not.toBeNull();
+    expect(host.textContent).toContain("Selecting none turns off");
+    expect(host.textContent).not.toContain("It is not saved yet");
+    const supervisory = host.querySelector('[aria-label="Supervisory cover for Manager"]');
+    expect(supervisory.getAttribute("aria-checked")).toBe("true");
+    await act(async () => supervisory.click());
+    expect(supervisory.getAttribute("aria-checked")).toBe("false");
+    await act(async () => host.querySelector('[data-testid="btn-next"]').click());
+    expect(api.put).toHaveBeenLastCalledWith("/shop", expect.objectContaining({ supervisory_roles: [] }));
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

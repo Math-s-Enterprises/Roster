@@ -94,13 +94,10 @@ export default function RolesTable({
       })}
 
       <p className="ss-note">
-        <strong>Supervisory</strong> marks a role as counting for cover — at least one such person
-        is rostered on every close.{" "}
-        <strong className="ss-warn">
-          It is not saved yet: the server works cover out from the job title and the top third of
-          the ladder, and does not accept a per-role flag.
-        </strong>{" "}
-        Until that is added, a change here lasts until you reload.
+        <strong>Supervisory</strong> marks a role as counting for closing cover.
+        If any roles are selected, at least one person in a selected role must
+        cover every close. Selecting none turns off this shop setting's closing
+        requirement. These selections are saved with your shop settings.
       </p>
 
       <div className="ss-addrow">

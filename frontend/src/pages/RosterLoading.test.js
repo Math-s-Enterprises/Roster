@@ -70,6 +70,57 @@ test("a link to a specific archived version still fetches that version directly"
   expect(api.get).toHaveBeenCalledWith("/rosters/saved-version");
 });
 
+test.each([false, true])("approval breaches appear in Needs attention (overridable=%s)", async (overridable) => {
+  const breach = {
+    employee_id: "one", name: "Employee", rule: "weekly_hours",
+    message: "Employee exceeds their weekly limit.", overridable,
+  };
+  api.get.mockImplementation(path => Promise.resolve({ data:
+    path === "/shop" ? { departments: ["Shop Floor"] }
+      : path === "/employees" ? [{ employee_id: "one", name: "Employee", role: "Cashier" }]
+      : path === "/rosters" ? [{ roster_id: "draft", week_start: "2026-10-05", department: "Shop Floor", shifts: [], edit_warnings: [breach.message] }]
+      : path === "/rosters/draft/audit" ? { people: [{ employee_id: "one", breaches: [breach] }] }
+      : [] }));
+  await act(async () => root.render(<RosterView />));
+  expect(host.textContent).toContain("Needs attention (1)");
+  expect(host.textContent).toContain(breach.message);
+  expect(host.textContent).not.toContain("this week is ready to approve");
+  expect(host.textContent).not.toContain("Nothing here blocks approval");
+});
+
+test("an unavailable approval audit never claims the week is ready", async () => {
+  api.get.mockImplementation(path => path.endsWith("/audit")
+    ? Promise.reject(new Error("Network Error"))
+    : Promise.resolve({ data: path === "/shop" ? { departments: ["Shop Floor"] }
+      : path === "/employees" ? [{ employee_id: "one", name: "Employee", role: "Cashier" }]
+      : path === "/rosters" ? [{ roster_id: "draft", week_start: "2026-10-05", department: "Shop Floor", shifts: [] }]
+      : [] }));
+  await act(async () => root.render(<RosterView />));
+  expect(host.textContent).toContain("Approval checks are not available yet");
+  expect(host.textContent).not.toContain("this week is ready to approve");
+});
+
+test("a previous roster's audit cannot give a newer week an all-clear", async () => {
+  let finishOldAudit;
+  const oldAudit = new Promise(resolve => { finishOldAudit = resolve; });
+  api.get.mockImplementation(path => {
+    if (path === "/rosters/2026-10-05/audit") return oldAudit;
+    if (path.endsWith("/audit")) return Promise.resolve({ data: { people: [{
+      employee_id: "one", breaches: [{ name: "Employee", message: "New week breach" }],
+    }] } });
+    return Promise.resolve({ data: path === "/shop" ? { departments: ["Shop Floor"] }
+      : path === "/employees" ? [{ employee_id: "one", name: "Employee", role: "Cashier" }]
+      : path === "/rosters" ? [{ roster_id: mockParams.get("week"), week_start: mockParams.get("week"), department: "Shop Floor", shifts: [] }]
+      : [] });
+  });
+  await act(async () => root.render(<RosterView />));
+  mockParams.set("week", "2026-10-12");
+  await act(async () => root.render(<RosterView />));
+  await act(async () => finishOldAudit({ data: { people: [] } }));
+  expect(host.textContent).toContain("New week breach");
+  expect(host.textContent).not.toContain("this week is ready to approve");
+});
+
 test.each([false, true])("an older request cannot replace newer week data (failure=%s)", async (failure) => {
   let finish, fail;
   const pending = new Promise((resolve, reject) => { finish = resolve; fail = reject; });

@@ -91,7 +91,7 @@ class TestTheMessagesAreReadable:
         assert len(people[0]["breaches"]) > 1
 
 
-def test_saved_supervisory_roles_are_checked_without_an_ai_rule():
+def test_selected_supervisory_roles_require_closing_but_empty_selection_does_not():
     shop = {
         **SHOP,
         "supervisory_roles": ["Captain"],
@@ -109,6 +109,15 @@ def test_saved_supervisory_roles_are_checked_without_an_ai_rule():
 
     missing = audit(shifts, shop=shop, employees=employees, week_start=WEEK)
     assert any(breach["rule"] == "closing_role_requirement" for breach in missing)
+
+    shop["supervisory_roles"] = []
+    missing = audit(shifts, shop=shop, employees=employees, week_start=WEEK)
+    assert not [breach for breach in missing if breach["rule"] == "closing_role_requirement"]
+    shop["supervisory_roles"] = ["Captain"]
+    rules = [{"compiled": {"type": "supervisor_required", "scope": "closing"}}]
+    assert closing_role_breaches(
+        shifts, shop=shop, employees=employees, ai_rules=rules, week_start=WEEK,
+    )
 
     shifts.append({
         "employee_id": "captain", "day": "mon", "start": "13:00", "end": "21:00"
@@ -324,7 +333,7 @@ class TestClosingRoleOn24HourShops:
         )
         assert not breaches
 
-    def test_a_non_24h_shop_with_supervisory_roles_still_enforces_closing(self):
+    def test_an_explicit_closing_rule_still_enforces_closing(self):
         """The fix must not silently disable the real check for ordinary
         shops that do have a closing time."""
         shop = {
@@ -337,9 +346,17 @@ class TestClosingRoleOn24HourShops:
         ]
         breaches = closing_role_breaches(
             shifts, shop=shop, employees=_team(role="Manager"),
+            ai_rules=[{"compiled": {"type": "supervisor_required", "scope": "closing"}}],
             week_start=WEEK,
         )
         assert breaches, (
             "a shop with a real close time and a supervisory role should "
             "still require someone senior at close"
         )
+
+        shop["supervisory_roles"] = []
+        assert closing_role_breaches(
+            shifts, shop=shop, employees=_team(role="Manager"),
+            ai_rules=[{"compiled": {"type": "supervisor_required", "scope": "closing"}}],
+            week_start=WEEK,
+        ), "An explicit rule is not disabled by deselecting its qualifying roles"

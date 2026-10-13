@@ -3826,7 +3826,7 @@ class _RosterBuilder:
     ) -> None:
         """Place this shop's supervisors where its own history puts them.
 
-        Saved supervisory roles make closing cover mandatory. With enough
+        Selected supervisory roles make closing cover mandatory. With enough
         approved history, the existing hourly role mix also says whether the
         shop normally has one or two supervisory people through each part of
         the day. Those are soft targets; ownership and every eligibility rule
@@ -3837,7 +3837,7 @@ class _RosterBuilder:
                 self.custom_constraints, day
             )
             configured = "supervisory_roles" in self.shop
-            closing_required = configured or bool(closing_rules)
+            closing_required = bool(self.shop.get("supervisory_roles")) or bool(closing_rules)
             # A 24-hour shop has no closing time, so there is nothing here
             # for a closing rule to apply to. This is not worth surfacing as
             # an issue every generation - it's expected, not a problem.

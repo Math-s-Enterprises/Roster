@@ -136,8 +136,8 @@ def closing_role_breaches(
         return []
 
     constraints = rule_parser.compiled_constraints(ai_rules or [])
-    configured = "supervisory_roles" in (shop or {})
-    if not configured and not any(
+    closing_required = bool((shop or {}).get("supervisory_roles"))
+    if not closing_required and not any(
         rule_parser.closing_supervisor_rules(constraints, day) for day in DAYS
     ):
         return []
@@ -172,8 +172,7 @@ def closing_role_breaches(
 
     breaches = []
     for day in DAYS:
-        if (not configured
-                and not rule_parser.closing_supervisor_rules(constraints, day)):
+        if not closing_required and not rule_parser.closing_supervisor_rules(constraints, day):
             continue
         hours = hours_by_day.get(day)
         if not hours or hours.get("closed") or date_for.get(day) in closed_dates:
