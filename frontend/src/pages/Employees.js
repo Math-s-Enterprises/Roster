@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, errorMessage, fmtMoney, CURRENCY, DAY_SHORT, DAY_LABELS, DAYS, shiftHours } from "@/lib/api";
 import { toast } from "sonner";
 import ContactImportPanel from "@/components/ContactImportPanel";
+import ContractPay, { salaryTile } from "@/components/ContractPay";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { Plus, Search, ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Sun, X, AlertTriangle } from "lucide-react";
 
@@ -154,6 +155,8 @@ const emptyForm = {
   employment_type: "hourly",
   contract_span_hours: "",
   contract_span_tolerance: "",
+  contract_pay_period: "",
+  contract_salary: "",
   is_student: false,
   term_time_max_hours: "",
   summer_break: { ...emptySummerBreak },
@@ -175,6 +178,8 @@ function toForm(employee) {
       || (employee.is_student ? "student" : "hourly"),
     contract_span_hours: employee.contract_span_hours ?? "",
     contract_span_tolerance: employee.contract_span_tolerance ?? "",
+    contract_pay_period: employee.contract_pay_period ?? "",
+    contract_salary: employee.contract_salary ?? "",
     term_time_max_hours: employee.term_time_max_hours ?? "",
     opening_holiday_hours: employee.opening_holiday_hours ?? "",
   };
@@ -250,6 +255,11 @@ function toPayload(form) {
       ? Number(form.contract_span_hours) : null,
     contract_span_tolerance: isContract && form.contract_span_tolerance !== ""
       ? Number(form.contract_span_tolerance) : null,
+    // The salary, and whether it is per week or per month. Null for anyone who is not
+    // a salaried contract, so a record never carries a figure that does not apply.
+    // The server works the hourly rate out from these.
+    contract_pay_period: isContract && form.contract_pay_period ? form.contract_pay_period : null,
+    contract_salary: isContract && form.contract_salary !== "" ? Number(form.contract_salary) : null,
     is_student: isStudent,
     term_time_max_hours: isStudent && form.term_time_max_hours !== ""
       ? Number(form.term_time_max_hours) : null,
@@ -434,6 +444,15 @@ export default function Employees() {
 
   const submit = async (e) => {
     e.preventDefault();
+    // A salaried contract is paid a salary, so the form asks for one rather than
+    // saving a contract with no pay on it. The server still accepts older records
+    // that have none, so they can be opened; it is this screen that asks.
+    if (form.employment_type === "full_time_contract") {
+      if (!form.contract_pay_period || !(Number(form.contract_salary) > 0)) {
+        toast.error("Choose weekly or monthly pay and enter the salary for a full-time contract.");
+        return;
+      }
+    }
     try {
       const payload = toPayload(form);
       if (modal === "edit") {
@@ -527,7 +546,7 @@ export default function Employees() {
     const rows = [[
       "Name", "Role", "Manager", "Status", "Hourly rate", "Max weekly hours",
       "Age", "Employment type", "Guaranteed days off",
-      "Hours this week", "Holiday hours left",
+      "Hours this week", "Holiday hours left", "Contract salary", "Contract pay period",
     ]];
 
     list.forEach((e) => {
@@ -545,6 +564,8 @@ export default function Employees() {
         (e.preferred_days_off || []).map((d) => DAY_LABELS[d]).join(" / "),
         roster ? hoursThisWeek(e.employee_id).toFixed(1) : "",
         typeof left === "number" ? left.toFixed(1) : "",
+        e.contract_salary ?? "",
+        e.contract_pay_period ?? "",
       ]);
     });
 
@@ -617,8 +638,10 @@ export default function Employees() {
 
         <div className="esp-stats">
           <div className="esp-stat">
-            <div className="esp-stat-label">Hourly rate</div>
-            <div className="esp-stat-value">{fmtMoney(selected.hourly_rate, { decimals: 2 })}</div>
+            <div className="esp-stat-label">{salaryTile(selected)?.label || "Hourly rate"}</div>
+            <div className="esp-stat-value">
+              {salaryTile(selected)?.value || fmtMoney(selected.hourly_rate, { decimals: 2 })}
+            </div>
           </div>
           <div className="esp-stat">
             <div className="esp-stat-label">Max per week</div>
@@ -947,17 +970,28 @@ export default function Employees() {
                   onChange={(e) => set({ age: Number(e.target.value) })}
                   className="w-full px-3 py-2.5 rounded-lg font-mono" />
               </Field>
-              <Field label={`Hourly rate (${CURRENCY})`}>
-                <input data-testid="emp-rate" type="number" min={0} step="0.5" required value={form.hourly_rate}
-                  onChange={(e) => set({ hourly_rate: Number(e.target.value) })}
-                  className="w-full px-3 py-2.5 rounded-lg font-mono" />
-              </Field>
+              {/* A salaried contract is paid a salary, not by the hour. */}
+              {form.employment_type !== "full_time_contract" && (
+                <Field label={`Hourly rate (${CURRENCY})`}>
+                  <input data-testid="emp-rate" type="number" min={0} step="0.5" required value={form.hourly_rate}
+                    onChange={(e) => set({ hourly_rate: Number(e.target.value) })}
+                    className="w-full px-3 py-2.5 rounded-lg font-mono" />
+                </Field>
+              )}
               <Field label="Contracted weekly hours">
                 <input data-testid="emp-max" type="number" min={1} max={168} step="0.5" required
                   value={form.max_weekly_hours}
                   onChange={(e) => set({ max_weekly_hours: Number(e.target.value) })}
                   className="w-full px-3 py-2.5 rounded-lg font-mono" />
               </Field>
+              {form.employment_type === "full_time_contract" && (
+                <ContractPay
+                  period={form.contract_pay_period}
+                  salary={form.contract_salary}
+                  paidHours={form.max_weekly_hours}
+                  onChange={set}
+                />
+              )}
             </div>
             <p className="text-[11px] esp-ink-faint -mt-1">
               Contracted hours are paid hours. Unpaid breaks sit on top, so a
@@ -1132,6 +1166,9 @@ export default function Employees() {
 
               {form.employment_type === "full_time_contract" && (
                 <div className="pt-3 border-t" style={{ borderColor: "var(--hairline-cool)" }}>
+                  <p className="text-[11px] mb-3" style={{ color: "var(--ink-mute-2)" }}>
+                    Pay is entered under Contract pay, further up this form.
+                  </p>
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Contracted hours on the floor">
                       <input data-testid="emp-contract-span" type="number" min={1} max={168} step="0.5"

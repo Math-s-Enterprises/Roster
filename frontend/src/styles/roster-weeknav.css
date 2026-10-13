@@ -22,3 +22,9 @@
    overlap theirs so the three read as one box with single dividers. */
 .wr-weeknav .wr-picker { border-radius: 0; margin: 0 -1px; }
 .wr-weeknav .wr-picker:focus-within { position: relative; z-index: 1; }
+
+/* The header's buttons, right-aligned, with the calendar last. Whatever comes and
+   goes to its left (Rebalance, Add extra, Regenerate, Unapprove), the calendar stays
+   at the right edge - including when the header wraps under the title on a narrow
+   screen, where the group would otherwise sit at the left. */
+.wr-headacts { margin-left: auto; justify-content: flex-end; }

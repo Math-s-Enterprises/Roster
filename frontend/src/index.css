@@ -4307,3 +4307,16 @@ label.ss-label-tight { letter-spacing: .04em; }
   /* The card is the job on a phone; the chips are decoration. */
   .si-chips { display: none; }
 }
+
+/* The roles table inside the first-run setup wizard ---------------------------------
+   components/RolesTable.js is drawn here exactly as on Shop settings. The settings screen
+   gets its font and focus ring from .ss-page, which also pulls the page full-bleed with
+   negative margins: that frame is for the settings screen only, so the wizard supplies just
+   the two things the table needs, and drops the table's own side padding because the wizard
+   card already has its own. */
+.ss-embed {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  color: var(--t-ink);
+}
+.ss-embed :focus-visible { outline: none; box-shadow: 0 0 0 3px var(--t-focus); }
+.ss-embed .ss-table { padding: 0; }
