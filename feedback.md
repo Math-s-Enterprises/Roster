@@ -1509,3 +1509,19 @@ loading/saving settings excludes supervisory roles no longer on the ladder, so a
 deleted role cannot remain as a hidden closing requirement. The regression saves
 settings after removing the final selected role and checks supervisory_roles=[].
 No production build, remote deployment, or live account test was performed here.
+
+## 27. Merge the shared roles table without losing the supervisory fix
+
+Main's PR #34 extracted RolesTable for both settings and first-run setup, while
+ci-launch-checks fixed the old inline tables. Their two Onboarding conflicts must
+keep the shared component, not restore duplicated markup or accept both sides.
+The corrected selected-versus-empty explanation belongs in RolesTable now.
+Preserve hydration filtering, saved selections, removal cleanup, and the live
+approval-breach panel. A wizard regression toggles the shared supervisory switch
+off and confirms the next save sends an empty list. Merge main into the published
+branch without rebasing or force-pushing; do not push or deploy for the user.
+
+Merged-source verification: all 20 frontend tests and 205 backend tests for
+compliance, low-history scheduling, learned slots and contract pay passed. The
+production build and full merged backend suite were not rerun; GitHub CI must
+finish before merging the updated PR. No remote writes or deployments performed.

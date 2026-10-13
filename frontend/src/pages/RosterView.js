@@ -92,6 +92,25 @@ export default function RosterView() {
     // Drop any pinned version — it belongs to the week being left.
     setSearchParams({ week: monday }, { replace: true });
   };
+
+  /**
+   * What the calendar field SHOWS, kept apart from the week it points at.
+   *
+   * The week is always a Monday, but the field must not be forced to one while
+   * somebody is using it. Stepping the date with the arrow keys, typing, or paging
+   * through the calendar each report a new date, and writing a different one back
+   * (the week's Monday) makes the browser throw away its editing state: the open
+   * calendar closes or jumps back, and the month you were stepping loses focus, so
+   * every step needed another click on the date. So while the field is in use it
+   * shows exactly what the browser reports, the roster follows each change, and the
+   * field settles on the Monday once the person has finished and moved away.
+   */
+  const pickerRef = useRef(null);
+  const [pickerValue, setPickerValue] = useState(week);
+  useEffect(() => {
+    if (document.activeElement !== pickerRef.current) setPickerValue(week);
+  }, [week]);
+
   const [roster, setRoster] = useState(null);
   const [emps, setEmps] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1037,47 +1056,6 @@ export default function RosterView() {
         </div>
 
         <div className="wr-headacts">
-          {/* The arrows go through chooseWeek, the same path as picking a date,
-              so the address bar and the loaded roster follow them too. */}
-          <div className="wr-weeknav" role="group" aria-label="Choose week">
-            <button
-              type="button"
-              data-testid="week-prev"
-              className="wr-weeknav-btn"
-              onClick={() => chooseWeek(shiftWeek(week, -1))}
-              aria-label="Previous week"
-              title="Previous week"
-            >
-              <ChevronLeft size={16} strokeWidth={2} aria-hidden="true" />
-            </button>
-            <label
-              className="wr-picker"
-              onClick={(e) => {
-                const input = e.currentTarget.querySelector("input");
-                try { input?.showPicker?.(); } catch { /* not supported here */ }
-              }}
-            >
-              <Calendar size={14} color="var(--t-muted)" strokeWidth={1.6} aria-hidden="true" />
-              <input
-                data-testid="week-picker"
-                type="date"
-                value={week}
-                onChange={(e) => chooseWeek(e.target.value)}
-                aria-label="Week"
-              />
-            </label>
-            <button
-              type="button"
-              data-testid="week-next"
-              className="wr-weeknav-btn"
-              onClick={() => chooseWeek(shiftWeek(week, 1))}
-              aria-label="Next week"
-              title="Next week"
-            >
-              <ChevronRight size={16} strokeWidth={2} aria-hidden="true" />
-            </button>
-          </div>
-
           {roster?.approved ? (
             <button
               data-testid="btn-unapprove"
@@ -1126,6 +1104,53 @@ export default function RosterView() {
               </button>
             </>
           )}
+
+          {/* The calendar goes LAST, so it is always the rightmost thing in the row. The
+              buttons before it come and go (Rebalance, Add extra, Regenerate, Unapprove), and
+              with the calendar first every one of them moved it along. */}
+          {/* The arrows go through chooseWeek, the same path as picking a date,
+              so the address bar and the loaded roster follow them too. */}
+          <div className="wr-weeknav" role="group" aria-label="Choose week">
+            <button
+              type="button"
+              data-testid="week-prev"
+              className="wr-weeknav-btn"
+              onClick={() => chooseWeek(shiftWeek(week, -1))}
+              aria-label="Previous week"
+              title="Previous week"
+            >
+              <ChevronLeft size={16} strokeWidth={2} aria-hidden="true" />
+            </button>
+            <label
+              className="wr-picker"
+            >
+              <Calendar size={14} color="var(--t-muted)" strokeWidth={1.6} aria-hidden="true" />
+              <input
+                ref={pickerRef}
+                data-testid="week-picker"
+                type="date"
+                value={pickerValue}
+                onChange={(e) => {
+                  setPickerValue(e.target.value);
+                  // A field cleared half-way through typing is not a request to go anywhere.
+                  if (e.target.value) chooseWeek(e.target.value);
+                }}
+                onBlur={() => setPickerValue(week)}
+                onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* not supported here */ } }}
+                aria-label="Week"
+              />
+            </label>
+            <button
+              type="button"
+              data-testid="week-next"
+              className="wr-weeknav-btn"
+              onClick={() => chooseWeek(shiftWeek(week, 1))}
+              aria-label="Next week"
+              title="Next week"
+            >
+              <ChevronRight size={16} strokeWidth={2} aria-hidden="true" />
+            </button>
+          </div>
         </div>
       </header>
 

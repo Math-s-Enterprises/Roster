@@ -118,6 +118,8 @@ const FIELD_LABELS = {
   term_time_max_hours: "Term-time hours",
   summer_break: "Summer break",
   hourly_rate: "Hourly rate",
+  contract_salary: "Contract salary",
+  contract_pay_period: "Contract pay period",
   opening_holiday_hours: "Holiday allowance",
   min_shift_hours: "Minimum shift length",
   max_shift_hours: "Maximum shift length",

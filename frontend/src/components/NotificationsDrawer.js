@@ -156,7 +156,7 @@ export default function NotificationsDrawer({ onClose }) {
 
         <footer className="nt-foot">
           Only the latest {MAX_NOTIFICATIONS} are kept — the oldest makes room as new ones arrive.
-          They stay on this device and are cleared when you sign out.
+          They stay on this device, for your account only, until you clear them.
         </footer>
       </aside>
     </div>,

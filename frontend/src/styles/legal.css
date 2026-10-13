@@ -1,0 +1,131 @@
+/* ------------------------------------------------------------------
+   Legal: the sign-up agreement, the small Terms / Privacy dialog, and
+   the /terms and /privacy pages
+   ------------------------------------------------------------------
+   The page and the form sit inside the signed-out frame (.si-page), so they
+   use the sign-in page's colours, each with a fallback. The dialog is rendered
+   into <body>, outside that frame, so it carries its own copy of the palette. */
+
+/* Agreement checkbox ------------------------------------------------ */
+.legal-consent { margin-top: 18px; }
+/* .si-check centres its contents for a one-line label; this one wraps, so the
+   box sits against the first line instead. */
+.legal-consent-label { display: flex; align-items: flex-start; }
+.legal-consent-label .si-box { margin-top: 1px; }
+.legal-consent-text {
+  font-size: 14px; line-height: 1.5; font-weight: 500;
+  color: var(--si-body, #3d372f);
+}
+/* Lined up under the words, not under the box (20px box + 12px gap). */
+.legal-required {
+  margin: 6px 0 0 32px; font-size: 12.5px; line-height: 1.4;
+  color: var(--si-muted, #6b6155);
+}
+
+/* A link that opens a dialog is a button; make it read as a link. */
+.legal-link {
+  color: var(--si-accent, #b84415); font-weight: 700;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.legal-link:hover { color: var(--si-deep, #8c3410); }
+.legal-linkbtn {
+  background: none; border: 0; padding: 0; margin: 0;
+  font: inherit; font-weight: 700; cursor: pointer;
+}
+.legal-linkbtn:focus-visible {
+  outline: none; border-radius: 3px;
+  box-shadow: 0 0 0 3px rgba(184, 68, 21, .25);
+}
+
+/* "Create account" while the box is not ticked. The sign-in page already dims
+   this button a little while it is working ("progress"); not-yet-allowed needs
+   to look clearly different, so it is dimmer and says so with the cursor. */
+.si-cta:disabled:not([aria-busy="true"]) {
+  opacity: .45; cursor: not-allowed; box-shadow: none;
+}
+
+.legal-note {
+  margin: 8px 0 0; text-align: center;
+  font-size: 12.5px; line-height: 1.5; color: var(--si-muted, #6b6155);
+}
+.legal-note .legal-link { font-weight: 600; }
+
+/* The text, on a page and in the dialog ------------------------------ */
+.legal-lead { margin: 18px 0 0; font-size: 16.5px; color: var(--si-ink, #1c1a17); }
+
+/* The points: a short list, each with a bold lead-in. */
+.legal-points { margin: 14px 0 0; padding-left: 20px; }
+.legal-points li { margin: 0 0 11px; padding-left: 2px; }
+.legal-points li::marker { color: var(--si-accent, #b84415); }
+.legal-points strong { color: var(--si-ink, #1c1a17); }
+
+/* The full pages ------------------------------------------------------ */
+.legal-doc { width: 100%; max-width: 760px; margin: 24px auto 0; padding: 0 20px; box-sizing: border-box; }
+.legal-doc article {
+  background: var(--si-card, #fffdf9);
+  border: 1px solid var(--si-ring, #ece0d0); border-radius: 14px;
+  padding: 34px 38px 38px;
+  color: var(--si-body, #3d372f);
+  font-size: 15.5px; line-height: 1.65;
+}
+.legal-h1 {
+  margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1;
+  color: var(--si-ink, #1c1a17);
+}
+
+/* The dialog ---------------------------------------------------------- */
+.legal-scrim {
+  --si-card: #fffdf9; --si-chip: #fffaf3; --si-border: #e3d6c6; --si-ring: #ece0d0;
+  --si-ink: #1c1a17; --si-body: #3d372f; --si-muted: #6b6155;
+  --si-accent: #b84415; --si-deep: #8c3410;
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: rgba(28, 20, 10, .55);
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+.legal-dlg {
+  width: 540px; max-width: 100%; max-height: min(84vh, 700px);
+  display: flex; flex-direction: column;
+  background: var(--si-card); border: 1px solid var(--si-ring); border-radius: 14px;
+  box-shadow: 0 30px 70px rgba(90, 58, 26, .28);
+  color: var(--si-body); outline: none;
+}
+.legal-dlg-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  padding: 18px 22px 14px; border-bottom: 1px solid var(--si-border);
+}
+.legal-dlg-title { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -.02em; color: var(--si-ink); }
+.legal-dlg-close {
+  flex: none; border: 0; background: none; padding: 4px 2px;
+  font-family: inherit; font-size: 14.5px; font-weight: 700;
+  color: var(--si-accent); cursor: pointer;
+}
+.legal-dlg-close:hover { color: var(--si-deep); }
+.legal-dlg-close:focus-visible { outline: none; border-radius: 4px; box-shadow: 0 0 0 3px rgba(184, 68, 21, .25); }
+
+/* The only part that scrolls; the title and Close stay put. */
+.legal-dlg-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 4px 22px 22px; font-size: 14px; line-height: 1.55; outline: none;
+}
+.legal-dlg-body:focus-visible { box-shadow: inset 0 0 0 3px rgba(184, 68, 21, .25); }
+.legal-dlg-body .legal-lead { margin-top: 14px; font-size: 14px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .legal-scrim { animation: legal-fade 120ms ease-out; }
+  .legal-dlg { animation: legal-rise 140ms ease-out; }
+}
+@keyframes legal-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes legal-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 600px) {
+  .legal-doc article { padding: 24px 20px 28px; font-size: 15px; }
+  .legal-h1 { font-size: 28px; }
+  .legal-scrim { padding: 12px; align-items: flex-end; }
+  .legal-dlg { max-height: 88vh; }
+  .legal-dlg-head, .legal-dlg-body { padding-left: 18px; padding-right: 18px; }
+}
+
+@media print {
+  .legal-doc article { border: 0; padding: 0; }
+}

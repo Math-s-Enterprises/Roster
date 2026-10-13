@@ -88,7 +88,7 @@ const coversToday = (record) => {
  */
 function Shell() {
   const { user, logout } = useAuth();
-  const { unread, clear: clearNotifications } = useNotifications();
+  const { unread } = useNotifications();
   const [notesOpen, setNotesOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [open, setOpen] = useState(false);
@@ -169,8 +169,6 @@ function Shell() {
   }, [theme]);
 
   const signOut = async () => {
-    // The messages name people, so none is left behind for the next person.
-    clearNotifications();
     await logout();
     navigate("/login");
   };

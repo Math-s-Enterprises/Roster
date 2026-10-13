@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { api, errorMessage, DAY_LABELS, DAYS, announceShopChange } from "@/lib/api";
 import { toast } from "sonner";
+import RolesTable from "@/components/RolesTable";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, ChevronLeft, Check, ArrowUp, ArrowDown, GripVertical, Loader2, Plus, X } from "lucide-react";
+import { ChevronRight, ChevronLeft, Check, Loader2, Plus, X } from "lucide-react";
 
 export default function Onboarding() {
   const [step, setStep] = useState(0);
@@ -38,9 +39,7 @@ export default function Onboarding() {
   const [observerEmail, setObserverEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [removal, setRemoval] = useState(null);
-  // Explicit per-role supervisory flags, seeded from what the server
-  // derives. See the note under the table: the value is sent on save but
-  // PUT /shop does not accept it yet.
+  // Explicit per-role supervisory flags, loaded and saved with shop settings.
   const [coverRoles, setCoverRoles] = useState(null);
   const [dragRole, setDragRole] = useState(null);
   const [overRole, setOverRole] = useState(null);
@@ -346,6 +345,15 @@ export default function Onboarding() {
     "Booked holiday and sick leave are never scheduled over.",
   ];
 
+  // Everything the roles table needs, named as the table expects. Both the settings
+  // screen and the setup wizard draw it, from this one set of state and handlers.
+  const rolesProps = {
+    roles, counts, cover,
+    dragRole, setDragRole, overRole, setOverRole, dropRole,
+    toggleCover, move, removeRole,
+    newRole, setNewRole, addRole,
+  };
+
   if (editing) {
     return (
       <div className="ss-page">
@@ -637,98 +645,7 @@ export default function Onboarding() {
           </p>
         </div>
 
-        <div className="ss-table" role="table" aria-label="Roles and seniority">
-          <div className="ss-row ss-colhead" role="row">
-            <span role="columnheader">Rank</span>
-            <span role="columnheader">Role</span>
-            <span className="ss-num" role="columnheader">Staff</span>
-            <span aria-hidden="true" />
-            <span role="columnheader">Cover</span>
-            <span role="columnheader" aria-label="Actions" />
-          </div>
-
-          {roles.map((role, index) => {
-            const on = cover.includes(role);
-            return (
-              <div
-                className="ss-row ss-rolerow"
-                role="row"
-                key={role}
-                data-dragging={dragRole === role}
-                data-dropbefore={overRole === role && dragRole !== role}
-                draggable
-                onDragStart={() => setDragRole(role)}
-                onDragOver={(e) => { if (dragRole) { e.preventDefault(); setOverRole(role); } }}
-                onDragLeave={() => setOverRole((r) => (r === role ? null : r))}
-                onDrop={(e) => { e.preventDefault(); dropRole(role); }}
-                onDragEnd={() => { setDragRole(null); setOverRole(null); }}
-              >
-                <span className="ss-rank" role="cell">{index + 1}</span>
-                <span className="ss-role" role="cell">{role}</span>
-                <span className="ss-num ss-staff" role="cell">{counts[role] ?? 0}</span>
-                <span aria-hidden="true" />
-                <span role="cell">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={on}
-                    className="ss-cover"
-                    data-on={on}
-                    aria-label={`Supervisory cover for ${role}`}
-                    onClick={() => toggleCover(role)}
-                  >
-                    <span className="ss-square" aria-hidden="true" />
-                    Supervisory
-                  </button>
-                </span>
-                <span className="ss-roleacts" role="cell">
-                  <button
-                    type="button"
-                    className="ss-grip"
-                    aria-label={`Reorder ${role}. Rank ${index + 1} of ${roles.length}. Use arrow keys.`}
-                    onKeyDown={(e) => {
-                      if (e.key === "ArrowUp") { e.preventDefault(); move(index, -1); }
-                      if (e.key === "ArrowDown") { e.preventDefault(); move(index, 1); }
-                    }}
-                  >
-                    <GripVertical size={15} strokeWidth={1.7} />
-                  </button>
-                  <button
-                    type="button"
-                    className="ss-remove"
-                    onClick={() => removeRole(role)}
-                    aria-label={`Remove ${role}`}
-                  >
-                    Remove
-                  </button>
-                </span>
-              </div>
-            );
-          })}
-
-          <p className="ss-note">
-            <strong>Supervisory</strong> marks a role as counting for closing cover.
-            If any roles are selected, at least one person in a selected role must
-            cover every close. Selecting none turns off this shop setting's closing
-            requirement. These selections are saved with your shop settings.
-          </p>
-
-          <div className="ss-addrow">
-            <input
-              className="ss-addinput"
-              style={{ maxWidth: 420 }}
-              value={newRole}
-              placeholder="Add a role"
-              aria-label="Add a role"
-              onChange={(e) => setNewRole(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") addRole(); }}
-            />
-            <button type="button" className="ss-btn" onClick={addRole} disabled={!newRole.trim()}>
-              <Plus size={15} strokeWidth={2} /> Add
-            </button>
-          </div>
-
-        </div>
+        <RolesTable {...rolesProps} />
 
         <div className="ss-section">
           <h2 className="ss-h2">Scheduling rules</h2>
@@ -925,7 +842,7 @@ export default function Onboarding() {
     { title: "Shop identity", desc: "Give your shop a name your team will recognize." },
     { title: "Opening hours", desc: "Set weekly opening and closing times." },
     { title: "Shift limits", desc: "Minimum and maximum shift lengths." },
-    { title: "Roles & seniority", desc: "The order here decides who gets hours first." },
+    { title: "Roles & seniority", desc: "The order here decides who gets hours first. Drag a role to move it." },
     { title: "Scheduling rules", desc: "How firmly the roster holds to preferences." },
   ];
 
@@ -1043,63 +960,9 @@ export default function Onboarding() {
 
         {shows(3) && (
           <Section show={editing} title="Roles & seniority">
-          <div className="space-y-4">
-            <p className="text-xs ui-muted">
-              Most senior at the top. Hours are allocated down this list, and
-              the roster grid, print view and exports all follow the same
-              order.
-            </p>
-            <ul className="space-y-2">
-              {roles.map((r, i) => (
-                <li key={r} data-testid={`role-row-${i}`} className="glass-solid rounded-xl px-3 py-2 flex items-center gap-3">
-                  <span className="font-mono text-[11px] ui-faint w-5 text-right">{i + 1}</span>
-                  <span className="flex-1 text-sm truncate">{r}</span>
-                  {counts[r] > 0 && (
-                    <span className="text-[10px] ui-faint font-mono shrink-0">
-                      {counts[r]} staff
-                    </span>
-                  )}
-                  {supervisory.includes(r) && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shrink-0">
-                      Supervisory
-                    </span>
-                  )}
-                  <button type="button" title="Move up" disabled={i === 0}
-                    onClick={() => move(i, -1)}
-                    className="p-1 rounded ui-faint ui-hover-ink disabled:opacity-20">
-                    <ArrowUp size={13} />
-                  </button>
-                  <button type="button" title="Move down" disabled={i === roles.length - 1}
-                    onClick={() => move(i, 1)}
-                    className="p-1 rounded ui-faint ui-hover-ink disabled:opacity-20">
-                    <ArrowDown size={13} />
-                  </button>
-                  <button type="button" title="Remove"
-                    onClick={() => setRoles(roles.filter((x) => x !== r))}
-                    className="p-1 rounded ui-faint ui-hover-danger">
-                    <X size={13} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <div className="flex gap-2">
-              <input data-testid="input-new-role" value={newRole}
-                onChange={(e) => setNewRole(e.target.value)}
-                placeholder="Add a role" className="flex-1 px-4 py-2.5 rounded-xl" />
-              <button type="button"
-                onClick={() => {
-                  const title = newRole.trim();
-                  if (title && !roles.includes(title)) setRoles([...roles, title]);
-                  setNewRole("");
-                }}
-                className="px-4 py-2.5 rounded-xl glass-solid text-sm">Add</button>
-            </div>
-            <p className="text-[11px] ui-faint">
-              Selecting a supervisory role requires someone in a selected role at
-              every close. Selecting none turns off that requirement. Removing a
-              role here does not remove it from anyone — staff with an
-              unlisted title simply rank last.
-            </p>
+          {/* The same table as on Shop settings (components/RolesTable.js). */}
+          <div className="ss-embed">
+            <RolesTable {...rolesProps} />
           </div>
           </Section>
         )}
