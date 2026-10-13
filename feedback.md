@@ -1469,3 +1469,43 @@ The complete backend run passed: 951 passed, one skipped and one existing expect
 failure in 96 seconds. Updated dependency extras also passed pip's no-install
 resolution check. These are local Docker results, not a claim that GitHub Actions
 has already run or that production deployments are gated.
+
+## 26. Empty supervisory selections do not require closing cover
+
+The staging shop had only Night Shift staff and no supervisory role selected,
+but approval demanded a manager at 23:00 on every day. Both the solver and
+compliance treated the presence of supervisory_roles (even []) as a closing
+requirement. The first fix wrongly made all closing requirements depend on AI
+Rules, contradicting the user's intended Supervisory switch. The user clarified:
+selecting ANY supervisory role requires one of those roles at every close;
+selecting NONE must not create that requirement. Both solver and compliance now
+test the list's contents rather than the field's presence. Do not redesign a
+documented product setting while fixing its empty-list bug. Explicit AI closing
+rules remain an independent requirement through closing_supervisor_rules and report
+missing cover, including when no qualifying role exists; 24-hour exemptions
+and learned soft supervisory targets are unchanged. Shop Settings no longer
+claims this rule is universal or that supervisory selections are not saved, and
+explains the selected-versus-empty behaviour instead.
+
+The page also said ready to approve while its approval dialog listed breaches.
+Needs attention omitted the live audit's breaches. It now displays those same
+breaches and explains the override boundary. A missing/pending audit cannot
+produce an all-clear, and a previous roster's audit cannot replace a newer one.
+Existing edits remain visible in their separate historical panel; no roster,
+role, or stored warning is deleted. Tests cover empty/populated role selections,
+explicit missing/covered closes, scheduler behaviour, hard/overridable warnings,
+and an unavailable audit. Changes must reach both backend and frontend before
+the deployed site can be claimed fixed.
+
+Verification: all 18 frontend tests passed using existing dependencies from the
+Desktop checkout, while testing the working C:/Users/anees/Roster source. The full
+backend run had no assertion failures and one Windows temporary-directory setup
+error; that test passed when rerun with a fresh task-specific directory alongside
+all 29 focused closing/compliance tests. One existing expected failure remains.
+After the user's clarification, the corrected selected-versus-empty behaviour
+passed the full backend suite: 961 passed, one existing expected failure. All 19
+frontend tests passed. Removing a role now removes its supervisory selection too;
+loading/saving settings excludes supervisory roles no longer on the ladder, so a
+deleted role cannot remain as a hidden closing requirement. The regression saves
+settings after removing the final selected role and checks supervisory_roles=[].
+No production build, remote deployment, or live account test was performed here.

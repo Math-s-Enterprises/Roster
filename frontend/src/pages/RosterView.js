@@ -357,13 +357,16 @@ export default function RosterView() {
    * but it should be a decision rather than a click that looked clean.
    */
   useEffect(() => {
+    let active = true;
+    setAudit(null);
     if (!roster?.roster_id) { setAudit(null); return; }
     api.get(`/rosters/${roster.roster_id}/audit`)
-      .then((r) => setAudit(r.data))
+      .then((r) => { if (active) setAudit(r.data); })
       // A failed audit must not blank the grid. Worst case the names are not
       // highlighted and approval still refuses on the server, which is the
       // check that actually matters.
-      .catch(() => setAudit(null));
+      .catch(() => { if (active) setAudit(null); });
+    return () => { active = false; };
   }, [roster?.roster_id, roster?.shifts]);
 
   /* RE-CHECK THE RULES, NOT THE ROSTER.
@@ -711,6 +714,7 @@ export default function RosterView() {
   const critical = roster?.critical_issues || [];
   const confirmations = roster?.confirmations || [];
   const editWarnings = roster?.edit_warnings || [];
+  const approvalBreaches = (audit?.people || []).flatMap((person) => person.breaches);
   // Shift stretches are left out: the hour they cover is no longer a problem.
   // Filtering here, once, fixes the list and the tab's count together.
   const advisories = (roster?.issues || []).filter((text) => !COVER_STRETCH.test(String(text)));
@@ -721,8 +725,15 @@ export default function RosterView() {
 
   // Needs attention is everything that wants a decision before approval:
   // uncovered hours, unfamiliar shifts, people owed contracted hours, and
-  // rules that could not be read. Ordered worst first.
+  // rules that could not be read, and live approval breaches. Ordered worst first.
   const attention = [
+    ...approvalBreaches.map((breach, i) => ({
+      key: `breach-${i}`,
+      severity: "bad",
+      title: breach.name || "Approval rule",
+      body: breach.message,
+      employeeId: breach.employee_id,
+    })),
     ...critical.map((text, i) => ({
       key: `crit-${i}`,
       severity: "bad",
@@ -989,7 +1000,11 @@ export default function RosterView() {
           </div>
         )}
         <p className="wr-panel-say">
-          {attention.length === 0
+          {!audit
+            ? "Approval checks are not available yet. Re-check rules before approving."
+            : approvalBreaches.length > 0
+              ? "These rules must be resolved before normal approval. Only overridable breaches can be approved with a recorded password confirmation."
+            : attention.length === 0
             ? "Nothing needs a decision — this week is ready to approve."
             : blocking
               ? `${critical.length} of these leave nobody in the shop. Add staff, extend someone's hours, or adjust leave before approving.`

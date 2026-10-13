@@ -90,7 +90,8 @@ export default function Onboarding() {
       // sensible default ladder rather than whatever order roles were added.
       setRoles(h.data.hierarchy);
       setSupervisory(h.data.supervisory);
-      setCoverRoles(h.data.supervisory_roles || h.data.supervisory || []);
+      setCoverRoles((h.data.supervisory_roles || h.data.supervisory || [])
+        .filter((role) => h.data.hierarchy.includes(role)));
       setCounts(h.data.employee_counts || {});
   }, []);
 
@@ -152,7 +153,7 @@ export default function Onboarding() {
       paid_sick_days: Number(paidSickDays) || 0,
       min_rest_hours: Number(minRest) || 0,
       roster_recipients: observers,
-      supervisory_roles: coverRoles || [],
+      supervisory_roles: (coverRoles || []).filter((role) => roles.includes(role)),
       departments,
       multi_department: departments.length > 1,
       ...extra,
@@ -257,11 +258,6 @@ export default function Onboarding() {
 
   const toggleCover = (role) => {
     const on = cover.includes(role);
-    if (on && cover.length === 1) {
-      toast.warning(
-        "No role counts as supervisory cover — the \"manager on every close\" rule cannot be satisfied.",
-      );
-    }
     setCoverRoles(on ? cover.filter((r) => r !== role) : [...cover, role]);
   };
 
@@ -326,7 +322,10 @@ export default function Onboarding() {
     setRemoval({
       title: `Remove ${role} from the ladder?`,
       description: "Nobody loses the title — staff with a role that is not listed simply rank last. Save changes to apply the removal.",
-      confirm: () => setRoles(roles.filter((r) => r !== role)),
+      confirm: () => {
+        setRoles(roles.filter((r) => r !== role));
+        setCoverRoles(cover.filter((r) => r !== role));
+      },
     });
   };
 
@@ -344,7 +343,6 @@ export default function Onboarding() {
   const FIXED_RULES = [
     "Nobody works more than 48 hours in a week, averaged over four months.",
     "Under-16s are never rostered before 08:00 or after 19:00.",
-    "At least one supervisory person is rostered on every close.",
     "Booked holiday and sick leave are never scheduled over.",
   ];
 
@@ -709,13 +707,10 @@ export default function Onboarding() {
           })}
 
           <p className="ss-note">
-            <strong>Supervisory</strong> marks a role as counting for cover — at least one such person
-            is rostered on every close.{" "}
-            <strong className="ss-warn">
-              It is not saved yet: the server works cover out from the job title and the top third of
-              the ladder, and does not accept a per-role flag.
-            </strong>{" "}
-            Until that is added, a change here lasts until you reload.
+            <strong>Supervisory</strong> marks a role as counting for closing cover.
+            If any roles are selected, at least one person in a selected role must
+            cover every close. Selecting none turns off this shop setting's closing
+            requirement. These selections are saved with your shop settings.
           </p>
 
           <div className="ss-addrow">
@@ -1100,7 +1095,8 @@ export default function Onboarding() {
                 className="px-4 py-2.5 rounded-xl glass-solid text-sm">Add</button>
             </div>
             <p className="text-[11px] ui-faint">
-              Roles in the top third count as supervisory cover. Removing a
+              Selecting a supervisory role requires someone in a selected role at
+              every close. Selecting none turns off that requirement. Removing a
               role here does not remove it from anyone — staff with an
               unlisted title simply rank last.
             </p>

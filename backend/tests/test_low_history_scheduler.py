@@ -99,6 +99,23 @@ def test_zero_history_ignores_a_post_close_template():
     assert not [shift for shift in result["shifts"] if finishes_after(shift)]
 
 
+@pytest.mark.parametrize("supervisory_roles", [[], ["Manager"]])
+def test_only_nonempty_supervisory_selection_requires_closing(supervisory_roles):
+    current_shop = shop(monday_only=True)
+    current_shop["supervisory_roles"] = supervisory_roles
+    team = [employee(0)]
+    result = solve_roster(current_shop, team, [], [], [], TARGET_WEEK)
+    assert bool([issue for issue in result["issues"] if "at closing" in issue]) == bool(supervisory_roles)
+
+
+def test_explicit_closing_requirement_is_reported_without_supervisory_staff():
+    current_shop = shop(monday_only=True)
+    current_shop["supervisory_roles"] = []
+    rules = [{"compiled": {"type": "supervisor_required", "scope": "closing"}}]
+    result = solve_roster(current_shop, [employee(0)], [], [], rules, TARGET_WEEK)
+    assert any("at closing" in issue for issue in result["issues"])
+
+
 def test_zero_history_contract_fitting_stops_at_close():
     current_shop = shop(supervisory=True)
     team = [employee(0, "Manager", full_time=True), employee(1, "Manager")]
