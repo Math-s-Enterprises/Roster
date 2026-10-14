@@ -4320,3 +4320,37 @@ label.ss-label-tight { letter-spacing: .04em; }
 }
 .ss-embed :focus-visible { outline: none; box-shadow: 0 0 0 3px var(--t-focus); }
 .ss-embed .ss-table { padding: 0; }
+
+/* The roles table inside the first-run setup wizard ---------------------------------
+   components/RolesTable.js is drawn here exactly as on Shop settings. The settings screen
+   gets its font and focus ring from .ss-page, which also pulls the page full-bleed with
+   negative margins: that frame is for the settings screen only, so the wizard supplies just
+   the two things the table needs, and drops the table's own side padding because the wizard
+   card already has its own. */
+.ss-embed {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  color: var(--t-ink);
+}
+.ss-embed :focus-visible { outline: none; box-shadow: 0 0 0 3px var(--t-focus); }
+.ss-embed .ss-table { padding: 0; }
+
+/* Delete account (components/DeleteAccountModal.js) -------------------------------------
+   A quiet link under the account buttons, not a fourth button beside Sign out: something
+   this permanent should not sit where a thumb lands by habit. It turns red on hover and
+   focus so it reads as what it is only when it is being aimed at. */
+.nv-acc-delete {
+  display: block; margin-top: 14px; padding: 0; border: 0; background: none;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  color: var(--t-muted); cursor: pointer;
+}
+.nv-acc-delete:hover, .nv-acc-delete:focus-visible { color: var(--t-danger); }
+
+/* Activity expanded past its usual rows (pages/Dashboard.js) ------------------------------
+   The two columns are stretched on purpose so the divider between them runs the full height,
+   and each footer is pinned to the bottom of its column. Once "Load more" has made Activity far
+   taller than Recent rosters, that left a wide empty gap above the rosters footer. Expanded, the
+   rosters footer sits straight under its rows instead; the divider still runs the full height. */
+.db-split[data-expanded="true"] .db-tablewrap { flex: none; }
+.db-split[data-expanded="true"] .db-left .db-listfoot { margin-top: 0; }
+
+.db-foot-actions { display: flex; align-items: center; gap: 18px; }

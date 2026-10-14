@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, errorMessage, fmtHours, fmtMoney, mondayOf, ROSTER_GROUP_KEY } from "@/lib/api";
 import { toast } from "sonner";
@@ -51,6 +51,38 @@ import { CheckCircle2, AlertCircle, Wand2, Sparkles } from "lucide-react";
  */
 const ACTIVITY_ROWS = 6;
 const ROSTER_ROWS = 8;
+
+/** How many more entries each press of "Load more" brings in. */
+const ACTIVITY_PAGE = 10;
+
+/**
+ * The most the Activity list ever holds: the latest 50. It is a rolling window, not an
+ * archive. The page asks the server for just this many, newest first, so when something new
+ * happens it stacks on top and the oldest entry falls off the end, instead of the list
+ * growing for ever. The list is also cut to this length here, so the limit holds even if the
+ * server were to send more.
+ */
+const ACTIVITY_LIMIT = 50;
+
+/**
+ * The line under the activity list and which buttons, if any, go with it: "Load more" while
+ * there is more to bring in, and "Show fewer" as soon as more than the usual six are showing,
+ * so nobody has to load everything just to be able to put it away.
+ *
+ * Reaching the limit means the list may be a window onto a longer log, so then it reads
+ * "the latest 50", not "50": saying "of 50" would claim the log is exactly that long.
+ */
+function feedFooter(total, shown) {
+  if (total <= ACTIVITY_ROWS) return { text: `${total} recent`, more: false, fewer: false };
+  const of = total >= ACTIVITY_LIMIT ? `the latest ${total}` : `${total}`;
+  if (shown < total) return { text: `Showing ${shown} of ${of}`, more: true, fewer: shown > ACTIVITY_ROWS };
+  // Pressing "Load more" can step past the end (46 + 10 of 50); that still means "all of them".
+  return {
+    text: `All ${total >= ACTIVITY_LIMIT ? "of the latest " : ""}${total} shown`,
+    more: false,
+    fewer: shown > ACTIVITY_ROWS,
+  };
+}
 
 const iso = (d) => d.toISOString().slice(0, 10);
 
@@ -109,6 +141,18 @@ export default function Dashboard() {
   const [employees, setEmployees] = useState([]);
   const [rosters, setRosters] = useState([]);
   const [activity, setActivity] = useState([]);
+  const [activityShown, setActivityShown] = useState(ACTIVITY_ROWS);
+  // Where the keyboard focus goes after the Activity buttons change. The last "Load more"
+  // removes that button, and "Show fewer" back to six removes that one; either would drop the
+  // focus on the floor, so it is handed to the button that is left.
+  const [focusFoot, setFocusFoot] = useState(null);
+  const moreRef = useRef(null);
+  const fewerRef = useRef(null);
+  useEffect(() => {
+    if (!focusFoot) return;
+    (focusFoot === "more" ? moreRef : fewerRef).current?.focus();
+    setFocusFoot(null);
+  }, [focusFoot]);
   const [setup, setSetup] = useState(null);
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
@@ -128,13 +172,13 @@ export default function Dashboard() {
         api.get("/shop"),
         api.get("/employees", { params: { all_departments: true } }),
         api.get("/rosters", { params: { all_departments: true } }),
-        api.get("/activity").catch(() => ({ data: [] })),
+        api.get("/activity", { params: { limit: ACTIVITY_LIMIT } }).catch(() => ({ data: [] })),
         api.get("/setup-status").catch(() => ({ data: null })),
       ]);
       setShop(s.data);
       setEmployees(e.data || []);
       setRosters(r.data || []);
-      setActivity(a.data || []);
+      setActivity((a.data || []).slice(0, ACTIVITY_LIMIT));
       setSetup(st.data);
     } catch (err) {
       toast.error(errorMessage(err, "Could not load the dashboard"));
@@ -193,6 +237,8 @@ export default function Dashboard() {
     () => rosters.filter((r) => r.week_start === thisWeek && !r.approved).length,
     [rosters, thisWeek],
   );
+
+  const activityFoot = feedFooter(activity.length, activityShown);
 
   const complianceTone = (score) =>
     score == null ? undefined : score < 75 ? "bad" : score < 90 ? "warn" : "good";
@@ -363,7 +409,9 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="db-split">
+      {/* data-expanded lets the stylesheet keep the rosters footer under its rows once Activity
+          has grown far taller than they are. */}
+      <div className="db-split" data-expanded={activityShown > ACTIVITY_ROWS && activity.length > ACTIVITY_ROWS}>
         <div className="db-left">
           <div className="db-colhead-wrap">
             <h2 className="db-h2">Recent rosters</h2>
@@ -460,7 +508,7 @@ export default function Dashboard() {
           ) : (
             <>
               <ol className="db-feed">
-                {activity.slice(0, ACTIVITY_ROWS).map((a) => {
+                {activity.slice(0, activityShown).map((a) => {
                   const parts = entryParts(a.detail);
                   const stamp = fmtStamp(a.created_at);
                   return (
@@ -483,14 +531,38 @@ export default function Dashboard() {
                 })}
               </ol>
               <div className="db-listfoot">
-                <span>
-                  {activity.length > ACTIVITY_ROWS
-                    ? `Showing ${ACTIVITY_ROWS} of ${activity.length}`
-                    : `${activity.length} recent`}
-                </span>
-                <button type="button" className="db-link" onClick={() => navigate("/roster")}>
-                  Show everything
-                </button>
+                <span aria-live="polite" data-testid="activity-count">{activityFoot.text}</span>
+                {(activityFoot.more || activityFoot.fewer) && (
+                  <span className="db-foot-actions">
+                    {/* Small and muted, and to the left: Load more stays where the eye goes. */}
+                    {activityFoot.fewer && (
+                      <button
+                        type="button"
+                        ref={fewerRef}
+                        className="db-link db-link-mute"
+                        data-testid="activity-fewer"
+                        onClick={() => { setActivityShown(ACTIVITY_ROWS); setFocusFoot("more"); }}
+                      >
+                        Show fewer
+                      </button>
+                    )}
+                    {activityFoot.more && (
+                      <button
+                        type="button"
+                        ref={moreRef}
+                        className="db-link"
+                        data-testid="activity-more"
+                        onClick={() => {
+                          const next = activityShown + ACTIVITY_PAGE;
+                          setActivityShown(next);
+                          if (next >= activity.length) setFocusFoot("fewer");   // that was the last page
+                        }}
+                      >
+                        Load more
+                      </button>
+                    )}
+                  </span>
+                )}
               </div>
             </>
           )}

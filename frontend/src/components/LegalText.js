@@ -158,8 +158,10 @@ const PRIVACY = [
     title: "How long we keep it.",
     body: (
       <>
-        While your account is open, then we delete it {DAYS ? `within ${DAYS} days` : "promptly"} unless the law
-        requires longer (such as billing records).
+        While your account is open. You can delete your account yourself, any time, from the account
+        menu: everything in it is erased straight away and any subscription is cancelled. If you ask us
+        to close it instead, we delete it {DAYS ? `within ${DAYS} days` : "promptly"}. Either way we keep
+        only what the law requires (such as billing records).
       </>
     ),
   },
@@ -168,8 +170,8 @@ const PRIVACY = [
     title: "Your rights.",
     body: (
       <>
-        See, correct, delete, restrict, export or object: <Ask /> (free; we reply within one
-        month). You can also complain to the Data Protection Commission (
+        Delete your account yourself from the account menu. To see, correct, restrict, export or
+        object: <Ask /> (free; we reply within one month). You can also complain to the Data Protection Commission (
         <a
           className="legal-link"
           href="https://www.dataprotection.ie"
@@ -295,8 +297,8 @@ const TERMS = [
     title: "Ending, liability and law.",
     body: (
       <>
-        You can close your account any time by emailing us; we may close one that seriously breaks
-        these terms. We do not limit liability the law does not allow us to limit. The laws of{" "}
+        You can close your account any time yourself from the account menu, which erases everything
+        in it, or by emailing us; we may close one that seriously breaks these terms. We do not limit liability the law does not allow us to limit. The laws of{" "}
         {LEGAL.governingLaw} apply.
       </>
     ),
