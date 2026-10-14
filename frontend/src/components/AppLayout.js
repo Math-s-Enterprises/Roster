@@ -4,6 +4,7 @@ import { Menu, Wand2, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { api, mondayOf, ROSTER_GROUP_KEY, SHOP_CHANGED } from "@/lib/api";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
+import DeleteAccountModal from "@/components/DeleteAccountModal";
 import RosterGroupSelect from "@/components/RosterGroupSelect";
 import NotificationsDrawer from "@/components/NotificationsDrawer";
 import { NotificationsProvider, useNotifications } from "@/lib/notifications";
@@ -91,6 +92,7 @@ function Shell() {
   const { unread } = useNotifications();
   const [notesOpen, setNotesOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [counts, setCounts] = useState({});
   // Dark is the default — it is the palette every handoff specified.
@@ -310,7 +312,16 @@ function Shell() {
               Sign out
             </button>
           </div>
+          <button
+            type="button"
+            data-testid="btn-delete-account"
+            className="nv-acc-delete"
+            onClick={() => setDeleteOpen(true)}
+          >
+            Delete account
+          </button>
           {passwordOpen && <ChangePasswordModal onClose={() => setPasswordOpen(false)} />}
+          {deleteOpen && <DeleteAccountModal onClose={() => setDeleteOpen(false)} />}
         </div>
       </aside>
 

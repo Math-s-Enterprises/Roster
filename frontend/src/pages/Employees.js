@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, errorMessage, fmtMoney, CURRENCY, DAY_SHORT, DAY_LABELS, DAYS, shiftHours } from "@/lib/api";
 import { toast } from "sonner";
 import ContactImportPanel from "@/components/ContactImportPanel";
-import ContractPay, { salaryTile } from "@/components/ContractPay";
+import ContractPay, { paySummary, salaryTile } from "@/components/ContractPay";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { Plus, Search, ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Sun, X, AlertTriangle } from "lucide-react";
 
@@ -146,8 +146,23 @@ const DEFAULT_CONTRACT_TOLERANCE = 1.5;
 // reason to re-read.
 const TOLERANCE_WORTH_QUESTIONING = 4;
 
+/**
+ * What the Role dropdown offers: every role on the Roles & seniority ladder, in its order,
+ * and then - only if this person already holds a role that is not on it - that role too, so
+ * opening somebody to edit them never loses or silently changes what they have.
+ */
+function roleChoices(ladder, current) {
+  const choices = ladder.map((role) => ({ value: role, label: role }));
+  if (current && !ladder.includes(current)) {
+    choices.push({ value: current, label: `${current} (not in Roles & seniority)` });
+  }
+  return choices;
+}
+
+// The role starts empty: a dropdown that opened on a default would save that default for
+// anyone who did not touch it, and no default suits every shop (a bakery has no Cashier).
 const emptyForm = {
-  name: "", email: "", role: "Cashier", age: 22, hourly_rate: 15,
+  name: "", email: "", role: "", age: 22, hourly_rate: 15,
   max_weekly_hours: 40, preferred_days_off: [],
   departments: ["Shop Floor"],
   is_active: true,
@@ -292,6 +307,7 @@ export default function Employees() {
 
   const [emps, setEmps] = useState([]);
   const [supervisory, setSupervisory] = useState([]);
+  const [roleLadder, setRoleLadder] = useState([]);
   const [shop, setShop] = useState(null);
   const [balances, setBalances] = useState({});
   const [fixed, setFixed] = useState([]);
@@ -306,6 +322,9 @@ export default function Employees() {
 
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  // Bumped when a contract is refused for want of its pay: it opens the sections the pay is in
+  // and sends the cursor there. The pay block clears it once it has done so.
+  const [payFocus, setPayFocus] = useState(0);
   const [adjusting, setAdjusting] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [removing, setRemoving] = useState(false);
@@ -324,6 +343,7 @@ export default function Employees() {
       ]);
       setEmps(e.data || []);
       setSupervisory(h.data?.supervisory || []);
+      setRoleLadder(h.data?.hierarchy || []);
       setShop(sh.data || null);
       setFixed(f.data || []);
       const map = {};
@@ -340,6 +360,13 @@ export default function Employees() {
   useEffect(() => { load(); }, [load]);
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+
+  // The roles the Role box offers: the Roles & seniority ladder from the server - the very list
+  // Shop settings shows, including job titles already on staff - or, if that could not be
+  // loaded, whatever roles the shop has saved.
+  const ladder = roleLadder.length
+    ? roleLadder
+    : (shop?.role_hierarchy?.length ? shop.role_hierarchy : shop?.roles || []);
   const setAvail = (patch) => setForm((f) => ({ ...f, availability: { ...f.availability, ...patch } }));
   const setSummer = (patch) => setForm((f) => ({ ...f, summer_break: { ...f.summer_break, ...patch } }));
 
@@ -444,12 +471,21 @@ export default function Employees() {
 
   const submit = async (e) => {
     e.preventDefault();
+    // Everyone has a role, and the server will take an empty one, so the form does not send
+    // it. The browser's own "required" check covers a normal click; this covers the rest, and
+    // says what is wrong and where.
+    if (!(form.role || "").trim()) {
+      toast.error("Choose a role for this employee.");
+      e.currentTarget.elements.role?.focus();
+      return;
+    }
     // A salaried contract is paid a salary, so the form asks for one rather than
     // saving a contract with no pay on it. The server still accepts older records
     // that have none, so they can be opened; it is this screen that asks.
     if (form.employment_type === "full_time_contract") {
       if (!form.contract_pay_period || !(Number(form.contract_salary) > 0)) {
         toast.error("Choose weekly or monthly pay and enter the salary for a full-time contract.");
+        setPayFocus((n) => n + 1);       // open the sections it is in and go to it
         return;
       }
     }
@@ -956,26 +992,46 @@ export default function Employees() {
                   className="w-full px-3 py-2.5 rounded-lg" />
               </Field>
               <Field label="Role">
-                <input data-testid="emp-role" list="role-suggestions" required value={form.role}
-                  onChange={(e) => set({ role: e.target.value })}
-                  className="w-full px-3 py-2.5 rounded-lg"
-                  placeholder="Type any role (e.g. Barista, Cook)" />
-                <datalist id="role-suggestions">
-                  {(shop?.role_hierarchy?.length ? shop.role_hierarchy : shop?.roles || [])
-                    .map((r) => <option key={r} value={r} />)}
-                </datalist>
+                {ladder.length > 0 ? (
+                  /* A real dropdown, not a text box with suggestions: the browser filters a
+                     suggestion list by what is already typed, so it showed next to nothing
+                     until you cleared the box. This always shows the whole ladder. */
+                  <select data-testid="emp-role" name="role" required value={form.role || ""}
+                    onChange={(e) => set({ role: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-lg">
+                    <option value="" disabled>Choose a role</option>
+                    {roleChoices(ladder, form.role).map((choice) => (
+                      <option key={choice.value} value={choice.value}>{choice.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  /* No roles set up anywhere yet: typing is the only way, so keep it. */
+                  <input data-testid="emp-role" name="role" required value={form.role || ""}
+                    onChange={(e) => set({ role: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-lg"
+                    placeholder="Type a role (e.g. Barista, Cook)" />
+                )}
               </Field>
               <Field label="Age">
                 <input data-testid="emp-age" type="number" min={13} max={80} required value={form.age}
                   onChange={(e) => set({ age: Number(e.target.value) })}
                   className="w-full px-3 py-2.5 rounded-lg font-mono" />
               </Field>
-              {/* A salaried contract is paid a salary, not by the hour. */}
-              {form.employment_type !== "full_time_contract" && (
+              {/* A salaried contract is paid a salary, not by the hour. Its pay is entered under
+                  Employment type, in the contract's own block, so choosing the contract leads
+                  straight into it; this line only reports what has been set. */}
+              {form.employment_type !== "full_time_contract" ? (
                 <Field label={`Hourly rate (${CURRENCY})`}>
                   <input data-testid="emp-rate" type="number" min={0} step="0.5" required value={form.hourly_rate}
                     onChange={(e) => set({ hourly_rate: Number(e.target.value) })}
                     className="w-full px-3 py-2.5 rounded-lg font-mono" />
+                </Field>
+              ) : (
+                <Field label="Pay">
+                  <div data-testid="emp-pay-summary" className="px-3 py-2.5 text-sm font-mono"
+                    style={{ color: paySummary(form.contract_pay_period, form.contract_salary) ? "var(--ink)" : "var(--ink-mute-2)" }}>
+                    {paySummary(form.contract_pay_period, form.contract_salary) || "Set under Employment type, below"}
+                  </div>
                 </Field>
               )}
               <Field label="Contracted weekly hours">
@@ -984,14 +1040,6 @@ export default function Employees() {
                   onChange={(e) => set({ max_weekly_hours: Number(e.target.value) })}
                   className="w-full px-3 py-2.5 rounded-lg font-mono" />
               </Field>
-              {form.employment_type === "full_time_contract" && (
-                <ContractPay
-                  period={form.contract_pay_period}
-                  salary={form.contract_salary}
-                  paidHours={form.max_weekly_hours}
-                  onChange={set}
-                />
-              )}
             </div>
             <p className="text-[11px] esp-ink-faint -mt-1">
               Contracted hours are paid hours. Unpaid breaks sit on top, so a
@@ -1139,6 +1187,8 @@ export default function Employees() {
               title="Employment type"
               subtitle="How this person's hours are governed"
               testId="section-employment"
+              defaultOpen={form.employment_type === "full_time_contract"}
+              openSignal={payFocus}
               icon={GraduationCap}
               badge={EMPLOYMENT_TYPES.find((t) => t.key === form.employment_type)?.label}
             >
@@ -1166,10 +1216,16 @@ export default function Employees() {
 
               {form.employment_type === "full_time_contract" && (
                 <div className="pt-3 border-t" style={{ borderColor: "var(--hairline-cool)" }}>
-                  <p className="text-[11px] mb-3" style={{ color: "var(--ink-mute-2)" }}>
-                    Pay is entered under Contract pay, further up this form.
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* The contract's pay comes first, straight after choosing the contract. */}
+                  <ContractPay
+                    period={form.contract_pay_period}
+                    salary={form.contract_salary}
+                    paidHours={form.max_weekly_hours}
+                    onChange={set}
+                    focusSignal={payFocus}
+                    onFocused={() => setPayFocus(0)}
+                  />
+                  <div className="grid grid-cols-2 gap-3 mt-4">
                     <Field label="Contracted hours on the floor">
                       <input data-testid="emp-contract-span" type="number" min={1} max={168} step="0.5"
                         value={form.contract_span_hours}
@@ -1416,8 +1472,12 @@ const Field = ({ label, children }) => (
 );
 
 /** A collapsible block of optional settings. */
-function Section({ title, subtitle, badge, icon: Icon, testId, children }) {
-  const [open, setOpen] = useState(false);
+function Section({ title, subtitle, badge, icon: Icon, testId, defaultOpen = false, openSignal = 0, children }) {
+  // Closed unless told otherwise: defaultOpen is read once, when the section first appears
+  // (so an existing contract opens with its pay showing), and openSignal opens it later on
+  // request (so a refusal can show the person what is missing).
+  const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => { if (openSignal) setOpen(true); }, [openSignal]);
   return (
     <div className="border esp-line rounded-xl overflow-hidden">
       <button

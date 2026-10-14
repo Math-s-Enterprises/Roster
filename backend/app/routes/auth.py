@@ -24,7 +24,7 @@ from app.security import (
     hash_reset_token,
     verify_password,
 )
-from app.services import google_auth
+from app.services import account_deletion, google_auth
 from app.services.auth_rate_limit import check_auth_rate_limit
 from app.services.mailer import send_password_reset_email
 from app.services.shop_service import ensure_shop
@@ -46,6 +46,9 @@ def _public_user(user: Dict[str, Any]) -> Dict[str, Any]:
         "name": user.get("name"),
         "picture": user.get("picture"),
         "pro": bool(user.get("pro", False)),
+        # Whether there is a password to ask for. An account that signs in with Google
+        # only has none, and the delete-account dialog needs to know which to ask.
+        "has_password": bool(user.get("password_hash")),
     }
 
 
@@ -328,3 +331,62 @@ async def providers():
 async def logout(response: Response):
     response.delete_cookie("session_token", path="/")
     return {"ok": True}
+
+
+@router.post("/delete-account")
+async def delete_account(
+    payload: account_deletion.DeleteAccountReq,
+    response: Response,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Permanently delete your own account and everything in it.
+
+    There is no undo, so it asks for three things a mis-click or a borrowed laptop cannot
+    supply: the account's email typed out, and proof of who is typing it. The proof is the
+    password, or - for an account that signs in with Google and has no password - a fresh
+    Google sign-in, checked here against the same Google account.
+
+    WRONG ANSWERS ARE 403, NOT 401. The screen reads a 401 as "your session has expired" and
+    drops the sign-in token, so a mistyped password answered with 401 would sign the person
+    out instead of letting them try again. The session is fine; what failed is the
+    confirmation, which is a refusal, not a failure to authenticate.
+
+    Billing is cancelled before anything is deleted; if that cannot be done, nothing is
+    (502). See services/account_deletion.py for the order and why.
+    """
+    if payload.confirm_email.strip().lower() != user["email"].strip().lower():
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "That is not the email address on this account.",
+        )
+
+    if user.get("password_hash"):
+        if not payload.password or not verify_password(payload.password, user["password_hash"]):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "That is not your password.")
+    else:
+        if not payload.google_credential:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Confirm with Google to delete this account.",
+            )
+        try:
+            profile = google_auth.verify_id_token(payload.google_credential)
+        except google_auth.GoogleAuthUnavailable as exc:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+        except google_auth.GoogleAuthInvalid as exc:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc))
+        same_address = profile["email"].strip().lower() == user["email"].strip().lower()
+        same_identity = not user.get("google_sub") or profile["google_sub"] == user["google_sub"]
+        if not (same_address and same_identity):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "That Google account is not the one this account uses.",
+            )
+
+    try:
+        await account_deletion.delete_account(user)
+    except account_deletion.BillingCleanupFailed as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc))
+
+    response.delete_cookie("session_token", path="/")
+    return {"deleted": True}

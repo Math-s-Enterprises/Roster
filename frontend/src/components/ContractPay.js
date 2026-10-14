@@ -1,4 +1,4 @@
-import React, { useId } from "react";
+import React, { useEffect, useId, useRef } from "react";
 import { CURRENCY } from "@/lib/api";
 
 /**
@@ -6,6 +6,10 @@ import { CURRENCY } from "@/lib/api";
  *
  * A salaried contract is paid one fixed amount, so the form asks for it the way a
  * contract states it - which of the two, and how much - instead of an hourly rate.
+ *
+ * It sits in the Employment type section, directly under the choice of "Full-time
+ * contract" and above the contract's floor hours, so choosing a contract leads straight
+ * into its pay and nothing has to be hunted for further up the form.
  * The server works the hourly rate out from it (services/contract_pay.py), because
  * every cost in the app is hours x rate. The sums here MUST match the server's;
  * they are only used to show the person what their figure will mean before they
@@ -57,6 +61,12 @@ export function fmtSalary(amount) {
 /** A worked-out figure: always pence, so 700 reads as 700.00 beside 692.31. */
 const fmtDerived = (amount) => `${CURRENCY}${group(amount, 2)}`;
 
+/** A salary as a short phrase for a summary line - "€3,000 a month" - or null until both parts are given. */
+export function paySummary(period, salary) {
+  if (weeklyEquivalent(period, salary) == null) return null;
+  return `${fmtSalary(salary)} a ${period === "monthly" ? "month" : "week"}`;
+}
+
 /** The label and value for an employee's pay tile, or null when they have no salary. */
 export function salaryTile(employee) {
   if (!employee || !employee.contract_pay_period || !(Number(employee.contract_salary) > 0)) return null;
@@ -66,8 +76,24 @@ export function salaryTile(employee) {
   };
 }
 
-export default function ContractPay({ period, salary, paidHours, onChange }) {
+export default function ContractPay({ period, salary, paidHours, onChange, focusSignal = 0, onFocused }) {
   const helpId = useId();
+  const firstRadioRef = useRef(null);
+  const salaryRef = useRef(null);
+  // The latest values, read when the form asks for focus, so that effect only runs on a request.
+  const periodRef = useRef(period);
+  periodRef.current = period;
+  const onFocusedRef = useRef(onFocused);
+  onFocusedRef.current = onFocused;
+
+  // The form asks for this when it refused to save because the pay is what is missing: go
+  // to the first thing that is - the choice of weekly or monthly, or, once that is made, the
+  // salary - so a keyboard user lands on it and a mouse user has it scrolled into view.
+  useEffect(() => {
+    if (!focusSignal) return;
+    (periodRef.current ? salaryRef : firstRadioRef).current?.focus();
+    onFocusedRef.current?.();
+  }, [focusSignal]);
   const chosen = CONTRACT_PAY_PERIODS.find((p) => p.key === period);
   const weekly = weeklyEquivalent(period, salary);
   const hourly = hourlyEquivalent(period, salary, paidHours);
@@ -87,7 +113,7 @@ export default function ContractPay({ period, salary, paidHours, onChange }) {
   }
 
   return (
-    <fieldset className="col-span-2 space-y-2 min-w-0" data-testid="contract-pay" style={{ border: 0, padding: 0, margin: 0 }}>
+    <fieldset className="space-y-2 min-w-0" data-testid="contract-pay" style={{ border: 0, padding: 0, margin: 0 }}>
       <legend className="text-[11px] esp-ink-mute mb-1 p-0">Contract pay</legend>
       <div className="flex items-center gap-5">
         {CONTRACT_PAY_PERIODS.map((p) => (
@@ -96,6 +122,7 @@ export default function ContractPay({ period, salary, paidHours, onChange }) {
               type="radio"
               name="contract_pay_period"
               value={p.key}
+              ref={p.key === CONTRACT_PAY_PERIODS[0].key ? firstRadioRef : undefined}
               data-testid={`emp-pay-${p.key}`}
               checked={period === p.key}
               onChange={() => onChange({ contract_pay_period: p.key })}
@@ -111,6 +138,7 @@ export default function ContractPay({ period, salary, paidHours, onChange }) {
         <div className="text-[11px] esp-ink-mute mb-1">{label}</div>
         <input
           data-testid="emp-salary"
+          ref={salaryRef}
           type="number"
           inputMode="decimal"
           min="0.01"
