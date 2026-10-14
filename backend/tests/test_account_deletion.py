@@ -51,8 +51,13 @@ def now_everything_except(*skip):
     return {n: now_count(n) for n in ALL if n not in skip}
 
 
+
 def total(snapshot):
-    return sum(len(rows) for rows in snapshot.values())
+    return sum(
+        len(rows)
+        for name, rows in snapshot.items()
+        if name not in ad.NON_ACCOUNT_COLLECTIONS
+    )
 
 
 def me(client, token):
@@ -130,7 +135,13 @@ class TestEveryCollectionIsAccountedFor:
         )
 
     def test_each_collection_has_one_rule_not_two(self):
-        groups = [set(ad.SHOP_SCOPED), set(ad.USER_SCOPED), {ad.SHOPS}, {ad.USERS}]
+        groups = [
+            set(ad.SHOP_SCOPED),
+            set(ad.USER_SCOPED),
+            {ad.SHOPS},
+            {ad.USERS},
+            set(ad.NON_ACCOUNT_COLLECTIONS),
+        ]
         assert sum(len(g) for g in groups) == len(ad.ERASURE_PLAN)
 
 
@@ -144,7 +155,11 @@ class TestDeletingAnAccount:
         token = register(client)
         user_id, shop_id = populate(client, token)
         before = everything()
-        assert set(belonging_to(before, user_id, shop_id)) == set(ALL), "the test must start with a row in every collection"
+
+        expected = set(ALL) - set(ad.NON_ACCOUNT_COLLECTIONS)
+        assert set(belonging_to(before, user_id, shop_id)) == expected, (
+            "the test must start with a row in every account-owned collection"
+        )
 
         response = delete(client, token)
 
@@ -687,7 +702,7 @@ class TestFailuresAndRaces:
         seen = {}
 
         async def look(*args, **kwargs):
-            seen["others_gone_when_the_user_goes"] = sum(now_everything_except("users").values()) == 0
+            seen["others_gone_when_the_user_goes"] = sum(now_everything_except("users", *ad.NON_ACCOUNT_COLLECTIONS).values()) == 0
             return await real(*args, **kwargs)
 
         monkeypatch.setattr(db.users, "delete_one", look)

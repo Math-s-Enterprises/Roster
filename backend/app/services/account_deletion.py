@@ -51,10 +51,18 @@ SHOP_SCOPED = (
 )
 USER_SCOPED = ("user_sessions", "password_resets", "payment_transactions")
 SHOPS = "shops"      # found by owner_id
-USERS = "users"      # found by user_id
+USERS = "users"
+# Shared security data, not owned by an individual account.
+# Keep it accounted for, but do not erase it with a user's account.
+NON_ACCOUNT_COLLECTIONS = ("auth_rate_limits",)
 
 # Every collection in db.py must be accounted for. A test compares this to db.py itself.
-ERASURE_PLAN = frozenset(SHOP_SCOPED) | frozenset(USER_SCOPED) | {SHOPS, USERS}
+ERASURE_PLAN = (
+    frozenset(SHOP_SCOPED)
+    | frozenset(USER_SCOPED)
+    | {SHOPS, USERS}
+    | frozenset(NON_ACCOUNT_COLLECTIONS)
+)
 
 
 class DeleteAccountReq(BaseModel):
