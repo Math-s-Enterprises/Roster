@@ -170,8 +170,7 @@ def _mask_name(name: str) -> str:
 
         current = (employee.get("email") or "").strip()
         if current and not replace:
-            note = "same" if current.lower() == address.lower() else f"has {_mask_email(current)}"
-            skipped.append((line, name, address, f"{note} - pass --replace to change"))
+            skipped.append((line, name, address, "existing address present - pass --replace to change"))
             continue
 
         planned.append((employee, current, address))
