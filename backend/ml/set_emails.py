@@ -123,6 +123,19 @@ async def run(account: str, csv_path: str, commit: bool, replace: bool) -> None:
     planned, skipped = [], []
     seen_emails: Dict[str, str] = {}
 
+def _mask_name(name: str) -> str:
+    """Return a minimally identifying version of a person's name for logs."""
+    value = (name or "").strip()
+    if not value:
+        return "?"
+    parts = [p for p in value.split() if p]
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][0] + "***"
+    return f"{parts[0][0]}*** {parts[-1][0]}***"
+
+
     for line, row in enumerate(rows, start=2):
         clean = {(k or "").strip().lower(): (v or "").strip()
                  for k, v in row.items()}
@@ -171,7 +184,7 @@ async def run(account: str, csv_path: str, commit: bool, replace: bool) -> None:
               else f"SETTING {len(planned)} address(es):")
         for employee, current, address in planned:
             arrow = f"{_mask_email(current)} -> " if current else ""
-            print(f"    {employee.get('name', '?'):22} {arrow}{_mask_email(address)}")
+            print(f"    {_mask_name(employee.get('name', '?')):22} {arrow}{_mask_email(address)}")
     else:
         print("Nothing to change.")
 
