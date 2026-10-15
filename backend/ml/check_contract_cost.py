@@ -5,7 +5,7 @@
 WHY THIS EXISTS
 ---------------
 CLAUDE.md §2b put the owner of a slot above contract need. That was the right
-call for the reason recorded there — a full-timer below their band outranked
+call for the reason recorded there - a full-timer below their band outranked
 every owner on every slot they were eligible for, so Monday, built first while
 the shortfall was still the whole contract, took the worst of it.
 
@@ -15,7 +15,7 @@ afterwards, and `under_contract` reports whoever it cannot reach. Whether it
 actually does is a question about this shop's data, not about the design.
 
 "Is anybody in `under_contract`?" does NOT answer it. A person can be short
-for reasons no ranking rule can fix — 25 staff and not enough trading hours to
+for reasons no ranking rule can fix - 25 staff and not enough trading hours to
 go round, leave, a curfew, a five-day limit. Reading a shortfall as proof that
 owners caused it is exactly the mistake this script exists to prevent.
 
@@ -69,7 +69,7 @@ def _placements(result: Dict[str, Any]) -> set:
     Compared as a set rather than paired up shift-by-shift: two people on one
     shape, and a shape that runs a different number of times between the runs,
     both make pairing ambiguous. Set difference asks a question with an exact
-    answer — "which placements does this roster have that the other does not".
+    answer - "which placements does this roster have that the other does not".
     """
     return {
         (s["day"], s["start"], s["end"], s["employee_id"])
@@ -114,7 +114,7 @@ async def run(email: str, week: str) -> None:
     )
     employees = sort_employees(employees, shop)
 
-    print(f"\n{shop['name']} — week of {week}")
+    print(f"\n{shop['name']} - week of {week}")
     print(f"{len(employees)} employees, {len(approved)} approved rosters, "
           f"demand profile: {demand.source}")
 
@@ -129,14 +129,14 @@ async def run(email: str, week: str) -> None:
         e for e in employees
         if avail.is_active(e) and avail.contract_span_band(e)
     ]
-    print(f"{len(banded)} of them are salaried with a contract band — "
+    print(f"{len(banded)} of them are salaried with a contract band - "
           f"the only people\nwho can be reported short:")
     for employee in banded:
         low, high = avail.contract_span_band(employee)
         print(f"    {employee.get('name', '?')[:24]:26}"
               f"{low:.1f}-{high:.1f}h span")
     if not banded:
-        print("    (none — this check has nothing to measure, and a clean")
+        print("    (none - this check has nothing to measure, and a clean")
         print("     result below means nothing at all)")
     print()
 
@@ -162,7 +162,7 @@ async def run(email: str, week: str) -> None:
     without_owners = solve_with(False)
 
     assert _RosterBuilder.OWNER_BEATS_CONTRACT is True, \
-        "the flag was not restored — do not trust anything after this"
+        "the flag was not restored - do not trust anything after this"
 
     a, b = _by_person(with_owners), _by_person(without_owners)
 
@@ -172,7 +172,7 @@ async def run(email: str, week: str) -> None:
     if not a and not b:
         print("\nNobody, either way. Owner-first is costing this shop nothing")
         print("in contracted hours. There is no problem for a look-ahead to")
-        print("solve — building one now would be tuning for a shop that does")
+        print("solve - building one now would be tuning for a shop that does")
         print("not exist yet (CLAUDE.md §10b).\n")
     else:
         print(f"\n{'name':22}{'contract':>10}{'with owners':>14}"
@@ -187,7 +187,7 @@ async def run(email: str, week: str) -> None:
             elif short_b > short_a + 0.01:
                 verdict = f"      owner-first SAVED {short_b - short_a:.1f}h"
             else:
-                verdict = "      hours are not there — a look-ahead cannot help"
+                verdict = "      hours are not there - a look-ahead cannot help"
             print(f"{row['name'][:21]:22}{row['minimum_hours']:>9.1f}h"
                   f"{short_a:>12.1f}h{short_b:>9.1f}h{verdict}")
 
@@ -218,11 +218,11 @@ async def run(email: str, week: str) -> None:
                     for i in caused)
         print(f"\nOwner-first IS costing contracted hours: {names}")
         print(f"({total:.1f}h in total this week).")
-        print("\nThat is the evidence for option B — a look-ahead that checks")
+        print("\nThat is the evidence for option B - a look-ahead that checks")
         print("whether the contract can be met from OTHER slots before")
         print("displacing an owner. Worth building.\n")
     elif a:
-        print("\nPeople are short, but NOT because of owner-first — the same")
+        print("\nPeople are short, but NOT because of owner-first - the same")
         print("shortfall appears with the rule turned off. The hours are not")
         print("there to give. A look-ahead would move settled shifts around")
         print("and reach the same total.")

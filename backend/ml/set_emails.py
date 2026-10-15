@@ -13,14 +13,14 @@ WHY THIS EXISTS
 spreadsheet has none. Roster dispatch is then correctly configured and still
 reaches nobody. Twenty-three people typed one at a time through the Employees
 page is tedious and, more to the point, a typo produces a silent
-non-delivery — the address looks fine and the rota simply never arrives.
+non-delivery - the address looks fine and the rota simply never arrives.
 
 MATCHING IS DELIBERATELY STRICT
 -------------------------------
 An email sent to the wrong person is worse than one not sent: it hands one
 member of staff another's working pattern. So a row is applied only when it
 matches EXACTLY ONE active employee, case- and accent-insensitively, on either
-the full name or the first name. Anything ambiguous is reported and skipped —
+the full name or the first name. Anything ambiguous is reported and skipped -
 never guessed at, never "closest match".
 
 "Roisín" and "Roisin" are the same person. "Aj" typed as "AJ" is too. Two
@@ -84,7 +84,7 @@ async def run(account: str, csv_path: str, commit: bool, replace: bool) -> None:
     ]
 
     # Two indexes, full name and first name, each mapping to EVERY employee
-    # that answers to it — so a duplicate is visible rather than silently
+    # that answers to it - so a duplicate is visible rather than silently
     # resolved to whichever was read first.
     by_name: Dict[str, List[Dict[str, Any]]] = {}
     for employee in employees:
@@ -125,7 +125,7 @@ async def run(account: str, csv_path: str, commit: bool, replace: bool) -> None:
         if len(matches) > 1:
             others = ", ".join(m.get("name", "?") for m in matches)
             skipped.append((line, name, address,
-                            f"matches {len(matches)} people ({others}) — "
+                            f"matches {len(matches)} people ({others}) - "
                             f"use the full name"))
             continue
 
@@ -142,12 +142,12 @@ async def run(account: str, csv_path: str, commit: bool, replace: bool) -> None:
         current = (employee.get("email") or "").strip()
         if current and not replace:
             note = "same" if current.lower() == address.lower() else f"has {current}"
-            skipped.append((line, name, address, f"{note} — pass --replace to change"))
+            skipped.append((line, name, address, f"{note} - pass --replace to change"))
             continue
 
         planned.append((employee, current, address))
 
-    print(f"\n{shop['name']} — {len(employees)} active staff, "
+    print(f"\n{shop['name']} - {len(employees)} active staff, "
           f"{len(rows)} row(s) in {path.name}\n")
 
     if planned:
@@ -162,7 +162,7 @@ async def run(account: str, csv_path: str, commit: bool, replace: bool) -> None:
     if skipped:
         print(f"\nSKIPPED {len(skipped)}:")
         for line, name, address, why in skipped:
-            print(f"    line {line}: {name or '(no name)'} <{address}> — {why}")
+            print(f"    line {line}: {name or '(no name)'} <{address}> - {why}")
 
     # Anyone the CSV never mentioned is still unreachable, and saying so here
     # avoids a second round trip to the readiness report.
@@ -176,7 +176,7 @@ async def run(account: str, csv_path: str, commit: bool, replace: bool) -> None:
         print("    " + ", ".join(sorted(still_missing)))
 
     if not commit:
-        print("\nDry run — nothing written. Re-run with --commit to apply.")
+        print("\nDry run - nothing written. Re-run with --commit to apply.")
         return
 
     for employee, _, address in planned:

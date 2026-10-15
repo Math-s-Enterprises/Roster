@@ -12,13 +12,13 @@ import { NotificationsProvider, useNotifications } from "@/lib/notifications";
 /**
  * App shell (handoff: Sidebar).
  *
- * No icons in the nav, by design — the list is short enough to read, and
+ * No icons in the nav, by design - the list is short enough to read, and
  * icons were adding noise the rest of the app does not use. Three hairline
  * bands, counts on the right where the number stays small and says
  * something, and the active item as an inset band with a green left bar.
  *
  * Counts are fetched once for the shell rather than per page, and refreshed
- * when the route changes — which is the only mutation signal available
+ * when the route changes - which is the only mutation signal available
  * without a shared cache. /rosters is asked for five records rather than its
  * default two hundred: the flag only needs the current week, and the full
  * list carries every shift of every roster.
@@ -64,7 +64,7 @@ const GROUPS = [
 const THEME_KEY = "roster_theme";
 
 /**
- * Applied to <html> so every page, modal and portal follows — including
+ * Applied to <html> so every page, modal and portal follows - including
  * anything rendered outside this component's tree.
  */
 function applyTheme(theme) {
@@ -95,7 +95,7 @@ function Shell() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [counts, setCounts] = useState({});
-  // Dark is the default — it is the palette every handoff specified.
+  // Dark is the default - it is the palette every handoff specified.
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || "dark");
   const [rosterFlag, setRosterFlag] = useState(null);
   const [shop, setShop] = useState(null);

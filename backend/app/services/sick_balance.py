@@ -2,8 +2,8 @@
 
 SET IN DAYS, SPENT IN HOURS
 ---------------------------
-The entitlement is written in days because that is how the law writes it —
-Ireland's Statutory Sick Leave is five days a year — and how a manager thinks
+The entitlement is written in days because that is how the law writes it -
+Ireland's Statutory Sick Leave is five days a year - and how a manager thinks
 about it. It is spent in hours because a day is not a fixed quantity: a
 part-timer losing a four-hour Saturday has not used the same thing as a
 full-timer losing a ten-hour Monday, and counting both as "one day" quietly
@@ -13,7 +13,7 @@ Each person's day is therefore converted using their own usual shift, taken
 from what they have actually worked rather than from a contract field that
 may never have been filled in.
 
-Sick leave beyond the entitlement is not refused — people do not stop being
+Sick leave beyond the entitlement is not refused - people do not stop being
 ill because an allowance ran out. It is recorded as unpaid, and reported.
 """
 from __future__ import annotations

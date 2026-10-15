@@ -55,7 +55,7 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
         # Build a fresh roster in memory with the CURRENT code and report on
         # that. Reading the stored one shows whatever the solver produced the
         # last time it ran, which is misleading immediately after a rule
-        # change — the numbers look unchanged because nothing re-ran.
+        # change - the numbers look unchanged because nothing re-ran.
         from app.services.hierarchy import sort_employees
         from app.services.learning import compute_weights
         from app.services.scheduler import solve_roster
@@ -190,7 +190,7 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
                 top = ", ".join(
                     f"{names.get(e, e)} {c}" for e, c in hist.people[:3]
                 )
-                who = f"nobody owns it — {top}  (ran {hist.weeks} weeks)"
+                who = f"nobody owns it - {top}  (ran {hist.weeks} weeks)"
             else:
                 who = "no history"
             print(f"      {start}-{end:<6} {who}")
@@ -217,7 +217,7 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
             if actual and actual["start"] == f["start"] and actual["end"] == f["end"]:
                 continue
             if on_leave:
-                print(f"  ok   {name} has no fixed shift on {day} — they are on leave")
+                print(f"  ok   {name} has no fixed shift on {day} - they are on leave")
                 continue
             problems += 1
             got = f"{actual['start']}-{actual['end']}" if actual else "NOT SCHEDULED"
@@ -241,7 +241,7 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
     print(f"  compliance: {roster.get('compliance_score')}")
     print(f"  critical issues: {len(roster.get('critical_issues') or [])}")
     print(f"  unfamiliar shifts: {len(roster.get('confirmations') or [])} "
-          f"(should be 0 — they are refused, not warned about)")
+          f"(should be 0 - they are refused, not warned about)")
 
     # Where the week's hours went. Front-loading is the usual reason a
     # Saturday or Sunday ends up thin: everyone's weekly allowance is spent
@@ -273,7 +273,7 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
                   f"of {entry.get('minimum_hours', entry['contracted_hours'])}h minimum")
 
     # Who is actually in the shop, hour by hour. Answers "the shop opens at
-    # 06:00 but nobody is rostered" — an overnight shift from the day before
+    # 06:00 but nobody is rostered" - an overnight shift from the day before
     # is often still there, which the grid does not make obvious.
     print(f"\n{'=' * 70}\nHOURLY COVER\n{'=' * 70}")
     from app.services.scheduler import _RosterBuilder  # noqa: E402

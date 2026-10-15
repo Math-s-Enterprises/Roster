@@ -86,7 +86,7 @@ class TestEdges:
         assert pages == 1 and "0 on the rota" in text
 
     def test_a_broken_week_start_does_not_raise(self):
-        """One bad roster must not cost the owner their copy — or, because
+        """One bad roster must not cost the owner their copy - or, because
         the send is one call, everybody else's."""
         assert build_roster_pdf("Shop", "not-a-date", PEOPLE).startswith(b"%PDF-")
 

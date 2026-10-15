@@ -40,7 +40,7 @@ class TestFindingTheColumns:
 
     def test_a_title_and_blank_rows_above_the_headers_are_ignored(self):
         text = (
-            "Top Oil South Link — please fill in your email\n"
+            "Top Oil South Link - please fill in your email\n"
             "\n"
             "Updated March 2026\n"
             "\n"
@@ -64,7 +64,7 @@ class TestFindingTheColumns:
 
     def test_a_row_with_no_address_is_skipped(self):
         """Somebody who has not filled theirs in yet is simply absent, not an
-        error — the sheet comes back half done and that is normal."""
+        error - the sheet comes back half done and that is normal."""
         rows = parse(csv_bytes("Name,Email\nEmma,\nMegan,megan@shop.ie\n"), "s.csv")
         assert [r.name for r in rows] == ["Megan"]
 

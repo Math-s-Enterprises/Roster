@@ -58,7 +58,7 @@ _ALL_DEPARTMENTS = object()
 async def _approved_rosters(
     scope: ShopScope, department: Any = _ALL_DEPARTMENTS,
 ) -> List[Dict[str, Any]]:
-    """Every approved roster — the corpus the preference weights build on.
+    """Every approved roster - the corpus the preference weights build on.
 
     Streamed rather than page-limited: a truncated read would silently skew
     the weights instead of failing visibly.
@@ -289,7 +289,7 @@ def leave_dates(holidays: List[Dict[str, Any]]) -> Dict[str, set]:
 def _week_has_ended(week_start: str) -> bool:
     """True once the whole week is behind us.
 
-    A week in progress stays editable — somebody calls in sick on Wednesday
+    A week in progress stays editable - somebody calls in sick on Wednesday
     and the rest of the week has to move. Only a finished week is closed,
     because by then it is a record of what happened rather than a plan.
     """
@@ -329,7 +329,7 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
 
     # An approved week is closed to both Generate and Rebalance. Both insert a
     # new draft, and the moment that draft is approved the week has two
-    # approved rosters — which the solver reads as two weeks that were both
+    # approved rosters - which the solver reads as two weeks that were both
     # worked, doubling that week's pull on every preference weight. Unapprove
     # is the deliberate way back in.
     settled = await _approved_for_week(scope, payload.week_start, department)
@@ -377,8 +377,8 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
         current = next((r for r in department_versions
                         if not r.get("archived")), None)
         # Extra shifts are held exactly like pins. They are a decision the
-        # manager made for a reason the app cannot see — a delivery, a
-        # renovation — and a rebalance that quietly removed them would be
+        # manager made for a reason the app cannot see - a delivery, a
+        # renovation - and a rebalance that quietly removed them would be
         # removing the very thing they came here to add.
         locked_shifts = [
             s for s in (current or {}).get("shifts", [])
@@ -440,7 +440,7 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
     # manager just made, so anything it changes beyond that is noise they have
     # to read past.
     #
-    # Only genuinely arbitrary choices vary — a slot somebody owns is theirs
+    # Only genuinely arbitrary choices vary - a slot somebody owns is theirs
     # whatever the seed. See _pick_for_slot.
     #
     # The seed is stored on the roster: a version that cannot be reproduced
@@ -462,7 +462,7 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
     )
 
     # The narrative summary is decoration on a complete result. If the model
-    # is unavailable or slow, the roster is still returned — the feature must
+    # is unavailable or slow, the roster is still returned - the feature must
     # never be a single point of failure for the core product.
     ai_summary = None
     if llm.enabled:
@@ -486,7 +486,7 @@ async def generate_roster(payload: RosterGenReq, scope: ShopScope = CurrentScope
         **result,
         # A frozen copy of what the solver proposed, never touched by edits.
         # Editing overwrites `shifts` in place, so without this the manager's
-        # corrections are destroyed the moment they touch the roster — and
+        # corrections are destroyed the moment they touch the roster - and
         # those corrections are the most useful signal the product has.
         "generated_shifts": [dict(s) for s in result["shifts"]],
         "training_context": training_context,
@@ -592,7 +592,7 @@ async def get_roster(roster_id: str, scope: ShopScope = CurrentScope):
     # `gaps` and `critical_issues` describe the shifts against the shop's
     # OPENING HOURS. Both were written when the roster was generated or last
     # edited, so changing the hours afterwards left them describing a shop
-    # that no longer exists — and the only way to clear them was to edit the
+    # that no longer exists - and the only way to clear them was to edit the
     # roster into rewriting them, which is what a "refresh" button would
     # have papered over.
     #
@@ -616,7 +616,7 @@ async def get_roster(roster_id: str, scope: ShopScope = CurrentScope):
     roster["critical_issues"] = [
         f"CRITICAL: {run['day']} {run['window']} has NO coverage"
         + (f" ({run['hours']} hours)" if run["hours"] > 1 else "")
-        + " — the shop would be left unattended."
+        + ", the shop would be left unattended."
         for run in collapse_hour_runs(uncovered)
     ]
     employees = await scope.employees.find(limit=1000)
@@ -655,8 +655,8 @@ async def update_roster(
     roster_shop = department_service.effective_shop(scope.base_shop, department)
 
     # The grid sends the whole week back on every edit, but it only knows the
-    # seven fields it renders. Derived values — paid_hours, the break, a leave
-    # label — are matched back from what is already stored, so editing one
+    # seven fields it renders. Derived values - paid_hours, the break, a leave
+    # label - are matched back from what is already stored, so editing one
     # shift cannot silently strip the hours off somebody's booked holiday and
     # corrupt their balance.
     stored = {
@@ -737,7 +737,7 @@ async def update_roster(
     #
     # Validating the finished week and refusing on anything found meant a
     # manager swapping one Wednesday shift was blocked by somebody else being
-    # under their contract on a different day — a problem that was already
+    # under their contract on a different day - a problem that was already
     # there, that the swap did not cause, and that the swap cannot fix. Small
     # tweaks are how a roster gets finished, so the question is "does this
     # make anything worse", not "is everything already perfect".
@@ -795,7 +795,7 @@ async def update_roster(
 
     # One structural invariant still refuses, and only this one: the same
     # person twice on the same day. It is not a rule about working conditions
-    # that a manager could reasonably override — it is a malformed roster.
+    # that a manager could reasonably override - it is a malformed roster.
     # corrections.diff_roster identifies a shift by (employee, day) and says
     # so in its own docstring; two rows with that key make the diff ambiguous
     # and would quietly corrupt the corrections history, which is the most
@@ -811,14 +811,14 @@ async def update_roster(
     #
     # It used to be refused. That reads as the app knowing better than the
     # manager, and it does not: somebody swapping two shifts at 6am knows
-    # things the app cannot see — a swap agreed between two people, an offer
+    # things the app cannot see - a swap agreed between two people, an offer
     # to cover, somebody going home early anyway. Refusing made a roster
     # impossible to finish and taught people to work around the edit screen,
     # which is where the corrections signal comes from.
     #
     # Nothing is lost by allowing it. The breach is attached to the person in
-    # the grid, and approval — the moment a draft becomes the schedule people
-    # are told to work — refuses until it is either fixed or deliberately
+    # the grid, and approval - the moment a draft becomes the schedule people
+    # are told to work - refuses until it is either fixed or deliberately
     # overridden by somebody who re-enters their password. The decision stays
     # with the manager; the record stays with the roster.
     pre_existing = [p for p in verdict.blocking if p not in introduced]
@@ -854,7 +854,7 @@ async def update_roster(
         "edit_warnings": verdict.warnings + pre_existing,
         # Recomputed from the shifts just saved. These describe the roster,
         # and after an edit the generator's version describes one that no
-        # longer exists — a gap filled by hand stayed on screen, and approval
+        # longer exists - a gap filled by hand stayed on screen, and approval
         # went on refusing it.
         #
         # The sentences are plainer than the solver's. It can say WHY nobody
@@ -870,7 +870,7 @@ async def update_roster(
         "critical_issues": [
             f"CRITICAL: {run['day']} {run['window']} has NO coverage"
             + (f" ({run['hours']} hours)" if run["hours"] > 1 else "")
-            + " — the shop would be left unattended."
+            + ", the shop would be left unattended."
             for run in collapse_hour_runs(uncovered)
         ],
         "updated_at": _now(),
@@ -899,7 +899,7 @@ async def suggest_for_gap(
     The solver refuses to fill an hour rather than give it to somebody
     unsuitable. That is the right default, but it leaves the manager with a
     blank and no help. This ranks everybody for the slot and says plainly
-    why each is imperfect — the manager still decides, but does not have to
+    why each is imperfect - the manager still decides, but does not have to
     hold twenty-four people's constraints in their head to do it.
     """
     roster = await scope.rosters.find_one({"roster_id": roster_id})
@@ -1023,7 +1023,7 @@ async def audit_roster(roster_id: str, scope: ShopScope = CurrentScope):
     #
     # `under_contract` used to be whatever the solver wrote when the week was
     # generated. Raise somebody's contracted hours afterwards and the roster
-    # page kept reporting the old figure — the manager changed the thing the
+    # page kept reporting the old figure - the manager changed the thing the
     # panel is about and the panel did not move. §5.
     #
     # Same function the solver calls, so the generator and this page cannot
@@ -1074,7 +1074,7 @@ async def approve_roster(
 
     Refuses while the week still has hours nobody is covering. Approving is
     the moment a draft becomes the schedule people are told to work, and it
-    was going through silently on rosters that left the shop unattended —
+    was going through silently on rosters that left the shop unattended -
     the one outcome this app exists to prevent. It can still be forced, but
     it has to be a decision rather than a click.
 
@@ -1091,8 +1091,8 @@ async def approve_roster(
                 "approved_with_gaps": roster.get("approved_with_gaps", 0)}
 
     # Belt and braces: generation already refuses on an approved week, so this
-    # should be unreachable through the UI. It stays because the invariant —
-    # one approved roster per week — is what the whole learning corpus rests
+    # should be unreachable through the UI. It stays because the invariant -
+    # one approved roster per week - is what the whole learning corpus rests
     # on, and a second way in would corrupt it silently rather than loudly.
     rival = await _approved_for_week(
         scope, roster["week_start"], roster.get("department"), exclude=roster_id
@@ -1115,7 +1115,7 @@ async def approve_roster(
     # Editing no longer refuses: the manager can build whatever week the shop
     # actually needs, because they know things the app does not. This is where
     # it is accounted for. A week with breaches can still become real, but only
-    # deliberately, by somebody who proves who they are — and the log records
+    # deliberately, by somebody who proves who they are - and the log records
     # what they overrode.
     department = department_service.roster_department(roster, scope.base_shop)
     roster_shop = department_service.effective_shop(scope.base_shop, department)
@@ -1174,7 +1174,7 @@ async def approve_roster(
     #
     # `critical_issues` is what the SOLVER found when it built the week. Fill
     # one of those gaps by hand and the stored list still names it, so
-    # approval refused a week that was actually covered — and no amount of
+    # approval refused a week that was actually covered - and no amount of
     # editing could clear it, because nothing rewrites that field. Reported
     # as a bug against exactly that: a Friday gap filled by hand, approval
     # still insisting the shop was unattended.
@@ -1224,7 +1224,7 @@ async def approve_roster(
         })
 
     # What the manager changed about the solver's proposal. Computed at the
-    # moment of approval, because that is when their decisions are final —
+    # moment of approval, because that is when their decisions are final -
     # and stored rather than derived later, so it survives the roster being
     # edited again through the sick-cover route.
     changes = corrections.diff_roster(
@@ -1261,8 +1261,8 @@ async def approve_roster(
         # Rosters generated before the snapshot existed cannot be compared,
         # so they are marked rather than counted as a perfect zero.
         "corrections_measurable": "generated_shifts" in roster,
-        # A forced week says so for ever. Whoever reads this roster later —
-        # the manager, an inspector, the person who worked six days — sees
+        # A forced week says so for ever. Whoever reads this roster later -
+        # the manager, an inspector, the person who worked six days - sees
         # that somebody decided, who they were, and exactly what was broken.
         "force_approved": forced,
         "force_approved_by": scope.user.get("email") if forced else None,
@@ -1278,13 +1278,13 @@ async def approve_roster(
             scope.shop_id, "roster_force_approved",
             f"{department}: {scope.user.get('email')} force-approved week of "
             f"{roster['week_start']} with {len(breaches)} rule(s) broken"
-            + (f" — {payload.reason}" if payload and payload.reason else ""),
+            + (f", {payload.reason}" if payload and payload.reason else ""),
         )
     await log_activity(
         scope.shop_id, "roster_approved",
         f"{department}: approved {roster['version']} for week of {roster['week_start']} "
         f"({len(superseded)} draft(s) archived)"
-        + (f" — ACCEPTING {len(empty)} uncovered hour(s)" if empty else ""),
+        + (f", ACCEPTING {len(empty)} uncovered hour(s)" if empty else ""),
     )
     return {
         "ok": True,
@@ -1364,7 +1364,7 @@ async def report_sick(
     is one person is ill.
 
     So this is a narrow, named, recorded action rather than a general
-    "edit anyway" — one shift, one reason, written to the activity log.
+    "edit anyway" - one shift, one reason, written to the activity log.
     """
     roster = await scope.rosters.find_one({"roster_id": roster_id})
     if not roster:
@@ -1490,7 +1490,7 @@ async def report_sick(
         scope.shop_id, "shift_sick",
         f"{absent.get('name')} off sick {payload.day} "
         f"({original.get('start')}-{original.get('end')})"
-        + (f" — covered by {covered_by}" if covered_by else " — NOT COVERED")
+        + (f", covered by {covered_by}" if covered_by else ", NOT COVERED")
         + (f", overriding {', '.join(overrides)}" if overrides else ""),
     )
 
@@ -1511,7 +1511,7 @@ async def undo_sick(
 ):
     """Undo a sick call recorded by mistake.
 
-    Reverses all three things reporting sick did — the flag on the shift, the
+    Reverses all three things reporting sick did - the flag on the shift, the
     cover that was arranged, and the booked absence. Undoing only the flag
     would leave the shift double-staffed and the person still blocked from
     being rostered that day, which is a worse state than either.
@@ -1576,7 +1576,7 @@ async def undo_sick(
     await log_activity(
         scope.shop_id, "shift_sick_undone",
         f"Sick call for {name} on {day} removed"
-        + (f" — {covered} no longer covering" if covered else ""),
+        + (f", {covered} no longer covering" if covered else ""),
     )
     return {"ok": True, "cover_removed": len(dropped)}
 
@@ -1593,7 +1593,7 @@ async def add_extra_shift(
     cancels one, and the normal cover is still built underneath it.
 
     What still applies: the hours are real, so they count against the weekly
-    cap, the contract and the five-day limit — an extra shift that quietly
+    cap, the contract and the five-day limit - an extra shift that quietly
     created a sixth working day would be a trap. The legal limits are not the
     manager's to waive here either; that is what the sick-cover flow is for,
     where an override is named and recorded.
@@ -1619,7 +1619,7 @@ async def add_extra_shift(
 
     if violates_minor_curfew(person, payload.start, payload.end):
         reasons.append(
-            f"{person['name']} is under 18 — no work before 08:00 or after 19:00."
+            f"{person['name']} is under 18, no work before 08:00 or after 19:00."
         )
     if span > ABSOLUTE_MAX_SHIFT_HOURS:
         reasons.append(
@@ -1650,7 +1650,7 @@ async def add_extra_shift(
     }
     if payload.day not in worked_days and len(worked_days) >= MAX_WORKING_DAYS:
         reasons.append(
-            f"{person['name']} is already on {len(worked_days)} days — a sixth "
+            f"{person['name']} is already on {len(worked_days)} days, a sixth "
             f"would break the five-day limit."
         )
 
@@ -1698,7 +1698,7 @@ async def add_extra_shift(
         scope.shop_id, "shift_extra_added",
         f"{person['name']} added as extra cover on {payload.day} "
         f"{payload.start}-{payload.end}"
-        + (f" — {payload.reason}" if payload.reason else ""),
+        + (f", {payload.reason}" if payload.reason else ""),
     )
     return {"ok": True, "shifts": shifts}
 
@@ -1756,7 +1756,7 @@ async def unapprove_roster(roster_id: str, scope: ShopScope = CurrentScope):
     await log_activity(
         scope.shop_id, "roster_unapproved",
         f"Unapproved {roster.get('version')} for week of {roster['week_start']} "
-        f"— removed from what the scheduler learns from",
+        f", removed from what the scheduler learns from",
     )
     return {
         "ok": True,
@@ -1781,7 +1781,7 @@ async def dispatch_roster(roster_id: str, scope: ShopScope = CurrentScope):
         await scope.employees.find(limit=1000), department, members_only=True,
     )
 
-    # Imported staff have no email — a spreadsheet does not carry one. They
+    # Imported staff have no email - a spreadsheet does not carry one. They
     # are named back to the manager rather than counted as sent, because a
     # dispatch that reports success while reaching nobody is worse than one
     # that admits who it could not reach.
@@ -1804,7 +1804,7 @@ async def dispatch_roster(roster_id: str, scope: ShopScope = CurrentScope):
     )
     outcome["no_email"] = no_address
 
-    # Anyone who gets the whole roster without working in the shop — an area
+    # Anyone who gets the whole roster without working in the shop - an area
     # manager, a franchise owner. Reported under its own key so a boss who
     # did not receive their copy is not hidden inside the staff counts.
     outcome["observers"] = await mailer.send_shop_roster(
@@ -1823,7 +1823,7 @@ async def dispatch_roster(roster_id: str, scope: ShopScope = CurrentScope):
     await log_activity(
         scope.shop_id, "roster_dispatched",
         f"{department_service.roster_department(roster, scope.base_shop)}: "
-        f"dispatched {roster.get('version')} — {len(outcome['sent'])} sent, "
+        f"dispatched {roster.get('version')}, {len(outcome['sent'])} sent, "
         f"{len(outcome['failed'])} failed",
     )
     return {**outcome, "total": len(recipients)}

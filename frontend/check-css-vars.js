@@ -7,17 +7,17 @@
  * WHY THIS EXISTS
  * ---------------
  * Two bugs shipped and survived several sessions because CSS fails SILENTLY.
- * An invalid declaration is dropped by the browser — no console error, no
+ * An invalid declaration is dropped by the browser - no console error, no
  * fallback, no visual placeholder. You get an element with no background, and
  * nothing anywhere says why.
  *
- *   1. `background: var(--good)`   — --good was never defined. Anywhere.
- *   2. `background: var(--accent)` — --accent IS defined, but only inside the
+ *   1. `background: var(--good)`   - --good was never defined. Anywhere.
+ *   2. `background: var(--accent)` - --accent IS defined, but only inside the
  *      shadcn @layer block, where it holds a bare HSL TRIPLET ("0 0% 15%")
  *      meant to be written hsl(var(--accent)). Used raw it is not a colour.
  *
  * Both were in the edit-trend chart on the What It Learned page, which meant
- * every bar in it rendered with no fill — the one screen whose entire job is
+ * every bar in it rendered with no fill - the one screen whose entire job is
  * showing a number going down.
  *
  * The second is the nastier of the two, because grepping for "is it defined"
@@ -80,11 +80,11 @@ for (const file of walk(SRC)) {
       const where = `${path.relative(__dirname, file)}:${i + 1}`;
       if (RUNTIME_PREFIXES.some((p) => name.startsWith(p))) continue;
       if (!defined.has(name) && !hasFallback) {
-        problems.push(`${where}\n    var(--${name}) is never defined — the `
+        problems.push(`${where}\n    var(--${name}) is never defined - the `
           + `declaration is dropped and nothing renders.`);
       } else if (TRIPLET_ONLY.has(name) && !/hsl\(\s*var\(\s*--/.test(line)) {
         problems.push(`${where}\n    var(--${name}) is a shadcn HSL triplet, `
-          + `not a colour. Write hsl(var(--${name})) — or use a semantic `
+          + `not a colour. Write hsl(var(--${name})) - or use a semantic `
           + `token like --primary / --ink-mute.`);
       }
     }
@@ -92,9 +92,9 @@ for (const file of walk(SRC)) {
 }
 
 if (problems.length) {
-  console.error(`\n${problems.length} CSS variable problem(s) — each one is `
+  console.error(`\n${problems.length} CSS variable problem(s) - each one is `
     + `INVISIBLE at runtime:\n`);
   problems.forEach((p) => console.error("  " + p + "\n"));
   process.exit(1);
 }
-console.log(`CSS variables OK — ${defined.size} defined, all usages valid.`);
+console.log(`CSS variables OK - ${defined.size} defined, all usages valid.`);

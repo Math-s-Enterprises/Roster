@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Download, Search, Calendar } from "lucide-react";
 
 /**
- * Past rosters — archive table (handoff: Past rosters).
+ * Past rosters - archive table (handoff: Past rosters).
  *
  * The flat card list became one row per approved week, grouped by month
  * with per-month totals, and a separate Version history section for the
@@ -28,8 +28,8 @@ import { Download, Search, Calendar } from "lucide-react";
  * 2. Export archive and the per-row Export are stubs. No export endpoint
  *    exists; both say so rather than failing silently.
  *
- * 3. Open links to /roster?week=... — the existing roster view keyed by
- *    week — because there is no read-only /rosters/:id route in this app.
+ * 3. Open links to /roster?week=... - the existing roster view keyed by
+ *    week - because there is no read-only /rosters/:id route in this app.
  *
  * 4. No "approved by" name on the row: rosters record approved_at but not
  *    who approved them.
@@ -124,7 +124,7 @@ export default function PastRosters() {
 
   /**
    * Export runs entirely in the browser. Archived rosters arrive with
-   * their shifts attached, so there is nothing to ask the server for —
+   * their shifts attached, so there is nothing to ask the server for -
    * and no export endpoint exists to ask.
    */
   const download = (name, rows) => {
@@ -289,7 +289,7 @@ export default function PastRosters() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by date — or pick a range"
+            placeholder="Search by date, or pick a range"
             aria-label="Search rosters by date"
             style={{ color: query ? "#e6e6e6" : undefined }}
           />
@@ -377,7 +377,7 @@ export default function PastRosters() {
           <div className="par-emptyrow">
             <span>
               {items.length === 0
-                ? "Nothing archived yet — rosters appear here once their week ends."
+                ? "Nothing archived yet, rosters appear here once their week ends."
                 : hasRange
                   ? `No rosters between ${rangeLabel()}.`
                   : "No rosters match that search."}
@@ -414,7 +414,7 @@ export default function PastRosters() {
                   <div className="par-num" role="cell" data-peak={g.peak > 0 && wage === g.peak}>
                     {fmtMoney(wage)}
                   </div>
-                  <div className="par-num" role="cell">{r.compliance_score ?? "—"}</div>
+                  <div className="par-num" role="cell">{r.compliance_score ?? "-"}</div>
                   <div role="cell"><span className="par-tag">Approved</span></div>
                   <div className="par-acts" role="cell">
                     <Link
@@ -443,7 +443,7 @@ export default function PastRosters() {
           <div className="par-foot">
             <span>
               Showing {Math.min(visible, approved.length)} of {approved.length}{" "}
-              {approved.length === 1 ? "roster" : "rosters"} — grouped by month, newest first
+              {approved.length === 1 ? "roster" : "rosters"}, grouped by month, newest first
             </span>
             {approved.length > visible && (
               <button type="button" className="par-link" onClick={() => setVisible(approved.length)}>
@@ -469,7 +469,7 @@ export default function PastRosters() {
             )}
           </div>
           <p className="par-intro">
-            Kept for reference only — every generated run of a week, including the drafts that were
+            Kept for reference only, every generated run of a week, including the drafts that were
             replaced before the roster was approved.
           </p>
 
@@ -488,10 +488,10 @@ export default function PastRosters() {
               const title = weekTitle(r.week_start);
               return (
                 <div className="par-vrow par-vdata" role="row" key={r.roster_id}>
-                  <div className="par-version" role="cell">{r.version || "—"}</div>
+                  <div className="par-version" role="cell">{r.version || "-"}</div>
                   <div className="par-vweek" role="cell" style={{ minWidth: 0 }}>{title}</div>
                   <div className="par-vnum" role="cell">{fmtHours(r.total_hours)}</div>
-                  <div className="par-vnum" role="cell">{r.compliance_score ?? "—"}</div>
+                  <div className="par-vnum" role="cell">{r.compliance_score ?? "-"}</div>
                   <div className="par-vstate" role="cell" data-on={state.on}>{state.text}</div>
                   <div className="par-acts" role="cell">
                     <Link
@@ -518,7 +518,7 @@ export default function PastRosters() {
       <p className="par-note">
         A week appears in the list above once it has been <strong>approved and its week has
         ended</strong>. Everything else that was generated for that week stays in{" "}
-        <strong>version history</strong> — superseded drafts and hand-edited runs — so the record of
+        <strong>version history</strong>, superseded drafts and hand-edited runs, so the record of
         what was tried remains readable. <strong>These rosters are settled</strong>: opening one shows
         what was worked, and nothing here changes it. The amber wage figure is simply the{" "}
         <strong>highest in its month</strong>, not a problem.

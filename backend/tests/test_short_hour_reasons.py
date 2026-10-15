@@ -5,7 +5,7 @@ statement of fact that tells the manager nothing about what to do. There are
 two quite different reasons an hour ends up like that:
 
   NOBODY COULD BE STRETCHED   somebody finishing nearby could have covered it
-                              and none of them legally could — the 12-hour
+                              and none of them legally could - the 12-hour
                               cap, the rest gap, a curfew, a weekly limit.
                               A rota problem: move somebody's day.
 
@@ -14,9 +14,9 @@ two quite different reasons an hour ends up like that:
                               smear a missing shift across three people's
                               finish times (§7d). Needs another person.
 
-The manager asked both questions in the same breath — "why is the solver not
+The manager asked both questions in the same breath - "why is the solver not
 adding an extra person for the six and seven hour gaps, and on Thursday just
-for one hour why can't it extend someone's shift" — which is exactly the
+for one hour why can't it extend someone's shift" - which is exactly the
 distinction the advisory was failing to draw.
 """
 from datetime import date, timedelta
@@ -71,7 +71,7 @@ class TestALongRunSaysItIsAMissingShift:
 
     def _shop_with_an_evening_nobody_can_staff(self):
         """The shop normally runs two people all evening. Only one of the
-        two is still employed, so the roster can only ever put one on — a
+        two is still employed, so the roster can only ever put one on - a
         run of short hours far longer than a changeover.
         """
         def week(w):
@@ -109,23 +109,23 @@ class TestALongRunSaysItIsAMissingShift:
         lines = short_lines(result)
         assert lines, (
             "this shop cannot staff its evening two-deep, so some hours must "
-            f"be reported one short — got {result['issues']}"
+            f"be reported one short - got {result['issues']}"
         )
         assert any("missing shift" in line for line in lines), (
             "a run far longer than a changeover is a missing shift and the "
             "advisory should say so, rather than leaving the manager to "
-            f"guess whether the solver even tried — got {lines}"
+            f"guess whether the solver even tried - got {lines}"
         )
 
 
-# THE OTHER BRANCH — "nobody could be extended into it" — HAS NO TEST HERE,
+# THE OTHER BRANCH - "nobody could be extended into it" - HAS NO TEST HERE,
 # and that is a gap worth stating rather than papering over.
 #
 # It needs a short run of one or two hours that a neighbouring shift could
 # reach and is refused on every candidate: the 12-hour cap, the rest gap, a
 # curfew, a weekly limit. Several fixtures were tried and none produced one,
 # because in a shop small enough to write as a fixture `required` drops at
-# exactly the hour the constraint would bite — the same reason the presence
+# exactly the hour the constraint would bite - the same reason the presence
 # cap has no unit test (see TestPresenceCapsArrivals).
 #
 # It is not hypothetical: the reference shop hits it every week. Thursday

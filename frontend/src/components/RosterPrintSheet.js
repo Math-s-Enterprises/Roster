@@ -9,7 +9,7 @@
  * like a screenshot of an app.
  *
  * A rota on a staffroom wall is a different document. It answers one question
- * — who is in, and when — for somebody standing three feet away. So this is
+ * - who is in, and when - for somebody standing three feet away. So this is
  * its own layout: shop name, the week, names down the left grouped by role,
  * days across, times in the cells. Nothing else.
  *
@@ -43,7 +43,7 @@ export default function RosterPrintSheet({ roster, employees, shop, pages = 1 })
   // Grouped by role into a map, NOT by walking the list and starting a new
   // group whenever the role changes. The employee list is not guaranteed to
   // arrive sorted by role, and consecutive-grouping turns "Manager,
-  // Assistant, Manager" into three headings — the same role printed twice,
+  // Assistant, Manager" into three headings - the same role printed twice,
   // which reads as a mistake on a wall.
   //
   // Group order follows first appearance, so the sheet matches whatever
@@ -72,7 +72,7 @@ export default function RosterPrintSheet({ roster, employees, shop, pages = 1 })
     Math.max(MIN_ROW_MM, (USABLE_MM_PER_PAGE * Math.max(1, pages)) / rows),
   );
   // Type scales with the row, within limits that stay legible in both
-  // directions — tiny is unreadable, huge looks like a mistake.
+  // directions - tiny is unreadable, huge looks like a mistake.
   const fontPt = Math.min(9.5, Math.max(5.2, rowMm * 1.35));
 
   const cell = (shift) => {

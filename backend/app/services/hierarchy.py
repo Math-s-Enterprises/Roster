@@ -7,7 +7,7 @@ needs to rank or sort people:
   * the order rows appear in the roster grid, print view and exports
   * grouping in reports
 
-Configurable rather than hard-coded because job titles differ per business —
+Configurable rather than hard-coded because job titles differ per business -
 one shop's "Duty Manager" is another's "Shift Lead", and a shop with no
 supervisors at all should not have a phantom rung in its ladder.
 
@@ -57,7 +57,7 @@ def effective_hierarchy(
     """The ladder as it actually applies, including titles nobody has placed.
 
     A role that exists on an employee but not in the configured list ranks
-    last, which is safe but invisible — the owner has no way to notice they
+    last, which is safe but invisible - the owner has no way to notice they
     need to position it. Appending those roles here means the settings screen
     shows them at the bottom, where they can be dragged up.
     """
@@ -73,8 +73,8 @@ def effective_hierarchy(
 def match_role(raw: Optional[str], shop: Optional[Dict[str, Any]] = None) -> str:
     """Resolve a job title read from a file against the shop's own ladder.
 
-    The shop's spelling wins where it matches — "duty mgr" on a sheet becomes
-    the shop's "Duty Manager" — so imported staff sort correctly instead of
+    The shop's spelling wins where it matches - "duty mgr" on a sheet becomes
+    the shop's "Duty Manager" - so imported staff sort correctly instead of
     landing at the bottom on a punctuation difference.
 
     A title the shop does not have is kept exactly as written. It then shows
@@ -83,7 +83,7 @@ def match_role(raw: Optional[str], shop: Optional[Dict[str, Any]] = None) -> str
     Deliberately does NOT collapse titles into broader ones. An earlier
     version of the import mapped "Duty Manager", "Assistant Manager" and
     "Customer Service Manager" all onto "Manager", and "Night Shift" and
-    "Goods Inwards" onto "Stocker" — flattening five rungs of this very
+    "Goods Inwards" onto "Stocker" - flattening five rungs of this very
     ladder into one and inventing roles the shop had never configured.
     Distinctions the manager drew in their own roster are theirs to keep.
     """
@@ -165,7 +165,7 @@ def display_order(
     employees: Iterable[Dict[str, Any]],
     shop: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
-    """Row order for anything a human reads — grid, exports, print, email.
+    """Row order for anything a human reads - grid, exports, print, email.
 
     Deliberately separate from `sort_employees`, which decides who is
     considered first when handing out hours. That order follows the job
@@ -177,7 +177,7 @@ def display_order(
     the default stays sensible rather than arbitrary.
 
     Someone hired after the last reorder is not in the stored list. They sort
-    after everyone who is, by seniority — appearing at the bottom is
+    after everyone who is, by seniority - appearing at the bottom is
     noticeable and easy to fix, whereas silently slotting them mid-list would
     look like the saved order had drifted on its own.
     """

@@ -91,10 +91,10 @@ def check_prerequisites() -> None:
         ).stdout.strip()
         number = int(version.lstrip("v").split(".")[0] or 0)
         (ok if number >= 18 else fail)(
-            f"Node {version}" + ("" if number >= 18 else " — 18+ required")
+            f"Node {version}" + ("" if number >= 18 else " - 18+ required")
         )
     else:
-        fail("Node.js not found — install from https://nodejs.org")
+        fail("Node.js not found - install from https://nodejs.org")
 
     if which("yarn"):
         ok("yarn")
@@ -157,9 +157,9 @@ def install_backend() -> None:
     # rather than here.
     #
     # Output is NOT suppressed. pip can sit silent for a minute or more while
-    # it resolves and builds, and a silent script looks like a hung one —
+    # it resolves and builds, and a silent script looks like a hung one -
     # which is exactly when someone reaches for Ctrl+C.
-    say(f"  {DIM}installing packages — pip output follows, this takes a minute{RESET}")
+    say(f"  {DIM}installing packages - pip output follows, this takes a minute{RESET}")
     say()
     run([str(venv_python()), "-m", "pip", "install", "--upgrade", "pip", "--quiet"])
 
@@ -172,7 +172,7 @@ def install_backend() -> None:
     if installed:
         ok("backend packages installed")
     else:
-        fail("pip install failed — see the output above")
+        fail("pip install failed - see the output above")
 
     # Only needed to run the test suite.
     run([str(venv_python()), "-m", "pip", "install", "mongomock_motor", "--quiet"])
@@ -183,7 +183,7 @@ def install_backend() -> None:
 def _report_optional_features() -> None:
     """Say which optional integrations are configured, and how to enable them.
 
-    These are all genuinely optional — the app runs without any of them — but
+    These are all genuinely optional - the app runs without any of them - but
     silence would leave someone wondering why the PDF upload box is greyed
     out.
     """
@@ -226,11 +226,11 @@ def install_frontend() -> None:
         return
 
     manager = "yarn" if which("yarn") else "npm"
-    say(f"  {DIM}running {manager} install — this is the slow one...{RESET}")
+    say(f"  {DIM}running {manager} install - this is the slow one...{RESET}")
     if run([manager, "install"], cwd=FRONTEND):
         ok(f"{manager} install complete")
     else:
-        fail(f"{manager} install failed — run it manually in frontend/")
+        fail(f"{manager} install failed - run it manually in frontend/")
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +266,7 @@ def check_mongo() -> None:
     say(f"  {DIM}Docker (fastest if you have it):{RESET}")
     say("      docker run -d -p 27017:27017 --name roster-mongo mongo:7")
     say(f"  {DIM}MongoDB Atlas (free, nothing to install):{RESET}")
-    say("      https://www.mongodb.com/cloud/atlas — create a free cluster,")
+    say("      https://www.mongodb.com/cloud/atlas - create a free cluster,")
     say("      then paste its connection string into MONGO_URL in backend/.env")
     say(f"  {DIM}Local install:{RESET}")
     say("      https://www.mongodb.com/try/download/community")
@@ -290,12 +290,12 @@ def print_next_steps() -> None:
 
     header(f"{GREEN}Ready.{RESET} Open two terminals:")
     say()
-    say(f"  {BOLD}Terminal 1 — backend{RESET}")
+    say(f"  {BOLD}Terminal 1 - backend{RESET}")
     say(f"      cd backend")
     say(f"      {activate}")
     say(f"      uvicorn app.main:app --reload --port 8001")
     say()
-    say(f"  {BOLD}Terminal 2 — frontend{RESET}")
+    say(f"  {BOLD}Terminal 2 - frontend{RESET}")
     say(f"      cd frontend")
     say(f"      {runner} start")
     say()
@@ -310,7 +310,7 @@ def print_next_steps() -> None:
 
 
 def main() -> None:
-    say(f"{BOLD}Roster — local setup{RESET}")
+    say(f"{BOLD}Roster - local setup{RESET}")
     check_prerequisites()
     if any("Python" in p for p in problems):
         print_next_steps()
@@ -329,7 +329,7 @@ if __name__ == "__main__":
         # Ctrl+C during a long pip install is common. Exit cleanly with a
         # useful next step rather than dumping a traceback that looks like a
         # crash in the script itself.
-        say(f"\n\n{YELLOW}Interrupted.{RESET} Nothing was broken — re-run "
+        say(f"\n\n{YELLOW}Interrupted.{RESET} Nothing was broken - re-run "
             f"{BOLD}python bootstrap.py{RESET} to pick up where it left off.")
         say(f"{DIM}Installs are resumable; pip skips whatever is already there.{RESET}")
         sys.exit(130)

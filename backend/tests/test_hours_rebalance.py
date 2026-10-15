@@ -3,7 +3,7 @@
 The week used to come out with the right TOTAL hours going to the wrong
 people. Measured on a real 25-person shop: the week was within 2% of normal
 size, and 11 of 18 hourly staff were more than 2h from what they had been
-working — Jane on 13h against a recent 32, Roisín on 31h against a recent 21.
+working - Jane on 13h against a recent 32, Roisín on 31h against a recent 21.
 
 Two earlier attempts to fix this inside the per-slot ranking changed nothing,
 and could not have: a sort answers "who takes THIS shift", while "Jane should
@@ -119,7 +119,7 @@ class TestTheTargetTracksWhatTheyWorkNow:
 
 class TestTheAccountingStaysExact:
     """`_unrecord_shift` is the inverse of `_record_shift`, and the safety of
-    the pass rests on it. A counter left un-reversed does not fail loudly — it
+    the pass rests on it. A counter left un-reversed does not fail loudly - it
     quietly inflates somebody's hours for the rest of the week."""
 
     def _builder(self):
@@ -181,7 +181,7 @@ def test_an_unrostered_employee_gets_an_existing_minimum_length_shift():
 
 class TestItActuallyEvensThemOut:
     def _lopsided(self):
-        """`hog` has been working four days, `spare` one — and the shop runs
+        """`hog` has been working four days, `spare` one - and the shop runs
         five identical shifts a day, so nobody owns anything."""
         return history({"hog": ["mon", "tue", "wed", "thu"],
                         "spare": ["fri"]}, count=10)
@@ -196,7 +196,7 @@ class TestItActuallyEvensThemOut:
         """The pass's actual contract: it only ever moves totals closer.
 
         Asserted by solving the same week twice, once with `_rebalance_hours`
-        stubbed out. Anything else is guesswork — an early version of this
+        stubbed out. Anything else is guesswork - an early version of this
         test asserted somebody would land within 12h of their usual, which
         failed on a two-person shop where covering seven days simply requires
         more hours than either of them normally works. Coverage beats the
@@ -248,7 +248,7 @@ def lopsided_builder(placed, hist, **kwargs):
     WHY NOT END-TO-END: on small synthetic shops the solver reproduces history
     closely, so nobody ends up under their usual hours and the pass correctly
     does nothing. Every guard written as a full solve therefore passed no
-    matter what I broke — sabotaging the owned-shift check, the pinned check,
+    matter what I broke - sabotaging the owned-shift check, the pinned check,
     the single-day check and the fairness guard all left the suite green,
     because the pass was never running.
 
@@ -294,7 +294,7 @@ class TestTheRulesItMustNeverBreak:
 
     def test_the_pass_actually_fires_on_this_fixture(self):
         """Guard for the guards. Every test below is worthless if the pass
-        does nothing here — which is exactly how the first version of this
+        does nothing here - which is exactly how the first version of this
         file passed six sabotages in a row."""
         builder = lopsided_builder(
             {"hog": ["mon", "tue", "wed", "thu"], "spare": ["fri"]}, self.HIST)
@@ -304,13 +304,13 @@ class TestTheRulesItMustNeverBreak:
         before = held_by(builder, "spare")
         builder._rebalance_hours()
         assert held_by(builder, "spare") != before, (
-            "the pass moved nothing — every guard in this class is vacuous"
+            "the pass moved nothing - every guard in this class is vacuous"
         )
 
     def test_a_settled_shift_is_never_moved_to_even_out_hours(self):
         """The bug at scheduler.py:1738 in its newest possible form.
 
-        `hog` owns Monday outright — he has worked it every week. He is also
+        `hog` owns Monday outright - he has worked it every week. He is also
         well over his usual hours, so the pass wants to take work off him. It
         must take something else.
         """
@@ -323,7 +323,7 @@ class TestTheRulesItMustNeverBreak:
         )
         builder._rebalance_hours()
         assert "mon" in held_by(builder, "hog"), (
-            "hog's settled Monday was moved to even out hours — exactly the "
+            "hog's settled Monday was moved to even out hours - exactly the "
             "regression scheduler.py:1738 warns about"
         )
 
@@ -337,8 +337,8 @@ class TestTheRulesItMustNeverBreak:
         the second regular's shift read as unowned and could be handed to
         somebody short of hours. `regulars_of` returns the whole set.
 
-        Here `first` and `second` both work Monday 06:00-14:00 every week —
-        the slot runs twice — and `second` is over their usual hours, which
+        Here `first` and `second` both work Monday 06:00-14:00 every week -
+        the slot runs twice - and `second` is over their usual hours, which
         makes them the obvious donor. Their Monday must still not move.
         """
         from app.services import slot_owners
@@ -376,7 +376,7 @@ class TestTheRulesItMustNeverBreak:
         )
 
     def test_a_salaried_employee_can_never_receive_a_rebalanced_shift(self):
-        """Asked directly: "Emma's shift was given to Corey — did you cause
+        """Asked directly: "Emma's shift was given to Corey - did you cause
         that?"
 
         Corey is salaried. This pass only moves work between people paid by
@@ -432,7 +432,7 @@ class TestTheRulesItMustNeverBreak:
 
         Asserted as total distance-from-usual before and after, which is the
         quantity the guard actually protects. An earlier version asserted a
-        loose per-person bound and stayed green when the guard was deleted —
+        loose per-person bound and stayed green when the guard was deleted -
         it was measuring something the sabotage did not affect.
         """
         builder = lopsided_builder(
@@ -459,7 +459,7 @@ class TestTheRulesItMustNeverBreak:
         show it working.
 
         With every shift the same length, every available move happens to be
-        fair and deleting the guard changes nothing — which is why the
+        fair and deleting the guard changes nothing - which is why the
         earlier version of this test stayed green under sabotage. The guard
         only bites when a LONG shift could go to somebody only slightly
         short: both of them end further from a normal week than they started.
@@ -490,7 +490,7 @@ class TestTheRulesItMustNeverBreak:
         this guard existed.
 
         Constructed so the move IMPROVES the total and still crosses the
-        donor over — otherwise the fairness guard already blocks it and this
+        donor over - otherwise the fairness guard already blocks it and this
         test would pass for the wrong reason. Donor 5h over holding a 10h
         shift, receiver 20h under: total 25 -> 15, so it looks like a win
         right up until you notice the donor is now 5h short.
@@ -506,7 +506,7 @@ class TestTheRulesItMustNeverBreak:
         used, aim = builder.hours_used["hog"], builder.hours_aim["hog"]
         assert used >= aim - 0.01, (
             f"hog was 5h over their usual week and has been pushed to "
-            f"{used:.1f}h against {aim:.1f}h — taking too much is the same "
+            f"{used:.1f}h against {aim:.1f}h - taking too much is the same "
             f"complaint from the other direction"
         )
         assert not moved or used >= aim
@@ -517,7 +517,7 @@ class TestTheRulesItMustNeverBreak:
 
         The shifts exist because the shop needs them. Dropping one to tidy up
         a total would leave an hour with nobody on the floor, which §1
-        forbids outright — so the pass moves work between people and never
+        forbids outright - so the pass moves work between people and never
         removes it from the roster.
         """
         builder = lopsided_builder(
@@ -542,7 +542,7 @@ class TestTheRulesItMustNeverBreak:
         `_try_move_shift` lifts the donor's shift BEFORE testing the
         receiver, because the receiver's own hours would otherwise count
         against them. If the receiver turns out to be ineligible, the shift
-        has to go back — and nothing else in this file exercises that,
+        has to go back - and nothing else in this file exercises that,
         because in every other fixture the receiver is eligible and the move
         succeeds. Sabotaging the restore left the suite green.
 
@@ -605,7 +605,7 @@ class TestEndToEnd:
         """The bug at scheduler.py:1738 in its newest possible form.
 
         `owner` works Monday every single week and owns it outright.
-        `hungry` is far below a normal week and would benefit — and must
+        `hungry` is far below a normal week and would benefit - and must
         still not be given it.
         """
         hist = history({"owner": ["mon", "tue", "wed", "thu"],
@@ -615,7 +615,7 @@ class TestEndToEnd:
         monday = [s["employee_id"] for s in result["shifts"]
                   if s["day"] == "mon"]
         assert "owner" in monday, (
-            "a settled Monday was moved to even out hours — exactly the "
+            "a settled Monday was moved to even out hours - exactly the "
             "regression scheduler.py:1738 warns about"
         )
 
@@ -657,7 +657,7 @@ class TestEndToEnd:
         assert len(staffed) >= 5, f"only {len(staffed)} days are staffed"
 
     def test_the_same_week_rebalances_the_same_way_every_time(self):
-        """Repair, not variety — a version nobody can reproduce cannot be
+        """Repair, not variety - a version nobody can reproduce cannot be
         explained (§2c)."""
         hist = history({"hog": ["mon", "tue", "wed", "thu"],
                         "spare": ["fri"]}, count=10)

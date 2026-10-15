@@ -2,7 +2,7 @@
 
 WHY THIS EXISTS
 ---------------
-The scheduler learns from approved rosters — weeks that worked. But the
+The scheduler learns from approved rosters - weeks that worked. But the
 highest-signal data is the CORRECTION: the manager looked at what the solver
 proposed and changed it. That is them saying "you got this wrong, here is
 right", and it is worth more than another example of a week that was fine.
@@ -12,8 +12,8 @@ the moment a manager touched a roster, what the solver had proposed was gone.
 
 WHAT IS COMPARED
 ----------------
-`generated_shifts` — a frozen copy of the solver's output, written once at
-generation and never touched by edits — against the final `shifts` at the
+`generated_shifts` - a frozen copy of the solver's output, written once at
+generation and never touched by edits - against the final `shifts` at the
 moment of approval. The difference is exactly what the manager decided to
 change, and nothing else.
 
@@ -32,7 +32,7 @@ WHAT THIS DOES NOT DO
 ---------------------
 It does not judge. Whether a correction means anything is decided later by
 comparing corrections with the times the manager accepted the same proposal
-unchanged — see `docs/CORRECTIONS_LEARNING.md`.
+unchanged - see `docs/CORRECTIONS_LEARNING.md`.
 """
 from __future__ import annotations
 
@@ -40,8 +40,8 @@ from math import sqrt
 from typing import Any, Dict, List, Optional, Tuple
 
 # A shift is identified by who works it and on what day. That pairing is
-# unique within a roster — the validator refuses to roster anybody twice on
-# one day — which is what makes a diff possible at all.
+# unique within a roster - the validator refuses to roster anybody twice on
+# one day - which is what makes a diff possible at all.
 Key = Tuple[str, str]
 
 
@@ -55,7 +55,7 @@ def _worked(shifts: List[Dict[str, Any]]) -> Dict[Key, Dict[str, Any]]:
     """Working shifts only, keyed by (employee, day).
 
     Leave is excluded throughout. Somebody being off sick is not the manager
-    correcting the scheduler — it is the world happening — and counting it
+    correcting the scheduler - it is the world happening - and counting it
     would teach the roster to avoid people who had been ill.
     """
     out: Dict[Key, Dict[str, Any]] = {}
@@ -79,7 +79,7 @@ def diff_roster(
 ) -> List[Dict[str, Any]]:
     """What the manager changed, as a list of corrections.
 
-    Empty means they approved the roster exactly as proposed — which is the
+    Empty means they approved the roster exactly as proposed - which is the
     outcome the whole product is aiming at, and worth recording as such.
     """
     before, after = _worked(generated), _worked(final)
@@ -171,7 +171,7 @@ def signature(correction: Dict[str, Any]) -> str:
     """A stable id for "the same correction happening again".
 
     Deliberately includes the day and the slot. Moving Megan off Tuesday
-    06:00 is a different decision from moving her off Saturday 06:00 — in the
+    06:00 is a different decision from moving her off Saturday 06:00 - in the
     manager's head those are different shifts, and collapsing them would
     invent a preference neither of them holds.
     """
@@ -191,7 +191,7 @@ def _approved_first(rosters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Approved weeks, newest first, one per week.
 
     Only approved rosters count. A draft the manager is still working on is
-    not them telling you anything yet — they may be halfway through an edit.
+    not them telling you anything yet - they may be halfway through an edit.
     """
     from app.services.learning import latest_per_week
 
@@ -364,7 +364,7 @@ def summarise(rosters: List[Dict[str, Any]]) -> Dict[str, Any]:
 # rather than from a screen.
 #
 # So a repeated correction becomes a SUGGESTION to change a setting that
-# already exists and is already editable — a fixed shift, a preferred day off,
+# already exists and is already editable - a fixed shift, a preferred day off,
 # an availability window. Nothing is applied without being accepted. After
 # that it lives in the ordinary UI, where it can be seen and undone by
 # somebody who has never read this file.
@@ -378,7 +378,7 @@ def _suggest_from(pattern: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     turned into anything. A repeated `swap` is deliberately NOT one of them:
     the shop's own approved rosters already teach that through slot ownership
     (see slot_owners.py), so suggesting a fixed shift on top would be a second
-    switch for the same fact — and two switches that can disagree is one too
+    switch for the same fact - and two switches that can disagree is one too
     many.
     """
     kind = pattern.get("kind")
@@ -423,7 +423,7 @@ def _suggest_from(pattern: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             ),
             "effect": (
                 f"{day} is added to their preferred days off. Nothing else "
-                f"for you to do — it appears on their employee record, where "
+                f"for you to do, it appears on their employee record, where "
                 f"you can undo it."
             ),
         }
@@ -435,8 +435,8 @@ def _suggest_from(pattern: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         #
         # Anything else the manager repeatedly reshapes the same way
         # falls through to the fixed shift below. That used to return None,
-        # which threw away the commonest edit of all — lengthening a shift,
-        # 06:00-10:00 becoming 06:00-12:00 — because the start had not
+        # which threw away the commonest edit of all - lengthening a shift,
+        # 06:00-10:00 becoming 06:00-12:00 - because the start had not
         # changed. A finish time says little about the PERSON but a great
         # deal about the shift, and the manager redrawing the same one every
         # week is the clearest statement there is that it has the wrong shape.
@@ -446,7 +446,7 @@ def _suggest_from(pattern: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             return None
 
         if now_start == was_start and now_end != was_end:
-            # SAME start, different finish — the shift is the wrong length.
+            # SAME start, different finish - the shift is the wrong length.
             #
             # Deliberately not widened to "any reshape". An EARLIER start is
             # already decided the other way (see the test named for it): being
@@ -495,7 +495,7 @@ def _suggest_from(pattern: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             ),
             "effect": (
                 f"Their availability is set to start no earlier than "
-                f"{now_start}. Nothing else for you to do — it appears on "
+                f"{now_start}. Nothing else for you to do, it appears on "
                 f"their employee record, where you can undo it."
             ),
         }

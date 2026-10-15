@@ -6,7 +6,7 @@ The browser already builds one with jsPDF, but that runs in the manager's
 browser and dispatch runs on the server, so it cannot be reused. The two also
 answer different questions: the browser's is a flat LIST of shifts, one row
 each, which is fine to scroll. What an owner wants attached to an email is
-what goes on the wall — everybody against every day, readable at a glance.
+what goes on the wall - everybody against every day, readable at a glance.
 
 So this deliberately reproduces the PRINTED ROTA rather than the browser's
 export.
@@ -15,7 +15,7 @@ WHY REPORTLAB
 -------------
 It draws directly and has no system dependencies. WeasyPrint would render the
 existing HTML, which sounds like less duplication, but it needs Cairo and
-Pango installed on the host — a deployment problem in exchange for a layout
+Pango installed on the host - a deployment problem in exchange for a layout
 that still would not match the print sheet's page-fitting.
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 _LABELS = {"mon": "Mon", "tue": "Tue", "wed": "Wed", "thu": "Thu",
            "fri": "Fri", "sat": "Sat", "sun": "Sun"}
 
-# Paper is white whatever the screen is doing — the same rule the print
+# Paper is white whatever the screen is doing - the same rule the print
 # stylesheet follows. A dark rota costs a fortune in toner and reads worse.
 _INK = colors.HexColor("#111111")
 _MUTE = colors.HexColor("#6b7280")
@@ -85,7 +85,7 @@ def build_roster_pdf(
         buffer, pagesize=landscape(A4),
         leftMargin=12 * mm, rightMargin=12 * mm,
         topMargin=12 * mm, bottomMargin=12 * mm,
-        title=f"{shop_name} — week of {week_start}",
+        title=f"{shop_name}, week of {week_start}",
         author="Roster",
     )
 
@@ -124,7 +124,7 @@ def build_roster_pdf(
                 leave = _leave_label(shift)
                 start, end = shift.get("start"), shift.get("end")
                 if leave or not (start and end):
-                    parts.append(leave or "—")
+                    parts.append(leave or "-")
                 else:
                     hours += paid_hours(start, end, breaks_paid=breaks_are_paid)
                     # ONE LINE. These were stacked on the assumption that a

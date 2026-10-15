@@ -34,15 +34,15 @@ class TestShiftCells:
         assert parsed["hours"] == pytest.approx(hours)
 
     def test_missing_opening_bracket(self):
-        """Real typo: '06.00-16.00 10)' — the '(' was never typed."""
+        """Real typo: '06.00-16.00 10)' - the '(' was never typed."""
         assert parse_shift_cell("06.00-16.00 10)")["start"] == "06:00"
 
     def test_doubled_opening_bracket(self):
-        """Real typo: '10.00-19.00(9(' — the ')' came out as '('."""
+        """Real typo: '10.00-19.00(9(' - the ')' came out as '('."""
         assert parse_shift_cell("10.00-19.00(9(")["end"] == "19:00"
 
     def test_trailing_annotation_ignored(self):
-        """'*' meant 'working off-site' — a note, not scheduling data."""
+        """'*' meant 'working off-site' - a note, not scheduling data."""
         assert parse_shift_cell("07.00-15.00(8)*")["hours"] == pytest.approx(8.0)
 
     def test_overnight_flagged_and_measured_forwards(self):
@@ -128,7 +128,7 @@ class TestWeekEnding:
         ("we 22nd feb 26", "2026-02-16"),
         ("we May 31ST 26     ", "2026-05-25"),
         ("we  June 7th 26     centra", "2026-06-01"),
-        # Weeks that straddle a month boundary — the Monday is in the
+        # Weeks that straddle a month boundary - the Monday is in the
         # previous month to the one the label names.
         ("we march 1st 26", "2026-02-23"),
         ("we Aug 2nd 26", "2026-07-27"),
@@ -221,7 +221,7 @@ class TestSeveralWeeksOnOneSheet:
 
     Managers keep a month in a single tab, one block under another. This used
     to read only the first header row, so every block below it became more
-    rows of the FIRST week — a six-week sheet arrived as one week holding 42
+    rows of the FIRST week - a six-week sheet arrived as one week holding 42
     shifts across 7 days, the same person on Monday three times. That left the
     shop on one week of history when it had six, below the four the demand
     profile needs, so ownership never formed and the roster fell back to role
@@ -258,14 +258,14 @@ class TestSeveralWeeksOnOneSheet:
         assert len(self.weeks()) == 3
 
     def test_the_weeks_are_dated_from_their_own_headers(self):
-        """The sheet is called "Sheet1" — the dates exist only in the header
+        """The sheet is called "Sheet1" - the dates exist only in the header
         rows and the month title above them."""
         assert [w.week_start for w in self.weeks()] == [
             "2026-07-27", "2026-08-03", "2026-08-10",
         ]
 
     def test_a_block_starting_in_the_previous_month_is_still_right(self):
-        """"Mon 27th" under a title reading AUGUST is the 27th of JULY —
+        """"Mon 27th" under a title reading AUGUST is the 27th of JULY -
         the week that ends on 2 August."""
         assert self.weeks()[0].week_start == "2026-07-27"
 

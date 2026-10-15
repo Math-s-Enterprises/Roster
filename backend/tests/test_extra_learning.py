@@ -108,7 +108,7 @@ class TestAnExtraDoesNotRaiseTheStaffingLevel:
 class TestAnExtraTeachesTheShape:
     def test_a_repeated_extra_becomes_a_shift_the_shop_runs(self):
         """"so in the future it can learn if there is a shift from this time
-        to this" — the shape enters the vocabulary on its own frequency."""
+        to this" - the shape enters the vocabulary on its own frequency."""
         profile = build_profile(
             make_shop(), history(extra_weeks=tuple(range(12))), ROLES,
             for_week=WEEK)
@@ -153,7 +153,7 @@ class TestOwnershipFormsOnlyOnRealSlots:
 
     def test_extras_are_ignored_when_no_shapes_are_supplied(self):
         """The diagnostics call `build_owners` without a profile. There,
-        extras must stay out — the old, safe behaviour."""
+        extras must stay out - the old, safe behaviour."""
         hist = history(extra_weeks=tuple(range(12)))
         owners = slot_owners.build_owners(hist, {"a", "b", "emma"})
         assert slot_owners.owner_of(owners, "mon", *LATE) is None

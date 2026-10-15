@@ -2,8 +2,8 @@
   "version": "0.2.0",
   "configurations": [
     {
-      // Runs the API with the debugger attached. Set a breakpoint anywhere —
-      // a route, or inside scheduler.py — hit the endpoint, and step through
+      // Runs the API with the debugger attached. Set a breakpoint anywhere -
+      // a route, or inside scheduler.py - hit the endpoint, and step through
       // it. Much better than print statements for working out why a roster
       // came out the way it did.
       "name": "Backend (FastAPI, debug)",

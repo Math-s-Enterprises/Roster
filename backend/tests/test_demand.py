@@ -1,7 +1,7 @@
 """Tests for demand learning and demand-driven scheduling.
 
 The scheduler's four non-negotiable rules are covered in test_scheduler.py and
-are unaffected by any of this — a demand curve is a target, never a licence to
+are unaffected by any of this - a demand curve is a target, never a licence to
 break a constraint. The tests at the bottom of this file prove that.
 """
 import pytest
@@ -63,8 +63,8 @@ def roster(week_start, shifts):
 def weekly_history(weeks, shifts_per_week, end="2026-06-29"):
     """`weeks` identical weeks, ending at `end` and going backwards.
 
-    Genuinely seven days apart. They used to be one DAY apart — thirty
-    "weeks" that between them spanned a month — which was invisible while the
+    Genuinely seven days apart. They used to be one DAY apart - thirty
+    "weeks" that between them spanned a month - which was invisible while the
     lookback was applied by position. Once weeks were weighted by age it
     mattered immediately: everything was the same age, so nothing aged out.
     """
@@ -97,7 +97,7 @@ class TestLearnDemand:
         """Rounding up compounds over 168 hours and overstaffs the week.
 
         Three weeks of one person and one week of two averages 1.25, which
-        must round to 1. Ceiling would say 2 — a 60% overstaff on that hour.
+        must round to 1. Ceiling would say 2 - a 60% overstaff on that hour.
         """
         history = (
             weekly_history(3, [("e1", "mon", "09:00", "10:00")])
@@ -266,7 +266,7 @@ class TestDemandDrivenSolving:
 
         Start times are held to the learned patterns because a start time is
         what a shift IS to the person working it. Finishes are allowed to
-        move — closing a one-hour gap at changeover by keeping somebody until
+        move - closing a one-hour gap at changeover by keeping somebody until
         16:00 is what a manager does, and far better than rostering a whole
         extra person for that hour.
         """
@@ -434,7 +434,7 @@ class TestDemandDrivenSolving:
 
     def test_part_timers_are_not_overloaded_relative_to_contract(self):
         """Fairness is measured against each person's own contracted hours,
-        not absolute hours — otherwise part-timers look permanently 'owed'
+        not absolute hours - otherwise part-timers look permanently 'owed'
         work and absorb shifts they are not contracted for."""
         curve = [0] * 24
         for h in range(6, 22):
@@ -476,7 +476,7 @@ class TestDemandDrivenSolving:
         assert result["issues"], "shortfall against the curve must be visible"
 
     def test_no_curve_no_shifts_but_floor_still_enforced(self):
-        """A zero curve must not leave the shop unattended — the coverage
+        """A zero curve must not leave the shop unattended - the coverage
         floor is a separate, non-negotiable guarantee."""
         profile = profile_with([0] * 24, [("09:00", "17:00", 50)])
         employees = [make_employee("e1")]
@@ -582,7 +582,7 @@ class TestOneRosterPerWeek:
     """A week counted twice pulls twice as hard on everything learned.
 
     The API refuses to leave two approved rosters on one week, but the maths
-    is deduplicated too — a duplicate that arrives some other way (an import
+    is deduplicated too - a duplicate that arrives some other way (an import
     landing on a week that was already generated and approved) must not skew
     the result.
     """
@@ -640,7 +640,7 @@ class TestUnderstaffed:
 
     A shop needing 109 hours of cover from 60 hours of staff was told
     "everyone is on leave, at their hour cap, or curfew-restricted" sixty-six
-    times — sending the manager hunting for holidays and under-16s that did
+    times - sending the manager hunting for holidays and under-16s that did
     not exist, when the answer was simply that they had two employees.
     """
 
@@ -669,7 +669,7 @@ class TestUnderstaffed:
         assert hourly
         assert all("not enough staff hours" in i for i in hourly)
         assert not any("on leave" in i for i in hourly), (
-            "nobody is on leave — saying so sends the manager somewhere useless"
+            "nobody is on leave - saying so sends the manager somewhere useless"
         )
 
     def test_a_week_that_adds_up_says_nothing_about_staffing(self):
@@ -782,7 +782,7 @@ class TestADeliberateChangeIsFollowed:
 
     Cut two people from the evening and keep rostering it that way. Under a
     flat average every week counted the same, so three months later the
-    profile still said five — and still BUILT rosters with five, so two
+    profile still said five - and still BUILT rosters with five, so two
     shifts were deleted every week. The product was generating its own edit
     burden.
     """
@@ -803,7 +803,7 @@ class TestADeliberateChangeIsFollowed:
     def test_the_recent_pattern_wins_within_about_four_months(self):
         """Sixteen weeks of the new pattern settles it.
 
-        NOT eight — that was the first assertion here and it failed. With an
+        NOT eight - that was the first assertion here and it failed. With an
         8-week half-life, eight weeks of three against sixteen of five comes
         to 3.86, which rounds to 4, the same as a flat average. Halving the
         half-life to four weeks would have passed it, and would also have let
@@ -829,7 +829,7 @@ class TestADeliberateChangeIsFollowed:
         """Even before it flips the rounded number, it is moving.
 
         Asserted against the flat average of the same data, so this measures
-        the CHANGE rather than restating today's output — the number a flat
+        the CHANGE rather than restating today's output - the number a flat
         average would give is the thing being fixed.
         """
         recent = self._weeks(16, 3, "2026-06-29")
@@ -874,7 +874,7 @@ class TestLastYearIsNotDrift:
         )
 
         # It is FOUND and it counts, but one week from last year does not
-        # outvote twelve recent ones — and should not. A single observation
+        # outvote twelve recent ones - and should not. A single observation
         # is not a season. This is why the panel reports last year's figure
         # to the manager instead of the profile silently adjusting for it:
         # with one year of history there is exactly one data point, and the
@@ -899,7 +899,7 @@ class TestComparingAWeekToUsual:
     """The panel beside Advisories: what is different, and by how much.
 
     Never a refusal. Running leaner is a decision the manager is entitled to
-    make — what they should not do is make it by accident, which is what
+    make - what they should not do is make it by accident, which is what
     happens when nothing mentions that the evening normally has three people.
     """
 
@@ -941,7 +941,7 @@ class TestComparingAWeekToUsual:
 
     def test_consecutive_hours_become_one_note(self):
         """Hour by hour it would be four lines for one evening, and twenty a
-        day across the week — the one that mattered would be buried."""
+        day across the week - the one that mattered would be buried."""
         from app.services.demand import compare_to_usual
 
         notes = compare_to_usual(
@@ -982,7 +982,7 @@ class TestFinishGranularity:
 
     Top Oil ends a shift on a half hour once in 555 shifts, so whole hours
     match what its manager writes. Hardcoding that would have quietly dragged
-    every other shop's rota toward a convention it does not use — the §10b
+    every other shop's rota toward a convention it does not use - the §10b
     trap of treating one shop's numbers as everyone's.
     """
 
@@ -1004,7 +1004,7 @@ class TestFinishGranularity:
         assert finish_granularity(self._shifts(["14:00", "16:00", "22:00"])) == 60
 
     def test_a_shop_that_finishes_on_half_hours_keeps_them(self):
-        """The case that made this necessary — 10:30 and 12:30 finishes."""
+        """The case that made this necessary - 10:30 and 12:30 finishes."""
         from app.services.demand import finish_granularity
 
         assert finish_granularity(self._shifts(["10:30", "12:30", "14:00"])) == 30

@@ -4,7 +4,7 @@
     python ml/fix_duplicate_shifts.py --email you@example.com --commit
 
 A duplicate is invisible in the grid, which draws one cell per person per day,
-and wrong in every total that counts rows — two people at the reference shop
+and wrong in every total that counts rows - two people at the reference shop
 came out on 60h against a 40h contract, with four real shifts and two copies.
 
 The solver now drops these at the end of every solve, but rosters already
@@ -78,7 +78,7 @@ async def run(email: str, commit: bool) -> None:
 
         total_removed += len(removed)
         cleaned = [s for s in roster.get("shifts", []) if s not in removed]
-        print(f"\n{roster.get('week_start')} ({roster.get('version')}) — "
+        print(f"\n{roster.get('week_start')} ({roster.get('version')}) - "
               f"{len(removed)} duplicate(s)")
         for shift in removed:
             print(f"    {employees.get(shift['employee_id'], '?'):16}"
@@ -110,7 +110,7 @@ async def run(email: str, commit: bool) -> None:
     print(f"\n{total_removed} duplicate shift(s) across "
           f"{len(rosters)} roster(s).")
     if not commit:
-        print("Dry run — nothing changed. Re-run with --commit to apply.")
+        print("Dry run - nothing changed. Re-run with --commit to apply.")
 
 
 def main() -> None:

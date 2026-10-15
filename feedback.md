@@ -1,4 +1,4 @@
-# Working with Aneesh on Roster — feedback for future sessions
+# Working with Aneesh on Roster - feedback for future sessions
 
 Compiled at the end of a long build. Everything here is a correction he made,
 a preference he stated, or a mistake I made and should not repeat.
@@ -13,7 +13,7 @@ about *how to work*.
 **Plan before coding. Always.** Stated early and repeated: *"Never jump
 directly into coding"*, *"Before we start coding, we will go step by step."*
 Explain the approach, get agreement, then build. He will say "yes please" when
-ready — that is the signal, not silence.
+ready - that is the signal, not silence.
 
 **Ask when the decision is genuinely his.** He engages properly with
 multiple-choice questions and often improves the options rather than picking
@@ -30,7 +30,7 @@ across."* Long explanations are not appreciated; the finding is.
 Emergent and is disposable. Do not tiptoe around existing code.
 
 **He wants the reasoning, not just the result.** Every time I explained *why*
-something broke — the mechanism, not the symptom — the conversation moved
+something broke - the mechanism, not the symptom - the conversation moved
 faster. When I gave a conclusion without the chain, he asked for it.
 
 **Currency is euros.** He corrected a `$` in the UI. Irish shop.
@@ -42,7 +42,7 @@ why a guard or threshold exists from code alone.
 
 ---
 
-## 2. Corrections he made — and what I had wrong
+## 2. Corrections he made - and what I had wrong
 
 **Overnight hours belong to the day the shift starts.**
 I proposed a "scarcest hours first" fix for uncovered Sundays. He overruled me:
@@ -51,7 +51,7 @@ and my fix would have been wrong. *Lesson: when he contradicts a diagnosis, he
 is usually reasoning from the real shop and I am reasoning from the code.*
 
 **Familiarity must block, not warn.**
-I had it as a soft warning. *"These are not rules — if a person hasn't worked
+I had it as a soft warning. *"These are not rules - if a person hasn't worked
 that shift before, avoid it completely."* Same again for manual edits: *"It
 should not allow me to do it. It should pop up a dialog saying it cannot be
 done."* When he says a rule, he means a hard constraint.
@@ -78,14 +78,14 @@ Thanks for the correction."*
 repo when `github.com/Aneeeesh/Roster` already existed and he had told me so.
 *Lesson: search the transcript before assuming something is missing.*
 
-**"Have we built this or not?" — check the code, because twice it was "yes".**
+**"Have we built this or not?" - check the code, because twice it was "yes".**
 He asked whether the app suggests a fixed shift when he keeps making the same
 edit. It does: `corrections.py` → `/reports/corrections` → the What It Learned
 page, 28 tests. He then asked whether pressing Agree sets it up automatically
 or sends him to the employee page. It sets it up: `apply_suggestion` writes the
 fixed shift or updates the employee record itself. Answering either from memory
 would have had me rebuild working code. *Read the route before answering a
-"does it do X" question.* The only thing actually wrong was the wording — the
+"does it do X" question.* The only thing actually wrong was the wording - the
 suggestion said the setting lands "on their employee record where you can
 change it back", which reads as an instruction to go and do it yourself.
 
@@ -93,8 +93,8 @@ change it back", which reads as an instruction to go and do it yourself.
 request into A (suggest a fixed shift) and B (fix the learned demand shape) and
 asked which. *"Option A. Because if the manager decides to put that change as a
 fixed shift, there is no need for option B."* He is right that A covers the
-case he has; the residue B would have handled — the shape still being wrong for
-whoever covers when that person is off — is real but hypothetical, and by his
+case he has; the residue B would have handled - the shape still being wrong for
+whoever covers when that person is off - is real but hypothetical, and by his
 own §10b rule it waits for evidence.
 
 **When my explanation is too abstract he says so, and the fix is his own shop.**
@@ -105,7 +105,7 @@ immediately. *Explain in shifts and weeks, not in weights and windows.*
 
 **He expects the obvious thing, not a refusal.** On dragging a shift onto an
 occupied cell: *"I want those two shifts to be exchanged."* The app said "that
-slot already has a shift", which is true and useless — two people trading
+slot already has a shift", which is true and useless - two people trading
 shifts is the commonest reason to drag at all. Same instinct as §4b: refusing
 is rarely the right answer to a manager who knows what they want.
 
@@ -115,7 +115,7 @@ held but was not using:
 
 | I reported | He said | Where the app already knew |
 |---|---|---|
-| Teja 56.6h/week | — | duplicate week; `latest_per_week` |
+| Teja 56.6h/week | - | duplicate week; `latest_per_week` |
 | Everyone under their hours | six of them left months ago | `is_active` |
 | Aneesh under by 8.8h | *"he changed his availability to Saturday and Sunday only… he might end up getting 16 or 17 hours. That's okay, that's how it works."* | availability rules |
 | Emma and Jamie badly under | *"Emma was on holiday and Jamie was also on holiday"* | the holidays collection |
@@ -126,7 +126,7 @@ held but was not using:
 one line and I could not answer at all. A shortfall and a resignation are
 indistinguishable from inside the data.
 
-**"Top Oil data is not the universal data" — he has now said this three
+**"Top Oil data is not the universal data" - he has now said this three
 times.** Once about the importer, once mid-session unprompted, and once more
 after I proposed a fix. Every time he was right and every time it was because I
 had started designing from one shop's symptom. The swap pass was built from a
@@ -137,7 +137,7 @@ wrong, not as the specification** (CLAUDE.md §9b, §10b).
 **He asks the deflating question at exactly the right moment.** *"Do I have to
 do these changes for my product to work?"* after I had laid out three
 increasingly large options. The answer was no, and I should have led with it.
-He also asked *"do I need AI because it decides whether it can swap or no?"* —
+He also asked *"do I need AI because it decides whether it can swap or no?"* -
 which correctly identified that I was reaching for machinery where arithmetic
 would do. **When he asks whether something is necessary, he has usually already
 noticed it is not.**
@@ -148,7 +148,7 @@ noticed it is not.**
 
 **I diagnose from the symptom instead of the data.**
 The worst instance: 66 uncovered hours. I confidently blamed the familiarity
-rule, wrote several paragraphs of mechanism, and was completely wrong — he had
+rule, wrote several paragraphs of mechanism, and was completely wrong - he had
 two employees and needed 109 hours of cover. The diagnostic output showed
 `weeks learned: 0`, which killed my theory instantly.
 **Fix: ask for the diagnostic output BEFORE explaining. One command beats four
@@ -159,7 +159,7 @@ paragraphs of plausible reasoning.**
 - Assumed `read_xlsx` takes bytes; it takes a path
 - Assumed `hours_by_day` returned a tuple; it returns a dict
 - Wrote a test CSV with the wrong column layout for the parser
-Each cost a round trip. **Grep the definition first — it takes seconds.**
+Each cost a round trip. **Grep the definition first - it takes seconds.**
 
 **My arithmetic in tests has been wrong more than once.**
 Wrote "87h vs 85h" when the numbers gave 82.5. Chasing that error did find a
@@ -167,19 +167,19 @@ better test, but I should verify the maths before writing the assertion.
 
 **I write ambiguous status messages.**
 `"Checked 0 employee(s)"` was equally true of a healthy shop and a mistyped
-shop id — exactly when you need to tell them apart. Also wrote a genuinely
+shop id - exactly when you need to tell them apart. Also wrote a genuinely
 garbled comment in `models.py` about `min_rest_hours` that had to be rewritten.
 **Read messages back as if you did not know the answer.**
 
 **I introduce regressions in adjacent code.**
 Made the calendar icon invisible with `filter: invert(1)` plus
-`color-scheme: dark` — black on black. Left dead scaffolding (`if False else
+`color-scheme: dark` - black on black. Left dead scaffolding (`if False else
 None`) in a test. **Check the thing next to what you changed.**
 
 **A rename is not a safe refactor, and I keep treating it as one.**
 Renaming `was`/`now` to `was_start`/`now_start` in `_suggest_from` broke two
 things at once: the block below still referenced the old names, and the guard
-`if now <= was: return None` went with them. The second was the dangerous one —
+`if now <= was: return None` went with them. The second was the dangerous one -
 without it the availability branch would have set somebody's earliest start
 EARLIER than the one they already had, which is the opposite of what that
 setting means and would not have looked wrong in the UI. Caught only because a
@@ -188,7 +188,7 @@ anything.**
 
 **I nearly overturned a decided question as a side effect of an unrelated one.**
 Asked to notice shifts being lengthened, my first version answered *any*
-reshape with a fixed shift — which silently reversed
+reshape with a fixed shift - which silently reversed
 `test_an_earlier_start_suggests_nothing`, where somebody had deliberately
 decided that being pulled in early says a person was free all along, not that
 anything needs setting. The test failing is what stopped me; without it the
@@ -199,7 +199,7 @@ decision.**
 **I wrote an unverified claim into a comment again.** Same failure as the
 `_apply_fixed_shifts` one below, one session later. I justified keying the swap
 on `(employee, day)` by writing that matching on `shift_id` "would move every
-shift at once" — true of that line in isolation, but the server stamps a
+shift at once" - true of that line in isolation, but the server stamps a
 `shift_id` on every path that creates a shift, so it never happens. Checked
 before committing and rewrote it to give the real reason (consistency with the
 validator and `diff_roster`). **A comment that explains a choice by naming a
@@ -208,7 +208,7 @@ bug is asserting the bug exists. Verify it or do not name it.**
 **I have stated things about his own app that were false.**
 Told him no password reset flow existed when `ForgotPasswordReq` and
 `ResetPasswordReq` were right there. Described the Supabase design register as
-dark when it is white — and he picked a palette based on that, then had to
+dark when it is white - and he picked a palette based on that, then had to
 reject it. **Verify before describing, especially when he will act on it.**
 
 **I used the wrong email.** Used his Claude account address in a script
@@ -220,7 +220,7 @@ session. Each looked green and proved nothing:
 - The owner-reservation test gave the early slot's history only to its owner,
   so the second person was never a contender for it
 - The "Regenerate actually varies" test matched on start time alone, and
-  Monday runs TWO shifts starting 16:00 — it collected two names whatever the
+  Monday runs TWO shifts starting 16:00 - it collected two names whatever the
   code did
 - The Rebalance Day tests passed with the freeze disabled, because when every
   other day is fully locked, re-solving them changes nothing anyway
@@ -232,12 +232,12 @@ still passes, the test is decoration. This caught all three.
 **I claim work is finished when it is not.** Said "everything in the queue is
 done" with Phases 2–5 of the corrections work outstanding. He said *"nope,
 everything in the queue is not done"*. **Before saying done, re-read the list
-rather than recalling it** — the doc was right there.
+rather than recalling it** - the doc was right there.
 
 **I infer intent from data when I should record it.** The setup checklist
 worked out whether pay and age had been reviewed by comparing them to the
 importer's defaults. It cannot tell a placeholder from somebody who genuinely
-is 25 on that rate working 40 hours — their step could never be completed.
+is 25 on that rate working 40 hours - their step could never be completed.
 **"Has a human looked at this?" is provenance, not a property of the values.**
 Same distinction as §5 of CLAUDE.md, from the other side: derive state where
 you can, but a DECISION has to be recorded.
@@ -245,24 +245,24 @@ you can, but a DECISION has to be recorded.
 **I write a diagnosis into a comment before I have tested it.** The worst
 instance this session: two people showed 60h against a 40h contract. I decided
 `_apply_fixed_shifts` was placing them twice after a Rebalance Day, added a
-guard, and wrote a comment stating that as the cause — then tested it and
+guard, and wrote a comment stating that as the cause - then tested it and
 found no duplicates at all, through the solver OR the route. The duplicates
 were real in his data; my explanation was invented.
 
 **A comment is a claim. If it says "this happens because X", X has been
 demonstrated.** The guard stayed (nothing should place two shifts for one
 person on one day) but its comment now says "defensive, not a fix for a
-reproduced bug" — which is the truth and is still useful to the next reader.
+reproduced bug" - which is the truth and is still useful to the next reader.
 
 **When the cause will not come out, move the check to the boundary.** I could
 not find which pass created the duplicates. Rather than keep guessing I
-asserted the invariant once at the end of `solve()` — remove the extra, undo
+asserted the invariant once at the end of `solve()` - remove the extra, undo
 its accounting, and REPORT it by name. Cheaper than auditing five passes,
 holds against a sixth, and the report will name the pass next time. That is a
 better outcome than a lucky guess would have been.
 
 **I keep blaming the environment before the code.** "Restart the backend",
-"stale module", "warm --reload" — three times, and each time the app was
+"stale module", "warm --reload" - three times, and each time the app was
 current and the cause was in the logic. He restarted everything twice on my
 say-so. **Build the check instead of guessing** (`ml/check_live_code.py` now
 answers it in one command).
@@ -271,13 +271,13 @@ answers it in one command).
 can give an honest answer.** This is the single most expensive habit I have,
 and it cost most of one session in four separate forms:
 
-- **Duplicate weeks.** Reported Teja averaging 56.6h — above his 40h cap and
+- **Duplicate weeks.** Reported Teja averaging 56.6h - above his 40h cap and
   above the 48h legal limit. A week with two approved rosters had both counted.
   `demand.py`, `slot_owners.py`, `corrections.py` and `learning.py` all dedupe
   through `latest_per_week`; my diagnostic did not.
 - **Leakage.** Solved an already-approved week to grade the solver against it.
   `_weighted_weeks` skips only `age < 0`, so the target week itself carries
-  full weight — I asked it to reproduce something it had memorised and took
+  full weight - I asked it to reproduce something it had memorised and took
   the perfect result as evidence. *He* spotted this, not me.
 - **A model I had only half read.** Reported eight shifts as stolen from their
   owners. `owner_of` returns ONE person; a shape that runs twice has two
@@ -289,14 +289,14 @@ and it cost most of one session in four separate forms:
 
 Every one of these produced a confident, plausible, wrong number. **Before
 running a measurement, write down what a non-zero answer would look like AND
-what would make the population unable to produce one.** Implausible outputs —
-56.6h, a perfect score, eight simultaneous bugs — are almost always the
+what would make the population unable to produce one.** Implausible outputs -
+56.6h, a perfect score, eight simultaneous bugs - are almost always the
 measurement, not the system.
 
 **A test that a value is non-zero is not a test that it DISCRIMINATES.** I
 built an hours-need ranking term, wrote nine passing tests, and it changed not
 one hour of the roster. `hours_aim` was populated, `_hours_need` returned a
-plausible negative number, everything was green — and it returned the SAME
+plausible negative number, everything was green - and it returned the SAME
 number for everyone, because I had copied `_contract_need`'s `-min(shortfall,
 span)` without thinking about what it needed to express. Early in a week
 everybody is short by more than one shift, so everybody tied. **Anything whose
@@ -314,22 +314,22 @@ whether the thing being fixed is local to that decision.**
 **I mixed two shops in one summary table and frightened him.** Listed an ILS
 finding (Teja, 56.6h) in a table about Top Oil with no column for which shop
 each row came from. He read it as a tenant-isolation leak, which is the most
-serious class of bug this product can have. The data was fine — every query
-filters on `shop_id` — but the presentation was not. **Two shops in one
+serious class of bug this product can have. The data was fine - every query
+filters on `shop_id` - but the presentation was not. **Two shops in one
 session means every number carries its shop's name.**
 
 ---
 
-## 4. What worked — keep doing
+## 4. What worked - keep doing
 
 **Set the keep/delete criterion BEFORE running the measurement, then honour
 it.** Twice in one session this deleted work I had just finished:
 
-- **The swap pass** (338 lines, 26 tests, all green) — built to fill a Friday
+- **The swap pass** (338 lines, 26 tests, all green) - built to fill a Friday
   that came out empty. The criterion was "keep only if uncovered hours fall".
   Once a corrupt import week was unapproved, the gap disappeared and the pass
   never fired on any week. Deleted.
-- **The hours-need ranking term** — built to even out hourly staff. The
+- **The hours-need ranking term** - built to even out hourly staff. The
   criterion was "keep only if fewer than 11 of 18 are off their aim". It
   changed not one hour, twice, for two different reasons. Deleted.
 
@@ -341,8 +341,8 @@ looks reasonable.** Writing it down after the fact never survives contact with
 having built the thing.
 
 **Sabotage every test, including the ones that pass.** Three of four sabotages
-failed correctly; the fourth — the guard against repeating the
-`scheduler.py:1738` bug — stayed green when I deliberately moved the term up
+failed correctly; the fourth - the guard against repeating the
+`scheduler.py:1738` bug - stayed green when I deliberately moved the term up
 the sort. It used an OWNED slot, where rank 0 wins regardless, so it could
 never have caught the thing it was named after. The replacement uses a slot at
 58% ownership, just under the bar, where the ordering actually decides.
@@ -350,12 +350,12 @@ never have caught the thing it was named after. The replacement uses a slot at
 fail.**
 
 **Build the diagnostic instead of theorising.** The Emma question went through
-four wrong explanations from me — stale code, ownership ranking, apportionment
-— before `explain_day.py` showed the actual arithmetic. Every one of those
+four wrong explanations from me - stale code, ownership ranking, apportionment -
+before `explain_day.py` showed the actual arithmetic. Every one of those
 guesses cost a round trip; the tool ended it. `ml/` now holds around nine of
-them — `check_hours`, `check_contract_cost`, `check_live_code`,
+them - `check_hours`, `check_contract_cost`, `check_live_code`,
 `check_rest_gaps`, `diagnose`, `explain_day`, `show_roster`, `why_slot`,
-`who_is_placeholder` — alongside the migrations, and they are the
+`who_is_placeholder` - alongside the migrations, and they are the
 highest-value thing built across these sessions. **Look for an existing one
 before writing a fresh query.**
 
@@ -365,7 +365,7 @@ the day's plan at all, or it is and somebody outranked her. No amount of
 tuning who-beats-whom helps with the first. Ask which layer before designing.
 
 **A/B the rule instead of reading the symptom.** The question "did owner-first
-starve a full-timer?" cannot be answered by looking at `under_contract` — a
+starve a full-timer?" cannot be answered by looking at `under_contract` - a
 person can be short because the trading hours are not there at all, and reading
 that as proof owners caused it is how a fix gets built for a problem nobody
 has. `check_contract_cost.py` solves the same week twice with
@@ -380,28 +380,28 @@ two days I measured a population that could not have produced a non-zero
 answer, and reported the zero as if it settled something:
 
 1. `under_contract` before establishing that anybody *could* be reported short
-2. hour-rounding against the manager's **approved** rota — hand-built, 24h,
+2. hour-rounding against the manager's **approved** rota - hand-built, 24h,
    continuous by construction, so no hole was possible. He spotted that one:
    *"this is the output from the last 24 weeks, which are made by my manager,
    not from the solver"*
 3. the same check counting only hours where the shop is **completely empty**,
-   when the actual question was headcount shortfall — a 17:30 start credited
+   when the actual question was headcount shortfall - a 17:30 start credited
    with 17:00 leaves nobody missing, just one fewer than needed
-4. reporting "PASS — only Wednesday moved" when *nothing* had moved
+4. reporting "PASS - only Wednesday moved" when *nothing* had moved
 
 Every one had the same shape and the same fix. The habit is not "check the
 result", it is **state what a non-zero answer would look like, then confirm the
 measurement can produce it.** A detector that has never fired is not evidence.
 
 **Test the measurement on a case with a known answer.** After the third time,
-`check_partial_hours` got 13 hand-computed cases — overnight wrap, Sunday night
-into Monday, two people overlapping, leave not counting — and later a synthetic
+`check_partial_hours` got 13 hand-computed cases - overnight wrap, Sunday night
+into Monday, two people overlapping, leave not counting - and later a synthetic
 roster with a deliberate hole, to prove the detector fires at all. That is what
 made the eventual zero trustworthy.
 
 **A second real file is worth more than another test.** He uploaded his own
-month-in-one-tab spreadsheet and it broke the importer three ways at once —
-weeks merged, dates lost, roles invented — none of which 60 passing tests had
+month-in-one-tab spreadsheet and it broke the importer three ways at once -
+weeks merged, dates lost, roles invented - none of which 60 passing tests had
 caught, because every one of them was written against Top Oil's shape. His
 framing is now §9b of CLAUDE.md:
 
@@ -416,11 +416,11 @@ what it did.
 **Attribute before fixing.** Half-hour finishes had an obvious suspect and a
 plausible story. Rather than edit it, `--edges` split every off-hour edge four
 ways: start or finish, inherited or manufactured, salaried or hourly. It came
-back 42 of 42 manufactured finishes on salaried staff — unambiguous, and worth
+back 42 of 42 manufactured finishes on salaried staff - unambiguous, and worth
 the extra round trip because the fix meant overturning a documented rule.
 
 **Say how big the denominator is, or a clean result means nothing.** First
-version of that script printed "nobody is below their minimum" — which is
+version of that script printed "nobody is below their minimum" - which is
 equally true of "the solver reached everybody" and "there was nobody to reach",
 and those lead opposite ways. Only salaried staff with a contract band can be
 reported short at all. It now names them first: 6 of 31, five with tight bands
@@ -434,7 +434,7 @@ failed, the regression guard still passed. A test that passes without its fix
 protects nothing, and three of them did earlier in this project.
 
 **With no browser, verify the logic in a scratch harness.** The swap fix was
-pure frontend logic, so it went into a standalone node script — seven cases
+pure frontend logic, so it went into a standalone node script - seven cases
 including bystanders staying put and, the one that would actually corrupt a
 roster, that no swap can put two people in the same `(person, day)` cell from
 either drag direction. Not the same as seeing it work, and the commit says so.
@@ -442,12 +442,12 @@ either drag direction. Not the same as seeing it work, and the commit says so.
 **His bug reports are precise, and the numbers in them are the diagnosis.**
 "60h but the roster shows 40" plus a dry run listing four duplicate rows was
 enough to prove the bug, locate it to one roster out of sixty, and identify
-which pass was involved — all before I understood the mechanism. When he
+which pass was involved - all before I understood the mechanism. When he
 gives a number, do the arithmetic on it: Megan's six shifts of ten stopping
 at exactly 60 pointed straight at `max_weekly_hours = 60` being the limiter.
 
 **Say plainly when a refusal is correct.** Twice the app was right and he
-thought it was broken — the five-day guard blocking my own test fixture, and
+thought it was broken - the five-day guard blocking my own test fixture, and
 the checklist flagging four genuinely untouched records. Saying "no, this is
 correct, and here is why" is more useful than fixing a non-bug. But both times
 the MESSAGE deserved the complaint even though the LOGIC did not.
@@ -459,7 +459,7 @@ have left the solver fighting its own training data. He explicitly liked this
 order of operations.
 
 **Use his real roster as ground truth.** `new roster 26.xlsx` settled several
-arguments — the familiarity question, the role mapping, the rest rule. When a
+arguments - the familiarity question, the role mapping, the rest rule. When a
 design question is really an empirical question, go to the file.
 
 **Say when I was wrong, plainly and early.** He responds well to *"I was
@@ -468,7 +468,7 @@ wrong"* followed by the correct answer. No hedging.
 **Flag consequences of his own choices.** He chose "block past weeks entirely",
 which would have made imported historical rosters permanently unfixable. I
 implemented his choice and named the trap; he then asked for the fix. That is
-the right pattern — respect the decision, surface the cost.
+the right pattern - respect the decision, surface the cost.
 
 **Dry-run everything that touches his data.** Every `ml/*.py` script prints
 what it would change and needs `--commit`. He used these repeatedly and the
@@ -488,7 +488,7 @@ not want a yes-man.
 - App login: **anishbond27032002@gmail.com** (not his Claude account address)
 - Repo: **github.com/Aneeeesh/Roster**, private, branch `main`
 - Shop id: `shop_645772aee6b5`; a second "Test Shop" also exists in the DB
-- His role ladder uses abbreviations the sheets spell out — "Ass Manager" vs
+- His role ladder uses abbreviations the sheets spell out - "Ass Manager" vs
   "Assistant Manager", "Shop Floor" vs "Floor Assistant". Hence `role_aliases`.
 - Windows / PowerShell. Venv at `backend\venv`, activate before running scripts.
 - Workbook lives at `C:\Users\anees\Downloads\new roster 26.xlsx`
@@ -499,7 +499,7 @@ not want a yes-man.
   with `ModuleNotFoundError: motor`. Always
   `.\venv\Scripts\python.exe ml\script.py --email …` from `backend\`.
 - `craco build` takes longer than a sandbox tool call allows. Frontend changes
-  can be Babel-parse-checked but NOT build-verified here — say so rather than
+  can be Babel-parse-checked but NOT build-verified here - say so rather than
   implying the build passed.
 
 ---
@@ -508,12 +508,12 @@ not want a yes-man.
 
 Built this session, all general behaviour with no shop-specific code:
 
-- **Slot ownership** — 60% of the weeks a slot ran, over 4+ weeks. Owner beats
+- **Slot ownership** - 60% of the weeks a slot ran, over 4+ weeks. Owner beats
   contract need; owners are reserved from earlier slots; leavers cannot own.
-- **Seeded Regenerate** — varies only unowned slots, weighted. Rebalance does
+- **Seeded Regenerate** - varies only unowned slots, weighted. Rebalance does
   not seed.
 - **Extra staff** and **Rebalance Day**.
-- **Corrections learning Phases 2–4** — the falling edit count, suggestions
+- **Corrections learning Phases 2–4** - the falling edit count, suggestions
   that write real settings, Rebalance made primary.
 
 Since then: force approval with named breaches and a hard floor that no
@@ -536,12 +536,12 @@ Latest additions:
 **Option B is closed, with evidence.** `check_contract_cost.py` says nobody at
 the reference shop is below their minimum with owner-first on or off, and 18
 placements across 12 people would move if it were switched off. Do not build
-the look-ahead. If a second shop complains, re-run that script first — the
+the look-ahead. If a second shop complains, re-run that script first - the
 answer is a fact about Top Oil's rota, not about the algorithm, and §10b's
 constants were calibrated on the same rota.
 
 **Hour-rounding: closed at the solver, open at the model.** The solver no
-longer manufactures half-hour edges — off-hour finishes 11.2% → 1.1%,
+longer manufactures half-hour edges - off-hour finishes 11.2% → 1.1%,
 over-counted hours 25/week → 12.75 against the manager’s own 12. Making
 `hours_covered` strict (option A) is the only remaining source and would
 re-base learning and solving together. See CLAUDE.md §7d.
@@ -549,22 +549,22 @@ re-base learning and solving together. See CLAUDE.md §7d.
 **Two features built and deleted, on stated criteria.** `_swap_to_unlock` (fill
 an empty day by freeing somebody from an earlier shift) and `_hours_need` (an
 hours-distribution term in the rank tuple). Both worked, both were tested, both
-changed nothing measurable. See §4. Do not rebuild either without new evidence
-— and if a second shop reports "somebody could have covered that day", start by
+changed nothing measurable. See §4. Do not rebuild either without new evidence -
+and if a second shop reports "somebody could have covered that day", start by
 running `find_corrupt_weeks.py`, because that is what the first report turned
 out to be.
 
-**The third attempt at hours distribution was KEPT** — see below. The pattern
+**The third attempt at hours distribution was KEPT** - see below. The pattern
 across all three is the lesson: two local mechanisms aimed at a global
 property did nothing at all, and the one that worked reads every person's
 weekly total and moves shifts between them.
 
-**The hours-distribution question is now ANSWERED — third attempt, kept.**
+**The hours-distribution question is now ANSWERED - third attempt, kept.**
 `_rebalance_hours` (CLAUDE.md §2f) runs after the fill and moves unowned
 shifts from people above their usual week to people below it. Total distance
 from usual 68.4h → 50.6h; worst case −15.8h → −8.8h; nobody left above their
 usual. The COUNT of people more than 2h off did not move, which was the bar I
-set, and I caught myself arguing past it — so the keep/delete call went to
+set, and I caught myself arguing past it - so the keep/delete call went to
 him and he said keep.
 
 Three things that only worked on the third try, and are the transferable part:
@@ -586,14 +586,14 @@ never deletes it. Now three tests.
 
 **The earlier record of this, for context.**
 On the 25-person shop, hourly staff come out spread around what they normally
-work — Jane 13h against 28.8h, Roisín 31h against 21.2h — while the week is the
+work - Jane 13h against 28.8h, Roisín 31h against 21.2h - while the week is the
 right size (+2%) and every displacement of an owner is lawful. Three ways to
 address it, none built:
 
-1. **Report it, do not solve it** — show "Jane 13h, usually 28.8h" beside the
+1. **Report it, do not solve it** - show "Jane 13h, usually 28.8h" beside the
    roster. No solver change, cannot produce a wrong roster.
 2. **A balancing pass after the fill**, moving unowned shifts from people above
-   their aim to people below. Global, so it CAN work — but it is the swap
+   their aim to people below. Global, so it CAN work - but it is the swap
    pass's shape, and that earned nothing.
 3. **Replace greedy per-slot assignment with real matching.** Correct, and a
    rewrite of the solver's core.
@@ -605,16 +605,16 @@ untouched, the misallocation is mine, not theirs.
 
 **New diagnostics, all shop-agnostic:**
 
-- `why_empty.py` — why nobody could be placed on a day, in the solver's own
+- `why_empty.py` - why nobody could be placed on a day, in the solver's own
   words, including the silent rejections `_is_eligible` never states and the
   leave cases that never reach it at all
-- `check_hours_vs_history.py` — recency-weighted usual hours vs generated,
+- `check_hours_vs_history.py` - recency-weighted usual hours vs generated,
   split salaried/hourly, bounded by availability and booked leave, with
   suspected leavers separated and a "is the week the right SIZE" verdict that
   distinguishes a demand problem from a distribution one
-- `check_why_these_shifts.py` — owned vs tie-break hours, and whether any owner
+- `check_why_these_shifts.py` - owned vs tie-break hours, and whether any owner
   lost a slot without a lawful reason
-- `find_corrupt_weeks.py` — approved weeks that cannot physically have
+- `find_corrupt_weeks.py` - approved weeks that cannot physically have
   happened; unapproves rather than deletes, dry run by default
 
 **Two real faults found, neither fixed:**
@@ -636,24 +636,24 @@ needs several more approved weeks before it can be run.
 chooser, force approval with red breach names, Add extra, the rebalance-day
 links, the What It Learned page, the "Against the usual" panel, and the swap
 drag. All are logic-verified and none is eye-verified. He has said he will look
-"when everything is done" — offer to drive Chrome through them rather than
+"when everything is done" - offer to drive Chrome through them rather than
 letting him find the broken one.
 
 ---
 
 ## 7. Still parked, by his choice
 
-- **Billing / paywall** — disabled in two places that can disagree
+- **Billing / paywall** - disabled in two places that can disagree
 - **Docker, CI, rate limiting, error tracking, backups, GDPR paperwork** (DPA,
   data export and delete). He will write the privacy policy himself before
   hosting.
 
-**Resend email is DONE** — verified domain, dispatch working, roster PDF
+**Resend email is DONE** - verified domain, dispatch working, roster PDF
 attached, boss recipients configured. Remove it from any "parked" list.
 
 He said "not now" to billing. On the §13 list generally: *"Leave this out."*
 Do not re-raise unprompted more than once. When he asked what §13 was, the
-honest answer was that it — not the solver — is what stands between this and a
+honest answer was that it - not the solver - is what stands between this and a
 paying customer, and that remains true.
 
 **Also parked, from this session:**
@@ -664,7 +664,7 @@ paying customer, and that remains true.
   of a normal week.
 - `strict_days_off` as a per-shop setting. He chose it, I never built it. The
   field exists in `models.py` and the check at `scheduler.py:959` is already
-  correct — the work is only the settings API and UI, default staying `True`.
+  correct - the work is only the settings API and UI, default staying `True`.
   Worth knowing: because it defaults True everywhere, `relax_preferences`
   currently cannot reach the day-off check at all, so that branch is dead in
   practice despite the comment describing it as live.
@@ -679,7 +679,7 @@ wrong twice, in the same session, in the same way.
 ### The design mistake: a parallel fill instead of a different slot list
 
 The first attempt wrote `_staff_by_arrivals` and `_place_one_arrival` beside
-`_staff_by_slots` — a second fill path with its own ranking. It broke about
+`_staff_by_slots` - a second fill path with its own ranking. It broke about
 forty tests, because `_staff_by_slots` does seven things that had to be
 reimplemented and were not: pins cancelling a slot, owner reservation across
 the day, seeded variation (§2c), extras consuming nothing, `only_day`
@@ -700,17 +700,17 @@ starting.
 **Once for the fixtures.** Five tests were written for the arrivals model and
 all five passed with `USE_ARRIVALS = False`. Every one was vacuous: the
 fixtures were small, tidy shops where the shape list happens to be right.
-Reasoning about *when* it would be wrong also failed — a prediction about the
+Reasoning about *when* it would be wrong also failed - a prediction about the
 apportionment tie-break was wrong because recency weighting breaks the ties.
 What worked was **searching**: 400 randomised fragmented shops, of which the
-shape list gets 189 wrong, then freezing two as fixtures — one that starts
+shape list gets 189 wrong, then freezing two as fixtures - one that starts
 four openers where three open, one that starts **none** where two open.
 
 **Once for a deletion.** The per-hour apportionment was measured over 120
 randomised shops, changed the roster in **zero** of them, and was deleted on
 that evidence, with a comment explaining why. Two existing tests failed
-immediately. The 120 shops all had one structure — a pool of people who all
-work all of an hour's shapes — which is precisely the case where
+immediately. The 120 shops all had one structure - a pool of people who all
+work all of an hour's shapes - which is precisely the case where
 `_usual_finish` falls back to the shop's commonest finish and the placeholder
 cannot matter. The fixture that catches it is a slot **shared by four people
 who each work only that shape**, and `test_slot_scheduling` already had one.
@@ -734,7 +734,7 @@ Every mechanism was switched off in turn and the suite re-run:
 | the coverage floor obeys the cap | 1 |
 
 Three of the five caught nothing on the first pass. A test that passes with
-the fix removed is not a weak test, it is an absent one — and it is
+the fix removed is not a weak test, it is an absent one - and it is
 indistinguishable from a real one until sabotaged.
 
 ### Still owed
@@ -746,12 +746,12 @@ it reproduces the manager better or worse**. The bar was fixed before the
 model was built and the script applies that bar rather than a new one:
 
 > arrivals difference falls substantially AND exact matches do not drop. If
-> matches fall, revert — a model that is theoretically right and reproduces
+> matches fall, revert - a model that is theoretically right and reproduces
 > the manager worse is not an improvement.
 
 Baselines to beat: arrivals difference **23.1 people-starts**, exact matches
 **14** of the ~56 shifts the solver actually chooses (Megan's, John's and
-Kelvin's fixed shifts excluded — the solver did not decide those).
+Kelvin's fixed shifts excluded - the solver did not decide those).
 
 ### The verdict came back: worse, and worse in an informative way
 
@@ -766,7 +766,7 @@ Reverted, per the bar, the same day it was measured. `USE_ARRIVALS = False`.
 
 **The exact-match drop is not the interesting number.** The interesting one
 is that the arrivals distance DID NOT FALL. That distance is the single
-quantity the model exists to fit, and it is fitted *by construction* — the
+quantity the model exists to fit, and it is fitted *by construction* - the
 day is built by asking how many people start each hour and placing that many.
 It should have collapsed. It moved by 0.8%, in the wrong direction.
 
@@ -777,10 +777,10 @@ or a later pass is undoing it. Both are bugs, not judgements about the model.
 None of it is visible synthetically: 200 randomised shops agree exactly on
 the day's total, and the presence cap does not fire in a reproduction of Top
 Oil's own night-shift overlap. **Four weeks came out byte-identical under both
-models**, which means arrivals was not active for them at all — worth
+models**, which means arrivals was not active for them at all - worth
 explaining before anything else.
 
-`--explain WEEK` was added to print the chain the number travels along —
+`--explain WEEK` was added to print the chain the number travels along -
 learned, placed, and what the manager wrote, hour by hour. `learned` vs
 `placed` decides it: agreeing means the model genuinely suits this shop worse
 and the matter is closed; disagreeing means a bug upstream of the model.
@@ -793,13 +793,13 @@ negotiation. Two days of work is not a reason to move a threshold.
 ### `--explain` found it, and found something else underneath
 
 Eleven hours where the fill placed a different number from the one it
-learned. Three were not losses at all — a start pulled an hour earlier, which
+learned. Three were not losses at all - a start pulled an hour earlier, which
 is the manager's own *"why can't he call somebody an hour earlier"* working
 as intended. The other eight were real, about five a week, which is the ~155
 shifts across 31 weeks that the A/B saw.
 
 **The presence cap fired at five of them.** Monday 07:00, Tuesday 10:00,
-Thursday 14:00, Friday 13:00, Saturday 18:00 — every one a shift he writes
+Thursday 14:00, Friday 13:00, Saturday 18:00 - every one a shift he writes
 every week.
 
 The cap was `on_duty >= required`, the literal reading of his rule, and it
@@ -816,8 +816,8 @@ rule, Sunday 16:00 seven people unfamiliar with the start. The shape list
 places nothing at Friday 13:00 or Sunday 16:00 either.
 
 **The thing worth remembering is what the wrong threshold was hiding.** A
-test written the day before — "the solver does not invent a start the shop
-has never used" — started failing the moment the cap was corrected. It turned
+test written the day before - "the solver does not invent a start the shop
+has never used" - started failing the moment the cap was corrected. It turned
 out `_close_short_hours` pulls a start back to `hour:00` to close a
 changeover gap without asking whether the shop has ever started anybody then,
 and **the shape list produces the identical `sun 05:00`**. A pre-existing bug
@@ -839,15 +839,15 @@ change, deliberately: the A/B has to measure one thing at a time.
 ### The cap fix worked, and then the sixth measurement error appeared
 
 After it: exact 641 → 679, arrivals distance 877 → 856. Still 23 behind the
-shape list on 2175 shifts, so arrivals stays off — the bar was applied
+shape list on 2175 shifts, so arrivals stays off - the bar was applied
 without renegotiation for the second time.
 
 Adding a shifts-produced column killed two live hypotheses at once. Both
 models produce **exactly 2001 shifts, identical every week**, so "arrivals
 builds a smaller week" was wrong. And both were 174 short of the manager.
 
-I read that as a shared bug worth chasing — "four broken weeks, 148 shifts,
-a bigger prize than arrivals" — and said so before checking. It was wrong,
+I read that as a shared bug worth chasing - "four broken weeks, 148 shifts,
+a bigger prize than arrivals" - and said so before checking. It was wrong,
 and it was **the same error as the five before it: a population that could
 not answer the question.**
 
@@ -855,7 +855,7 @@ not answer the question.**
 evidence of anything yet. So for the earliest approved week every other week
 is in the future, the profile has nothing to read, it falls below
 `MIN_WEEKS_FOR_DEMAND` and drops to generic block coverage. Jan 26 has one
-prior week, Feb 02 two, Feb 09 three — and Feb 16, the first with four, is
+prior week, Feb 02 two, Feb 09 three - and Feb 16, the first with four, is
 **exactly** where the output jumps from 33 shifts to 70.
 
 Nothing was broken. The solver cannot learn a shop's patterns from weeks
@@ -869,7 +869,7 @@ with the reason.
 
 What it cost: 198 of 856 arrivals distance, 23% of the score, from weeks
 where both models ran the same fallback and the comparison learned nothing.
-The verdict does not change — arrivals is still 23 exact behind — which is
+The verdict does not change - arrivals is still 23 exact behind - which is
 the only reassuring part.
 
 Two things to carry forward:

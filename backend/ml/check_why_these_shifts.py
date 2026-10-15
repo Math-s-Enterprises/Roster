@@ -4,24 +4,24 @@
 
 WHY THIS MATTERS BEFORE CHANGING HOW HOURS ARE SHARED OUT
 ----------------------------------------------------------
-Hourly staff came out badly uneven on the reference shop — most well under
+Hourly staff came out badly uneven on the reference shop - most well under
 the hours they normally work, one nearly ten hours over. That has two causes
 and only one of them is a fault:
 
-  * OWNERSHIP (§2b) — somebody who has worked a slot 60% of the weeks it ran
+  * OWNERSHIP (§2b) - somebody who has worked a slot 60% of the weeks it ran
     gets it. If the person who is "over" simply owns a lot of slots, the
     roster is correct and evening their hours out would take settled shifts
     off the people who always work them. That is the edit burden the
     ownership rules exist to prevent.
 
-  * TIE-BREAK — `_contract_need` returns 0.0 for every hourly employee
+  * TIE-BREAK - `_contract_need` returns 0.0 for every hourly employee
     (`scheduler.py:1523`, and its own docstring says so), so among people
     with no claim they are perfectly tied and the tie falls to coverage
     preference and role. Somebody already on 25h ranks the same as somebody
     on 5h. Nothing knows they have had enough.
 
 The first must be left alone. The second is the thing to fix. Telling them
-apart is the whole point of this script — because a fix aimed at the first
+apart is the whole point of this script - because a fix aimed at the first
 would reproduce a bug this codebase has already had once, documented at
 `scheduler.py:1738`, where contract need outranked owners and four settled
 shifts changed hands in a single day.
@@ -121,7 +121,7 @@ async def run(email: str, week: str) -> None:
             tiebreak_hours[employee_id] += hours
             tiebreak_count[employee_id] += 1
             # Only a displacement if a regular did not get one of the
-            # instances — a shape running twice has room for two of them.
+            # instances - a shape running twice has room for two of them.
             got_it = {
                 s["employee_id"] for s in roster.get("shifts") or []
                 if (s["day"], s["start"], s["end"])
@@ -136,7 +136,7 @@ async def run(email: str, week: str) -> None:
     salaried = {e["employee_id"] for e in employees
                 if avail.is_full_time_contract(e)}
 
-    print(f"\n{shop.get('name', '?')} — week of {week}")
+    print(f"\n{shop.get('name', '?')} - week of {week}")
     print("=" * 78)
     print("  Hours somebody OWNS are theirs by §2b and must not be evened")
     print("  out. Hours won on a TIE-BREAK are where nothing knows whether")
@@ -170,15 +170,15 @@ async def run(email: str, week: str) -> None:
     print()
     if tie_total > owned_total:
         print("  The tie-break decides most hourly hours, so teaching it")
-        print("  about hours worked will change the roster materially —")
+        print("  about hours worked will change the roster materially -")
         print("  and it can do so WITHOUT touching an owned shift.")
     else:
         print("  Ownership already decides most hourly hours. An hours rule")
         print("  would have little left to influence, and forcing it to")
-        print("  would mean overriding ownership — which is the bug at")
+        print("  would mean overriding ownership - which is the bug at")
         print("  scheduler.py:1738, not a fix.")
 
-    # An owner CAN lawfully lose a slot — §2b lists exactly when: leave, the
+    # An owner CAN lawfully lose a slot - §2b lists exactly when: leave, the
     # curfew, their cap, the 11-hour rest gap, or a fifth day. Senior cover
     # (Pass 0b) may also displace them, deliberately, because a shop cannot
     # open without somebody senior.
@@ -190,7 +190,7 @@ async def run(email: str, week: str) -> None:
         print("\n  No owner lost a slot. Ownership is being respected.")
         return
 
-    print(f"\n{'=' * 78}\nOWNERS WHO LOST THEIR SLOT — WITH OR WITHOUT A REASON"
+    print(f"\n{'=' * 78}\nOWNERS WHO LOST THEIR SLOT - WITH OR WITHOUT A REASON"
           f"\n{'=' * 78}")
     monday = _week_start_date(week)
     off_dates: Dict[str, set] = defaultdict(set)
@@ -228,9 +228,9 @@ async def run(email: str, week: str) -> None:
         elif used + 4 > cap:
             reason = f"near their cap ({used:.1f}/{cap:g}h)"
         elif avail.is_full_time_contract(by_id.get(taker_id, {})):
-            reason = "taken by senior cover (Pass 0b) — by design"
+            reason = "taken by senior cover (Pass 0b) - by design"
         else:
-            reason = "*** NO REASON — owner appears free ***"
+            reason = "*** NO REASON - owner appears free ***"
             unexplained += 1
         print(f"    {names.get(owner_id, owner_id)[:16]:18}lost {day} {start} "
               f"to {names.get(taker_id, taker_id)[:14]:16}{reason}")
@@ -238,7 +238,7 @@ async def run(email: str, week: str) -> None:
     print()
     if unexplained:
         print(f"  {unexplained} slot(s) left their owner for NO STATED REASON.")
-        print("  Fix that before adding anything else to the ranking — an")
+        print("  Fix that before adding anything else to the ranking - an")
         print("  hours term sitting next to a leaky ownership check would")
         print("  make the leak worse and be blamed for it.")
     else:

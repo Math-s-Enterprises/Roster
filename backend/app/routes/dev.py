@@ -2,7 +2,7 @@
 
 These routes wipe data. The router is only mounted when
 config.DEV_ROUTES_ENABLED is true, and that flag is forced off in
-production — so in a production deployment these paths do not exist at all
+production - so in a production deployment these paths do not exist at all
 rather than merely being discouraged.
 """
 import uuid

@@ -1,4 +1,4 @@
-# Slot ownership, rebalance fixes, and day rebalance — plan
+# Slot ownership, rebalance fixes, and day rebalance - plan
 
 Three changes, from watching the roster behave on real data.
 
@@ -6,7 +6,7 @@ Three changes, from watching the roster behave on real data.
 
 ## 1. The shift belongs to the person who usually works it
 
-**Today:** slots are filled by role priority — most senior role first, with
+**Today:** slots are filled by role priority - most senior role first, with
 learned affinity only as a late tie-breaker. So Martin (Ambient Manager) can
 be handed Monday 06:00 ahead of Emma, who has opened that shift for months.
 
@@ -14,7 +14,7 @@ be handed Monday 06:00 ahead of Emma, who has opened that shift for months.
 else is offered it while she is available.
 
 **Why familiarity does not already do this:** familiarity only asks *"has this
-person ever worked a shift starting near this time?"* Martin has — the
+person ever worked a shift starting near this time?"* Martin has - the
 imported sheet shows him on Sunday 06:00. So he passes the check and then wins
 on role seniority. The question here is not who *can* work it but who
 *normally does*.
@@ -38,7 +38,7 @@ When filling a slot:
 
 ### What this does to rule 3
 
-Rule 3 — *hours go to the most senior role first* — still governs every slot
+Rule 3 - *hours go to the most senior role first* - still governs every slot
 without an established owner, and still governs how many hours each person
 gets overall. What changes is that a slot with a settled owner is no longer
 put out to seniority.
@@ -52,14 +52,14 @@ is not encoding seniority, it is ignoring the data.
 
 Ownership never beats a hard constraint. An owner who is on leave, curfewed,
 at their hour cap, inside the 11-hour rest window, or already on a five-day
-week does not get the slot — the fallback applies.
+week does not get the slot - the fallback applies.
 
 ---
 
 ## 2. Rebalance leaves too many people on
 
 **Observed:** roster generated without Emma. Emma added by hand to Monday
-06:00 and pinned. Rebalance. Result — Emma, Megan *and* Martin all on Monday
+06:00 and pinned. Rebalance. Result - Emma, Megan *and* Martin all on Monday
 morning, where the shop runs two.
 
 **Cause,** in `_staff_by_slots`:
@@ -95,7 +95,7 @@ placed.
 hours. Add them, press **Rebalance Day** on Wednesday, and let the rest of the
 week alone.
 
-**Approach** — reuses machinery that already exists rather than adding a
+**Approach** - reuses machinery that already exists rather than adding a
 second solver path. Every shift on the other six days is treated as locked, so
 it cannot move. Only the target day is re-solved.
 
@@ -103,7 +103,7 @@ it cannot move. Only the target day is re-solved.
 - Manually added hours on the target day are respected, because editing pins.
 - Weekly hour caps still count the locked days, so giving somebody two extra
   hours on Wednesday correctly reduces what they can take elsewhere *that
-  day* — it cannot silently push them over their week.
+  day* - it cannot silently push them over their week.
 - Nothing on another day changes. That is the guarantee being sold.
 
 **UI:** two distinct actions.
@@ -118,10 +118,10 @@ subject.
 
 ---
 
-## 4. Extra staff — deliberately above the requirement
+## 4. Extra staff - deliberately above the requirement
 
 **Wanted:** a renovation, a delivery, a busy Saturday. The manager picks a
-person, a day and a time, and adds them **as extra** — on top of normal
+person, a day and a time, and adds them **as extra** - on top of normal
 staffing, not instead of it.
 
 ### Extra is the inverse of pinned, and that is the whole design
@@ -154,18 +154,18 @@ choose "pin" versus "add extra".
   cap, their contracted hours and their five-day limit. An extra shift that
   quietly created a sixth working day would be a trap.
 - **Legal limits still apply.** Curfew, the 12-hour ceiling, the 11-hour rest
-  gap and booked leave are not the manager's to override here — that is what
+  gap and booked leave are not the manager's to override here - that is what
   the sick-cover flow is for, with its explicit recorded overrides.
 - **Marked in the grid and in reports**, so a week that cost more than usual
   says why.
 
 ### Priority during rebalance
 
-1. Extra shifts — kept
-2. Pinned shifts — kept
-3. Fixed shifts — kept
-4. Established slot owners — preferred (§1)
-5. Everything else — adjusted, moved or dropped first
+1. Extra shifts - kept
+2. Pinned shifts - kept
+3. Fixed shifts - kept
+4. Established slot owners - preferred (§1)
+5. Everything else - adjusted, moved or dropped first
 
 ---
 
@@ -174,7 +174,7 @@ choose "pin" versus "add extra".
 1. **#2 first.** It is a bug, it is small, and it is actively costing edits
    every time rebalance is used.
 2. **#1 next.** Largest change and the one that should most reduce edits.
-3. **#3 last.** Additive, and easier to reason about once #2 is right —
+3. **#3 last.** Additive, and easier to reason about once #2 is right -
    day rebalance leans on the same slot-consumption logic.
 
 Re-run `ml/measure_edit_burden.py` after each. If edits per roster do not

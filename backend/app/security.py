@@ -3,9 +3,9 @@
 Two credential mechanisms are supported, and `get_current_user` accepts
 either:
 
-  1. `Authorization: Bearer <jwt>` — issued by email/password login and by
+  1. `Authorization: Bearer <jwt>` - issued by email/password login and by
      Google sign-in. Self-contained and self-expiring.
-  2. `session_token` cookie — a server-side session row. Kept because it is
+  2. `session_token` cookie - a server-side session row. Kept because it is
      httpOnly (JavaScript on the page cannot read it), which makes it
      resistant to token theft via XSS.
 """
@@ -31,7 +31,7 @@ def hash_password(raw: str) -> str:
     """bcrypt with a per-password random salt.
 
     A fresh salt each time is why hashing the same password twice yields
-    different output — that is what defeats precomputed (rainbow table)
+    different output - that is what defeats precomputed (rainbow table)
     attacks.
     """
     return bcrypt.hashpw(raw.encode(), bcrypt.gensalt()).decode()
@@ -66,7 +66,7 @@ def generate_reset_token() -> str:
 
 def hash_reset_token(token: str) -> str:
     """SHA-256 is fine here (unlike passwords) because the token itself is
-    already 256 bits of randomness, not a human-guessable secret — there is
+    already 256 bits of randomness, not a human-guessable secret - there is
     no brute-forceable keyspace for a slow hash to defend against."""
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -80,7 +80,7 @@ def create_access_token(user_id: str, token_version: int = 0) -> str:
     The version is what makes "changing your password signs you out
     everywhere" true. Deleting server-side sessions is not enough: a bearer
     token cannot be revoked, so every one already issued keeps working until
-    it expires — up to JWT_EXPIRY_DAYS of somebody else still logged in as
+    it expires - up to JWT_EXPIRY_DAYS of somebody else still logged in as
     you, which is exactly what you change a password to stop.
 
     A COUNTER rather than a timestamp, and that was not the first attempt.
@@ -88,7 +88,7 @@ def create_access_token(user_id: str, token_version: int = 0) -> str:
     precision: a JWT `iat` is whole seconds, so the token issued by the very
     request that set the cutoff looks older than it. Rounding the cutoff down
     fixes that and opens a one-second window where an old token still passes.
-    A counter has no windows and no clock in it — the number either matches
+    A counter has no windows and no clock in it - the number either matches
     or it does not.
     """
     now = datetime.now(timezone.utc)
@@ -145,23 +145,33 @@ async def get_current_user(
             user = await db.users.find_one(
                 {"user_id": claims["user_id"]}, {"_id": 0},
             )
-            if user and _token_still_valid(claims, user):
+            if user and _token_still_valid(claims, user) and not _is_closed(user):
                 return user
 
     if session_token:
         session = await db.user_sessions.find_one({"session_token": session_token}, {"_id": 0})
         if session and _session_is_live(session):
             user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
-            if user:
+            if user and not _is_closed(user):
                 return user
 
     raise _UNAUTHENTICATED
 
 
+def _is_closed(user: Dict[str, Any]) -> bool:
+    """True for an account that has been deleted and is waiting out its thirty days.
+
+    Closing it also bumps the token version and removes its sessions, so nothing issued
+    before should still work. This is the second lock: whatever slips through (a sign-in that
+    was in flight, say) still cannot use a closed account. Signing in again reopens it.
+    """
+    return bool(user.get("deletion_scheduled_for"))
+
+
 def _token_still_valid(claims: Dict[str, Any], user: Dict[str, Any]) -> bool:
     """False for a token issued before the user's version was last bumped.
 
-    A JWT cannot be revoked — that is the trade for not looking the session up
+    A JWT cannot be revoked - that is the trade for not looking the session up
     on every request. So the user document carries a counter, the token
     carries the value it was issued under, and they have to agree.
 

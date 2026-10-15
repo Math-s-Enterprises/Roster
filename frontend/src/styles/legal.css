@@ -129,3 +129,9 @@
 @media print {
   .legal-doc article { border: 0; padding: 0; }
 }
+
+/* Lists and paragraphs inside a point, and the "Last updated" line. */
+.legal-updated { margin: 4px 0 0; font-size: 13px; color: var(--si-muted, #6b6155); }
+.legal-points li p { margin: 8px 0 0; }
+.legal-points li ul { margin: 6px 0 0; padding-left: 18px; }
+.legal-points li li { margin: 0 0 4px; }

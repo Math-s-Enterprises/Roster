@@ -10,16 +10,16 @@ people each hour, and answers from the profile alone. It says the model is
 worth building; it cannot say the roster got better, because a model can be
 more truthful and still produce a week the manager likes less.
 
-So this solves each week twice — once with `_RosterBuilder.USE_ARRIVALS`
-on, once off — and scores both against the week the manager actually
+So this solves each week twice - once with `_RosterBuilder.USE_ARRIVALS`
+on, once off - and scores both against the week the manager actually
 approved. Every week is held out of its own history, so neither model is
 ever graded on a week it learned from.
 
 WHICH WEEKS CAN BE GRADED AT ALL
 --------------------------------
 Only those with at least MIN_WEEKS_FOR_DEMAND approved weeks BEFORE them.
-`demand.py` will not learn from a week dated after the target — "a future
-week is not evidence of anything yet" — so the earliest weeks have nothing
+`demand.py` will not learn from a week dated after the target - "a future
+week is not evidence of anything yet" - so the earliest weeks have nothing
 to read and fall back to generic block coverage.
 
 That is not a small correction. The first run of this script graded four
@@ -36,7 +36,7 @@ only showing the model its past.
 THE BAR, STATED BEFORE THE MODEL WAS BUILT
 -------------------------------------------
     "arrivals difference falls substantially AND exact matches don't drop.
-     If matches fall, revert — a model that is theoretically right and
+     If matches fall, revert - a model that is theoretically right and
      reproduces your manager worse is not an improvement."
 
 Both halves are printed, per week and in total, and the verdict below
@@ -50,7 +50,7 @@ WHAT THE COLUMNS MEAN
   arrivals   total absolute difference between how many people the manager
              starts each hour and how many the solver does, summed over the
              week. This is the quantity the arrivals model optimises, so it
-             is expected to fall — it is reported to show BY HOW MUCH, not
+             is expected to fall - it is reported to show BY HOW MUCH, not
              as evidence on its own.
 
 `exact` is the honest score. Arrivals is the mechanism.
@@ -150,7 +150,7 @@ async def run(email: str, limit: int | None) -> None:
     approved = latest_per_week(await db.rosters.find(
         {"shop_id": shop_id, "approved": True}, {"_id": 0}).to_list(500))
     if len(approved) < 6:
-        sys.exit("Needs at least 6 approved weeks — one to grade, five to "
+        sys.exit("Needs at least 6 approved weeks - one to grade, five to "
                  "learn from.")
 
     employees = await db.employees.find(
@@ -168,7 +168,7 @@ async def run(email: str, limit: int | None) -> None:
     if limit:
         weeks = weeks[-limit:]
 
-    print(f"\n{shop.get('name', '?')} — {len(weeks)} weeks, each solved twice "
+    print(f"\n{shop.get('name', '?')} - {len(weeks)} weeks, each solved twice "
           f"and held out of its own history\n")
     print(f"  {'week':12}  {'manager':>8}   {'ARRIVALS MODEL':>33}"
           f"   {'SHAPE LIST':>33}")
@@ -189,7 +189,7 @@ async def run(email: str, limit: int | None) -> None:
         #
         # `len(history) >= 4` was the wrong guard, and it quietly wrecked the
         # first four rows of this report. It counted every OTHER week,
-        # including the thirty that had not happened yet — but `demand.py`
+        # including the thirty that had not happened yet - but `demand.py`
         # skips a week dated after the target ("a future week is not evidence
         # of anything yet"), so the earliest week has nothing at all to learn
         # from, falls below MIN_WEEKS_FOR_DEMAND and drops to generic block
@@ -197,7 +197,7 @@ async def run(email: str, limit: int | None) -> None:
         # did the other model, because both were running the same fallback.
         #
         # Four unsolvable weeks carried 198 of an 856-point arrivals distance
-        # — 23% of the score — and made the solver look 148 shifts short when
+        # - 23% of the score - and made the solver look 148 shifts short when
         # it is about one a week short on the weeks it can actually solve.
         # Neither model was at fault and the comparison learned nothing from
         # them.
@@ -265,7 +265,7 @@ async def run(email: str, limit: int | None) -> None:
         print("  is upstream of who gets which shift: compare the day totals")
         print("  with --explain before reading anything into exact matches.")
 
-    print(f"\n{'=' * 78}\nVERDICT — against the bar set before the model was "
+    print(f"\n{'=' * 78}\nVERDICT - against the bar set before the model was "
           f"built\n{'=' * 78}")
     exact_delta = a["exact"] - s["exact"]
     arr_delta = s["arrivals"] - a["arrivals"]
@@ -280,11 +280,11 @@ async def run(email: str, limit: int | None) -> None:
         print("  REVERT. Exact matches fell. The bar was explicit that a model")
         print("  which is theoretically right and reproduces the manager worse")
         print("  is not an improvement. Set USE_ARRIVALS = False and keep the")
-        print("  measurement — the model is not wrong, but it is not ready.")
+        print("  measurement - the model is not wrong, but it is not ready.")
     elif arr_delta <= 0:
         print("  REVERT. The arrivals distance did not fall, which is the one")
         print("  thing this model exists to fix. If it cannot do that on real")
-        print("  data, the fault is upstream of the fill — check")
+        print("  data, the fault is upstream of the fill - check")
         print("  `check_arrivals.py` and whether the weeks imported cleanly.")
     else:
         print("  KEEP. The distance the model targets fell and the manager is")
@@ -313,7 +313,7 @@ async def explain(email: str, week: str) -> None:
       shapes     how many the shape list put on, for comparison
 
     `learned` vs `placed` is the diagnostic. If they agree, the model is
-    working and simply describes this shop worse than shapes do — a real
+    working and simply describes this shop worse than shapes do - a real
     finding, and the end of it. If they DISAGREE, the fill is losing slots it
     asked for, and the fault is a bug rather than a model.
     """
@@ -351,7 +351,7 @@ async def explain(email: str, week: str) -> None:
 
     # Instrumentation. Two things can lose a slot the fill asked for: the
     # presence cap skipping it, or nobody being eligible for it. Both are
-    # counted here rather than guessed at — two guesses have already been
+    # counted here rather than guessed at - two guesses have already been
     # wrong, one about the cap and one about the placeholder shape.
     capped: Dict[Tuple[str, int], int] = defaultdict(int)
     refused: Dict[Tuple[str, int], Dict[str, int]] = defaultdict(
@@ -414,7 +414,7 @@ async def explain(email: str, week: str) -> None:
 
     his = _arrivals(_shifts(target))
 
-    print(f"\n{shop.get('name', '?')} — week of {week}")
+    print(f"\n{shop.get('name', '?')} - week of {week}")
     print("How many people START each hour.\n")
     print(f"  {'':4}{'hour':>6}{'his':>6}{'learned':>9}{'placed':>8}"
           f"{'shapes':>8}   note")
@@ -451,7 +451,7 @@ async def explain(email: str, week: str) -> None:
     total_capped = sum(capped.values())
     if mismatched:
         print(f"  {mismatched} hours where the fill placed a different number")
-        print("  from the one it learned. THAT is the bug — the model is not")
+        print("  from the one it learned. THAT is the bug - the model is not")
         print("  being asked the question it answers. Fix the fill before")
         print("  judging the model.")
         print(f"\n  presence cap fired {total_capped} times this week, at "

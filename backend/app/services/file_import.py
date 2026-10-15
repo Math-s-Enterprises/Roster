@@ -1,6 +1,6 @@
 """Turn an uploaded roster file into structured weeks.
 
-Shops keep their history in whatever they already use — a spreadsheet, a
+Shops keep their history in whatever they already use - a spreadsheet, a
 scanned PDF, or a photo of the sheet pinned to the staff-room wall. All three
 have to work, because "export your data as CSV first" is exactly the barrier
 that stops a new customer ever getting started.
@@ -14,7 +14,7 @@ Routing by file type:
 
 Spreadsheets are parsed deterministically and are always preferred. Images
 and PDFs go through the LLM, which is slower, costs money, and is
-occasionally wrong — so anything it produces is presented for review rather
+occasionally wrong - so anything it produces is presented for review rather
 than imported directly.
 """
 from __future__ import annotations
@@ -98,7 +98,7 @@ def detect_kind(filename: str, content_type: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
-# Spreadsheets and CSV — deterministic
+# Spreadsheets and CSV - deterministic
 # ---------------------------------------------------------------------------
 def _read_spreadsheet(data: bytes, year: int) -> Tuple[List[ParsedWeek], int]:
     import openpyxl
@@ -114,7 +114,7 @@ def _read_spreadsheet(data: bytes, year: int) -> Tuple[List[ParsedWeek], int]:
 
 def _read_csv(data: bytes, filename: str, year: int) -> List[ParsedWeek]:
     # Roster files are routinely saved from Excel on Windows, so UTF-8 is not
-    # a safe assumption — cp1252 and latin-1 both appear in the wild, and
+    # a safe assumption - cp1252 and latin-1 both appear in the wild, and
     # latin-1 never raises, which makes it a usable last resort.
     text = None
     for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
@@ -133,7 +133,7 @@ def _read_csv(data: bytes, filename: str, year: int) -> List[ParsedWeek]:
 
 
 # ---------------------------------------------------------------------------
-# Images and PDFs — read by the model
+# Images and PDFs - read by the model
 # ---------------------------------------------------------------------------
 def _pdf_to_images(data: bytes) -> List[bytes]:
     try:
@@ -190,7 +190,7 @@ async def _read_images(
 def _week_from_ocr(parsed: Dict[str, Any], label: str, year: int) -> ParsedWeek:
     """Reshape the model's JSON into the same structure a spreadsheet gives.
 
-    Everything downstream — preview, review, commit — then works identically
+    Everything downstream - preview, review, commit - then works identically
     regardless of where the data came from.
     """
     from app.services.roster_import import (
@@ -219,7 +219,7 @@ def _week_from_ocr(parsed: Dict[str, Any], label: str, year: int) -> ParsedWeek:
 
     if not week.week_start:
         week.warnings.append(
-            f"{label}: could not determine which week this is — set it before importing."
+            f"{label}: could not determine which week this is, set it before importing."
         )
 
     for entry in parsed.get("shifts", []):
@@ -263,7 +263,7 @@ def _apply_week_start_fallback(
     """Date any weeks whose own file didn't say when they were.
 
     A multi-sheet workbook names its weeks ('we Aug 23rd 26'), but a CSV
-    export or a photo usually does not — the file is just "this week's rota".
+    export or a photo usually does not - the file is just "this week's rota".
     Without a date those weeks are unusable and the whole upload gets
     rejected despite having parsed perfectly, so the caller can supply the
     first week and later undated weeks follow on seven days at a time.
@@ -282,7 +282,7 @@ def _apply_week_start_fallback(
             continue
         week.week_start = cursor.isoformat()
         week.warnings.append(
-            f"No date in the file — assigned to the week beginning {cursor.isoformat()}."
+            f"No date in the file, assigned to the week beginning {cursor.isoformat()}."
         )
         cursor += timedelta(days=7)
     return weeks
@@ -299,7 +299,7 @@ async def parse_upload(
 ) -> ImportResult:
     """Parse any supported roster file into weeks ready for review.
 
-    `week_start` dates any week the file itself doesn't identify — needed for
+    `week_start` dates any week the file itself doesn't identify - needed for
     CSV exports and photos, which rarely carry the week in the filename.
     """
     if not data:

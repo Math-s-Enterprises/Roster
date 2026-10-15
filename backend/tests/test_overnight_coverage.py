@@ -139,7 +139,7 @@ class TestNoPhantomOvernightGap:
     def test_no_run_of_identical_night_shifts_on_one_day(self):
         """The solver used to place a Monday 22:00-06:00 shift, see Monday
         00:00 still empty (those hours had landed on Tuesday), and place
-        another — eight in a row, until it ran out of people."""
+        another - eight in a row, until it ran out of people."""
         result = generate(staff=8)
         for day in DAYS:
             starts = [s["start"] for s in result["shifts"] if s["day"] == day]
@@ -168,7 +168,7 @@ class TestCarryInFromLastWeek:
         the test says it is.
 
         The generated history already contains that week, and the solver
-        takes the first roster matching the date — so it has to be replaced
+        takes the first roster matching the date - so it has to be replaced
         rather than appended, or the fixture is silently ignored.
         """
         previous = (date.fromisoformat(WEEK) - timedelta(days=7)).isoformat()
@@ -255,7 +255,7 @@ class TestCarryInFromLastWeek:
 class TestGapsAreReportedOnce:
     def test_no_duplicate_critical_issues(self):
         """The demand loop and the coverage-floor pass both reached the same
-        hour, so every gap was listed — and penalised — twice."""
+        hour, so every gap was listed - and penalised - twice."""
         # Two people cannot staff a 24-hour shop, so gaps are guaranteed.
         result = generate(staff=2)
         assert result["critical_issues"], "expected an under-staffed week"
@@ -310,7 +310,7 @@ class TestUnderContract:
 
     def test_somebody_who_cannot_reach_the_band_is_named(self):
         """A full-timer available three days a week cannot reach 41 hours
-        however the shifts are sized — three tens is thirty. The manager has
+        however the shifts are sized - three tens is thirty. The manager has
         to be told rather than the roster quietly settling for less."""
         employees = [
             full_timer("e1", availability={"available_days": ["mon", "tue", "wed"]}),
@@ -340,7 +340,7 @@ class TestUnderContract:
 
     def test_hourly_staff_are_never_reported_short(self):
         """An hourly contract is a ceiling, not a floor. Reporting everybody
-        under their maximum flagged the whole team every single week —
+        under their maximum flagged the whole team every single week -
         including for the 30 unpaid minutes of their own break."""
         employees = [make_employee(f"e{i}", max_weekly_hours=8) for i in range(1, 25)]
         result = generate(employees=employees)

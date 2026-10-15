@@ -7,7 +7,7 @@ import App from "@/App";
 /**
  * Apply the stored theme before anything renders.
  *
- * This used to live in AppLayout, which only mounts once signed in — so
+ * This used to live in AppLayout, which only mounts once signed in - so
  * the sign-in, forgot-password and reset-password pages never got the
  * attribute, and a reload while signed out dropped back to dark. Doing it
  * here means the choice holds across the whole app, signed in or not, and
@@ -19,7 +19,7 @@ import App from "@/App";
       document.documentElement.setAttribute("data-theme", "light");
     }
   } catch {
-    /* storage unavailable (private mode) — dark is the default anyway */
+    /* storage unavailable (private mode) - dark is the default anyway */
   }
 })();
 
@@ -41,7 +41,7 @@ const queryClient = new QueryClient({
  * the app, including ones rendered later.
  *
  * showPicker() throws if the browser blocks it (no user gesture, or the
- * input is disabled), and is absent in older Safari — either way the native
+ * input is disabled), and is absent in older Safari - either way the native
  * icon still works, so failure is silent by design.
  */
 document.addEventListener("click", (event) => {
@@ -52,7 +52,7 @@ document.addEventListener("click", (event) => {
   try {
     field.showPicker?.();
   } catch {
-    /* browser declined — the icon still opens it */
+    /* browser declined - the icon still opens it */
   }
 });
 

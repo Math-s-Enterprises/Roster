@@ -6,7 +6,7 @@ The solver ranks candidates in this order: the owner first, then contract
 need, then who else covers the slot, then demand fit. Contract need is
 computed mid-solve and depends on how many hours a person already has, so it
 cannot be reproduced exactly here. What CAN be shown is the input that drives
-it — whether somebody is on a salaried contract at all — alongside the
+it - whether somebody is on a salaried contract at all - alongside the
 ownership standing, which is fixed.
 
 That is enough to answer the question this exists for: when an owner loses
@@ -58,9 +58,9 @@ async def run(email: str, day: str, slot: str) -> None:
     print(f"\n{day.upper()} {start}-{end}")
     if history:
         print(f"ran in {history.weeks} of the observed weeks")
-        print(f"owner: {names.get(owner_id, '— nobody at 60% over 4+ weeks')}")
+        print(f"owner: {names.get(owner_id, '- nobody at 60% over 4+ weeks')}")
     else:
-        print("no history for this exact shape — ownership does not apply")
+        print("no history for this exact shape - ownership does not apply")
 
     print(f"\n  {'who':<16}{'employment':<20}{'band':<12}{'claim':<8}worked it")
     print("  " + "-" * 68)
@@ -75,10 +75,10 @@ async def run(email: str, day: str, slot: str) -> None:
     for e in sorted(employees, key=sort_key):
         eid = e["employee_id"]
         if eid not in ranks and not avail.is_full_time_contract(e):
-            continue        # never worked it and no contract pull — not a factor
+            continue        # never worked it and no contract pull - not a factor
         kind = avail.employment_type(e)
         band = avail.contract_span_band(e)
-        band_text = f"{band[0]:.1f}-{band[1]:.1f}h" if band else "—"
+        band_text = f"{band[0]:.1f}-{band[1]:.1f}h" if band else "-"
         claim = "OWNER" if eid == owner_id else (
             str(ranks[eid] + 1) if eid in ranks else "none")
         times = worked.get(eid, 0)

@@ -7,7 +7,7 @@ An earlier version of the importer read a sheet named 'we Aug 23rd 26' as the
 week STARTING Aug 23. It is week-ENDING: that sheet holds Mon 17th to Sun
 23rd, so the week starts on the 17th.
 
-Everything derived from the week start inherited the error — most visibly the
+Everything derived from the week start inherited the error - most visibly the
 holiday records, which landed six days late and marked staff as on leave
 during weeks they actually worked.
 
@@ -70,11 +70,11 @@ async def run(email: str, commit: bool) -> None:
     ]
     if already_correct:
         print(f"\n  WARNING: {len(already_correct)} rosters already start on a Monday.")
-        print("  This may have been run before. Shifting again would be wrong — stopping.")
+        print("  This may have been run before. Shifting again would be wrong - stopping.")
         return
 
     if not commit:
-        print("\nDRY RUN — nothing changed. Re-run with --commit to apply.")
+        print("\nDRY RUN - nothing changed. Re-run with --commit to apply.")
         return
 
     for roster in rosters:

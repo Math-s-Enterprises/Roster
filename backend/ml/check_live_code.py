@@ -5,7 +5,7 @@ WHY THIS EXISTS
 "I regenerated and nothing changed" has two very different causes, and they
 look identical from the screen:
 
-  1. the solver is DETERMINISTIC — same inputs, same roster, every time. Two
+  1. the solver is DETERMINISTIC - same inputs, same roster, every time. Two
      regenerations of an unchanged week are supposed to match.
   2. the app is running stale code, so a fix that works in a fresh process
      never reaches the roster the app writes.
@@ -111,10 +111,10 @@ async def main(email: str, week: str, day_filter: str = "") -> int:
           f"{len(fresh['shifts'])} shifts\n")
 
     if saved_key == fresh_key:
-        print("IDENTICAL — the app is running the current code.")
+        print("IDENTICAL - the app is running the current code.")
         print("Regenerating cannot change this week: the solver is")
         print("deterministic, so the same inputs always give the same roster.")
-        print("To change it, change an input — edit a shift and Rebalance,")
+        print("To change it, change an input - edit a shift and Rebalance,")
         print("or adjust hours, leave, or days off.")
         # --day still prints. Confirming the app is current is usually the
         # start of the question, not the end of it: the next thing asked is
@@ -122,7 +122,7 @@ async def main(email: str, week: str, day_filter: str = "") -> int:
         _print_day(day_filter, stored.get("shifts", []), fresh["shifts"], names)
         return 0
 
-    print("DIFFERENT — the app saved a roster the current code would not produce.")
+    print("DIFFERENT - the app saved a roster the current code would not produce.")
     print("That means the running app is on older code. Stop it fully and")
     print("restart; a warm --reload process does not always pick up a NEW")
     print("module, and slot_owners.py is new.\n")
@@ -146,6 +146,6 @@ if __name__ == "__main__":
     parser.add_argument("--email", required=True)
     parser.add_argument("--week", required=True, help="Monday, YYYY-MM-DD")
     parser.add_argument("--day", default="",
-                        help="mon..sun — print that day in full from both")
+                        help="mon..sun - print that day in full from both")
     args = parser.parse_args()
     raise SystemExit(asyncio.run(main(args.email, args.week, args.day)))

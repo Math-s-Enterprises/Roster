@@ -12,7 +12,7 @@ so the list is always true and repairs itself. It costs a handful of counts.
 
 WHY THIS EXISTS AT ALL
 ----------------------
-The onboarding wizard covers the shop — hours, roles, shift limits — and then
+The onboarding wizard covers the shop - hours, roles, shift limits - and then
 sets `onboarded: true`, at which point the dashboard used to announce
 "Everything is set up. Generate this week's roster in one click." A brand new
 shop reaching that line has no employees, no history and no fixed shifts, so
@@ -37,7 +37,7 @@ IMPORT_DEFAULT_MAX_HOURS = 40.0
 
 
 def _name_list(people: List[Dict[str, Any]], limit: int = 4) -> str:
-    """"Jane, Steve and 2 others" — a step you can act on without hunting."""
+    """"Jane, Steve and 2 others" - a step you can act on without hunting."""
     names = [p.get("name") or "?" for p in people]
     if len(names) <= limit:
         if len(names) == 1:
@@ -53,7 +53,7 @@ def _on_import_defaults(employee: Dict[str, Any]) -> bool:
     A saved edit sets `details_confirmed`, and that settles it. Comparing
     values is only a fallback for records written before the flag existed:
     it cannot distinguish a placeholder from somebody who genuinely is 25, on
-    the default rate, working 40 hours — and for them the step could never be
+    the default rate, working 40 hours - and for them the step could never be
     completed, which is a checklist that lies to the person following it.
     """
     if employee.get("details_confirmed"):
@@ -76,7 +76,7 @@ def build_steps(
     """The checklist, in the order that makes each step useful to the next.
 
     Importing comes second, before adding staff by hand, because the import
-    creates everyone named on the sheet — doing it first turns "add your
+    creates everyone named on the sheet - doing it first turns "add your
     team" from twenty-four forms into filling in whoever it missed.
 
     Setting employment types comes before generating, because it decides
@@ -90,7 +90,7 @@ def build_steps(
     placeholders = [e for e in active if _on_import_defaults(e)]
     untyped = [e for e in active if not e.get("employment_type")]
     # Imported history is excluded from both counts. It is not a roster this
-    # manager produced, and counting it would tick a step they never did — or
+    # manager produced, and counting it would tick a step they never did - or
     # report "4 drafts" to somebody who has generated nothing.
     own = [r for r in rosters if not r.get("historical")]
     approved = [r for r in own if r.get("approved")]
@@ -120,7 +120,7 @@ def build_steps(
             "done": weeks_in >= weeks_needed and weeks_needed > 0,
             "detail": (
                 f"{weeks_in} week{'' if weeks_in == 1 else 's'} in use"
-                + (f" — {weeks_needed} needed" if weeks_in < weeks_needed else "")
+                + (f", {weeks_needed} needed" if weeks_in < weeks_needed else "")
             ),
             "action": {"label": "Import rosters", "path": "/import"},
         },
@@ -144,7 +144,7 @@ def build_steps(
                    "start on placeholders. Age decides what the law allows; pay "
                    "decides whether the cost on each roster means anything.",
             "done": len(active) > 0 and not placeholders,
-            # An empty team must not read "All reviewed" — technically true of
+            # An empty team must not read "All reviewed" - technically true of
             # nobody, and it would tell a new shop it had finished a step it
             # has not begun.
             # NAMED, not counted. "4 still on placeholder values" against a
@@ -165,7 +165,7 @@ def build_steps(
         {
             "id": "employment",
             "title": "Set employment types",
-            "why": "Full-time contract, student or hourly — under Advanced options on "
+            "why": "Full-time contract, student or hourly, under Advanced options on "
                    "each person. A contract means 42.5 hours are owed whatever the "
                    "week looks like, so getting this wrong makes every roster wrong.",
             "done": len(active) > 0 and not untyped,

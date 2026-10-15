@@ -311,7 +311,7 @@ async def _sync_employee_leave_to_drafts(
 
 # Employees are identified by name alone. The prototype assigned each new
 # starter one of four stock Unsplash portraits on a rotating index, so a
-# fifth employee wore the same stranger's face as the first — actively
+# fifth employee wore the same stranger's face as the first - actively
 # confusing on a roster grid, where the picture is the thing the eye lands on.
 
 
@@ -511,7 +511,7 @@ async def update_employee(
     # The setup checklist used to work out whether pay and age had been
     # reviewed by comparing them against the importer's defaults. That cannot
     # tell a placeholder from somebody who really is 25, really is on the
-    # default rate and really does work 40 hours — so their step could never
+    # default rate and really does work 40 hours - so their step could never
     # be ticked, however many times it was edited. Provenance answers the
     # actual question; the values never could.
     existing = await scope.employees.find_one({"employee_id": employee_id})
@@ -550,7 +550,7 @@ async def delete_employee(employee_id: str, scope: ShopScope = CurrentScope):
 #
 # The workflow: the manager shares a sheet, the staff type their own name and
 # email into it, the manager uploads the result. Nobody types twenty-five
-# addresses into a form, and a typo there fails SILENTLY — the address looks
+# addresses into a form, and a typo there fails SILENTLY - the address looks
 # fine and the rota simply never arrives.
 #
 # Two steps on purpose. The preview is what makes this safe: matching a name
@@ -569,7 +569,7 @@ async def preview_contacts(
     if len(data) > 5 * 1024 * 1024:
         raise HTTPException(
             status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            "That file is larger than 5MB — this expects a list of names, not "
+            "That file is larger than 5MB, this expects a list of names, not "
             "a document.",
         )
     try:
@@ -581,7 +581,7 @@ async def preview_contacts(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "No email addresses found in that file. Every row needs a name and "
-            "an address — a column heading on its own is not enough.",
+            "an address, a column heading on its own is not enough.",
         )
 
     # Active only: an address belonging to somebody who has left is not a
@@ -598,7 +598,7 @@ async def apply_contacts(
     """Write the addresses the manager confirmed in the preview.
 
     Takes the resolved (employee, email) pairs rather than the file, so what
-    is written is exactly what was on screen — re-parsing here would let the
+    is written is exactly what was on screen - re-parsing here would let the
     result differ from the preview that was approved.
     """
     known = {
@@ -685,7 +685,7 @@ MAX_LEAVE_DAYS = 190   # roughly six months; guards against a typo'd year
 async def book_leave(payload: LeaveRequest, scope: ShopScope = CurrentScope):
     """Book leave over a date range, marking which days are paid.
 
-    Only days inside the range are written — two days off leaves the rest of
+    Only days inside the range are written - two days off leaves the rest of
     that week untouched, so the employee still works normally around it.
     Within the range, ticked dates become paid holiday and everything else
     becomes unavailable: unpaid, and not rostered.
@@ -712,7 +712,7 @@ async def book_leave(payload: LeaveRequest, scope: ShopScope = CurrentScope):
     if span_days > MAX_LEAVE_DAYS:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            f"That is {span_days} days of leave — check the dates.",
+            f"That is {span_days} days of leave, check the dates.",
         )
 
     all_dates = [(start + timedelta(days=i)).isoformat() for i in range(span_days)]
@@ -855,7 +855,7 @@ async def update_holiday(
     Added for the redesigned Holidays page, where every row has an Edit that
     opens the booking form pre-filled. Before this the only way to fix a
     mistyped date was to delete the entry and add it again, which is fine
-    until somebody deletes the wrong one — the reason the bare per-row trash
+    until somebody deletes the wrong one - the reason the bare per-row trash
     icon was removed.
 
     The same validation as `create_holiday`, deliberately: an entry that
@@ -876,7 +876,7 @@ async def update_holiday(
 
     # Existence is checked separately because `update_one` reports how many
     # documents it CHANGED, and re-saving a booking without touching a field
-    # changes none — which would 404 an edit that opened the form, altered
+    # changes none - which would 404 an edit that opened the form, altered
     # nothing and pressed Save. Not hypothetical: that is the commonest way
     # to leave an edit dialog.
     existing = await scope.holidays.find_one({"holiday_id": holiday_id})
@@ -990,7 +990,7 @@ async def hours_report(
     try:
         return payroll_report.build_report(
             shop=scope.shop,
-            # Includes leavers and past staff — they worked the hours and are
+            # Includes leavers and past staff - they worked the hours and are
             # owed for them, whatever their status is now.
             employees=[
                 employee_for(employee, scope.department)

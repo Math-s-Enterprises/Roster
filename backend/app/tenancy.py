@@ -4,7 +4,7 @@ THE PROBLEM THIS SOLVES
 -----------------------
 Every shop's data lives in shared collections, separated only by a
 `shop_id` field. In the prototype, isolation depended on every single
-query remembering to include `{"shop_id": ...}` by hand — roughly forty
+query remembering to include `{"shop_id": ...}` by hand - roughly forty
 places. One omission (easy when copy-pasting a route) turns into a
 cross-tenant data leak: shop A reading or deleting shop B's records.
 
@@ -89,7 +89,7 @@ class ScopedCollection:
         return result.modified_count
 
     async def upsert(self, extra: Dict[str, Any], changes: Dict[str, Any]) -> None:
-        """Update if it exists, insert if it does not — in one operation.
+        """Update if it exists, insert if it does not - in one operation.
 
         Read-then-insert races itself whenever two requests arrive together,
         which the browser does routinely on page load. The shop_id goes into

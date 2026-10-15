@@ -6,8 +6,8 @@ WHAT IS BEING TESTED
 --------------------
 `demand.py` learns two things from the same approved rosters:
 
-  * `day_slots(day)` — the shift shapes the shop actually runs
-  * `required(day, hour)` — the AVERAGE number of bodies per hour
+  * `day_slots(day)` - the shift shapes the shop actually runs
+  * `required(day, hour)` - the AVERAGE number of bodies per hour
 
 The solver places the shapes, then compares the result to the curve and
 stretches a neighbour over any hour that comes up short. But a discrete set
@@ -17,7 +17,7 @@ hours OVER it. They carry the same total; they are shaped differently.
 
 `_close_short_hours` only corrects upward. It patches all 24 short hours and
 leaves all 25 over hours alone, so the week comes out systematically bigger
-than the shapes the shop runs — and the manager reads one advisory per patch.
+than the shapes the shop runs - and the manager reads one advisory per patch.
 Eighteen in a single week is what prompted this.
 
 The question is whether those stretches buy anything. They are NOT the
@@ -28,7 +28,7 @@ WHAT A NON-ZERO ANSWER LOOKS LIKE, STATED BEFORE RUNNING
 --------------------------------------------------------
 REMOVE the curve-chasing if, with it disabled:
 
-  * uncovered hours do not rise — the real floor is unaffected
+  * uncovered hours do not rise - the real floor is unaffected
   * the week gets CLOSER to a normal week's size, not further
   * distance from the manager's own rota for that week does not get worse
   * advisories fall sharply
@@ -72,7 +72,7 @@ def _hours(roster) -> float:
 
 
 def _shapes(roster) -> set:
-    """(day, start, end) — what the week actually looks like on the wall."""
+    """(day, start, end) - what the week actually looks like on the wall."""
     return {
         (s["day"], s["start"], s["end"])
         for s in roster.get("shifts") or []
@@ -150,13 +150,13 @@ async def run(email: str, limit: int) -> None:
             "h_without": _hours(without),
             "h_manager": _hours(target),
             # How many of the manager's own shifts the solver reproduced
-            # exactly — the only external check on whether a week is right.
+            # exactly - the only external check on whether a week is right.
             "match_with": len(_shapes(with_chasing) & manager),
             "match_without": len(_shapes(without) & manager),
             "manager_shifts": len(manager),
         })
 
-    print(f"\n{shop.get('name', '?')} — {len(rows)} weeks re-solved\n")
+    print(f"\n{shop.get('name', '?')} - {len(rows)} weeks re-solved\n")
     print(f"  {'week':12}{'advisories':>18}{'uncovered':>14}"
           f"{'hours':>18}{'matches manager':>20}")
     print(f"  {'':12}{'with':>9}{'without':>9}{'with':>7}{'without':>7}"
@@ -202,7 +202,7 @@ async def run(email: str, limit: int) -> None:
         print("  what the manager actually wrote, so the stretching is doing")
         print("  real work despite the noise.")
     else:
-        print("  UNCLEAR — the measures disagree. Do not change the solver")
+        print("  UNCLEAR - the measures disagree. Do not change the solver")
         print("  on this evidence; work out which measure is wrong first.")
 
 

@@ -51,7 +51,7 @@ async def run(email: str, commit: bool) -> None:
         return
 
     if not commit:
-        print("\nDRY RUN — nothing changed. Re-run with --commit to fix.")
+        print("\nDRY RUN - nothing changed. Re-run with --commit to fix.")
         return
 
     result = await db.holidays.update_many(query, {"$set": {"scope": "employee"}})

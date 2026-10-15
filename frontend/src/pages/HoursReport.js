@@ -5,14 +5,14 @@ import { Calendar, Download, Printer, Search } from "lucide-react";
 import { api, errorMessage, fmtHours, fmtMoney } from "@/lib/api";
 
 /**
- * Hours and wages — payroll report (handoff: Hours and wages).
+ * Hours and wages - payroll report (handoff: Hours and wages).
  *
  * Filter band, stats band, one wide per-person table. Read-only: the page
  * creates nothing. Styling is the handoff's palette, scoped to .hw-* in
  * index.css.
  *
  * The numbers all come from GET /reports/hours, which builds them from
- * approved rosters only — drafts are excluded at the query level, not here.
+ * approved rosters only - drafts are excluded at the query level, not here.
  * The cost formula stays server-side so screen, CSV and print cannot
  * disagree.
  *
@@ -20,7 +20,7 @@ import { api, errorMessage, fmtHours, fmtMoney } from "@/lib/api";
  *
  * 1. Rows are a CSS grid with table roles rather than a real <table>. The
  *    handoff specifies both a real table and minmax() column tracks, and
- *    those cannot both hold — a table cannot express minmax. Grid plus
+ *    those cannot both hold - a table cannot express minmax. Grid plus
  *    role="table"/"row"/"cell" gives assistive tech the same structure and
  *    matches the five sibling pages already built this way.
  *
@@ -82,9 +82,9 @@ const fmtRangeDay = (isoDate) => {
     : d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 };
 
-/** Zero reads as an em dash — "0h" invites the reader to wonder why. */
+/** Zero reads as an em dash - "0h" invites the reader to wonder why. */
 const orDash = (value, format) =>
-  value ? format(value) : <span className="hw-zero">—</span>;
+  value ? format(value) : <span className="hw-zero">-</span>;
 
 export default function HoursReport() {
   const [preset, setPreset] = useState("last-month");
@@ -149,7 +149,7 @@ export default function HoursReport() {
   const detail = detailFor ? rows.find((r) => r.employee_id === detailFor) : null;
 
   /**
-   * CSV of the current scope with filters applied, plus the total row —
+   * CSV of the current scope with filters applied, plus the total row -
    * which always reflects the whole period, never the filtered subset.
    */
   const exportCsv = () => {
@@ -282,7 +282,7 @@ export default function HoursReport() {
             <span className="hw-policy-text">
               {breaksPaid
                 ? "Every hour on the floor is paid, breaks included."
-                : "Paid hours exclude breaks — the gap between on floor and paid hours is break time. Change this in shop settings if your staff are paid through them."}
+                : "Paid hours exclude breaks, the gap between on floor and paid hours is break time. Change this in shop settings if your staff are paid through them."}
             </span>
           </div>
         )}
@@ -357,7 +357,7 @@ export default function HoursReport() {
           <div className="hw-emptyrow">Building the report…</div>
         ) : rows.length === 0 ? (
           <div className="hw-emptyrow">
-            No approved rosters in this period — drafts are not counted.
+            No approved rosters in this period, drafts are not counted.
           </div>
         ) : filtered.length === 0 ? (
           <div className="hw-emptyrow">
@@ -423,14 +423,14 @@ export default function HoursReport() {
 
       <div className="hw-notes">
         <p>
-          <strong>Paid hours</strong> are what you are billed for — hours on the floor
+          <strong>Paid hours</strong> are what you are billed for, hours on the floor
           {breaksPaid ? " with breaks included" : ", breaks excluded"}.{" "}
           <strong>Paid holiday</strong> is booked leave paid at the normal rate; it sits outside paid
           hours, so it is listed separately and is not floor time.
         </p>
         <p>
           <strong>{wholeWeeks} whole week{wholeWeeks === 1 ? "" : "s"}</strong> in this period counted
-          towards contract checks — part weeks at either end are reported but not checked. Where
+          towards contract checks, part weeks at either end are reported but not checked. Where
           somebody was rostered under their contracted hours in a whole week, it is flagged in amber
           beside their name as a <strong>short week</strong>.
         </p>
@@ -493,8 +493,8 @@ export default function HoursReport() {
               <div className="hw-drawer-flag">
                 <strong>
                   {detail.short_weeks.length} short week{detail.short_weeks.length === 1 ? "" : "s"}
-                </strong>{" "}
-                — rostered under contracted hours in{" "}
+                </strong>
+, rostered under contracted hours in{" "}
                 {detail.short_weeks.join(", ")}. Only whole weeks inside the period are checked, so a
                 part week at either end never counts as short.
               </div>

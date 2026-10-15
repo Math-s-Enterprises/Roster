@@ -5,13 +5,13 @@
  *
  * The falling edit count is the product proving its worth every week. A shop
  * whose rosters needed six edits and now need one can see that, and it is
- * specific to them — a competitor cannot copy it, because it is built out of
+ * specific to them - a competitor cannot copy it, because it is built out of
  * their own corrections.
  *
  * The suggestions are the other half. The scheduler compares repeated edits
  * with chances where the same proposal was accepted unchanged, weighting recent
- * weeks more. Strong evidence can become a visible setting — a fixed shift, a
- * day off, an availability window — but only after the manager accepts it.
+ * weeks more. Strong evidence can become a visible setting - a fixed shift, a
+ * day off, an availability window - but only after the manager accepts it.
  *
  * Layout is the handoff's, scoped to .wl-* in index.css: a three-stat band, a
  * two-column explanation split, one table of every logged change.
@@ -22,14 +22,14 @@
  *    POST /reports/corrections/apply rechecks the evidence and 404s otherwise.
  *
  * 2. There is no "Undo refusal". Refusals are stored, and the API has dismiss
- *    but nothing to reverse it — matching the product decision that refusing
+ *    but nothing to reverse it - matching the product decision that refusing
  *    is permanent. Refused rows say so rather than offering an action that
  *    does not exist.
  *
  * 3. Applied and refused rows are returned explicitly by the report; absence
  *    from the suggestion list is not enough to infer either state.
  *
- * 4. Rows are a CSS grid with table roles rather than a real <table> — the
+ * 4. Rows are a CSS grid with table roles rather than a real <table> - the
  *    handoff asks for both a real table and minmax() tracks, and a table
  *    cannot express minmax. Same choice as the sibling pages.
  */
@@ -108,7 +108,7 @@ export default function LearningReport() {
   const patterns = useMemo(() => report?.patterns || [], [report]);
   const suggestions = useMemo(() => report?.suggestions || [], [report]);
 
-  /** Only measured weeks count — a roster with no snapshot cannot be compared. */
+  /** Only measured weeks count - a roster with no snapshot cannot be compared. */
   const measured = useMemo(
     () => (report?.trend || []).filter((t) => t.measurable),
     [report],
@@ -151,7 +151,7 @@ export default function LearningReport() {
       const r = await api.post(
         `/reports/corrections/${accept ? "apply" : "dismiss"}`, { signature },
       );
-      toast.success(accept ? `Set up — ${r.data.detail}` : "Won't be offered again");
+      toast.success(accept ? `Set up, ${r.data.detail}` : "Won't be offered again");
       setConfirming(null);
       await load();
     } catch (err) {
@@ -206,7 +206,7 @@ export default function LearningReport() {
           <div className="wl-eyebrow">LEARNING</div>
           <h1 className="wl-h1">What the scheduler has learned</h1>
           <p className="wl-sub">
-            Every edit you make to a generated roster is the most useful thing this app sees — it is
+            Every edit you make to a generated roster is the most useful thing this app sees, it is
             you saying what “right” looks like here.
           </p>
         </div>
@@ -228,12 +228,12 @@ export default function LearningReport() {
         <div className="wl-stat">
           <div className="wl-stat-label">Weekly average</div>
           <div className="wl-stat-value">
-            {measured.length >= 3 && report.average_per_week != null ? report.average_per_week : "—"}
+            {measured.length >= 3 && report.average_per_week != null ? report.average_per_week : "-"}
           </div>
           <div className="wl-stat-cap">
             {measured.length >= 3
               ? `across ${measured.length} rosters`
-              : `${measured.length} roster${measured.length === 1 ? "" : "s"} measured — too few to average`}
+              : `${measured.length} roster${measured.length === 1 ? "" : "s"} measured, too few to average`}
           </div>
         </div>
         <div className="wl-stat">
@@ -263,7 +263,7 @@ export default function LearningReport() {
             <>
               <p className="wl-body">
                 These patterns are more likely than not to be corrected again. Setting one up changes
-                a real setting you can see and undo — nothing is hidden.
+                a real setting you can see and undo - nothing is hidden.
               </p>
               <div className="wl-ready">
                 {suggestions.map((s) => (
@@ -314,9 +314,9 @@ export default function LearningReport() {
                   ? `Averaging ${report.average_per_week} a week`
                   : "Too few weeks to average yet"}
                 {editsLast === 0
-                  ? " — last week needed none at all."
+                  ? ", last week needed none at all."
                   : editsPrev != null && editsLast < editsPrev
-                    ? " — last week needed fewer."
+                    ? ", last week needed fewer."
                     : "."}
               </p>
             </>
@@ -361,7 +361,7 @@ export default function LearningReport() {
 
         {patterns.length === 0 ? (
           <div className="wl-emptyrow">
-            No edits yet — generate and adjust a roster and your changes appear here.
+            No edits yet, generate and adjust a roster and your changes appear here.
           </div>
         ) : shown.map((p) => (
           <div className="wl-row wl-data" role="row" key={p.signature} data-refused={p.refused}>
@@ -372,14 +372,14 @@ export default function LearningReport() {
               {p.applied
                 ? "Applied"
                 : p.refused
-                  ? "Refused — not offered again"
+                  ? "Refused - not offered again"
                 : p.ready
                   ? "Ready to set up"
                   : `Learning · ${p.confidencePercent}% confidence`}
             </span>
             <span className="wl-acts" role="cell">
               {p.refused || p.applied ? (
-                <span className="wl-state">—</span>
+                <span className="wl-state">-</span>
               ) : p.ready ? (
                 <button
                   type="button"
@@ -420,7 +420,7 @@ export default function LearningReport() {
         The learner weighs corrections against chances to make the same decision, with recent
         approved rosters counting more. One-offs stay below the evidence bar, and refusals make the
         learner more cautious. Drafts never count, so regenerating cannot fake a pattern. <strong>Set
-        up now</strong> writes a real setting — a fixed shift, a day off, or an availability window —
+        up now</strong> writes a real setting - a fixed shift, a day off, or an availability window -
         that anyone can find and undo in the ordinary screens.
       </p>
 

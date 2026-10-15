@@ -21,7 +21,7 @@
  *
  * It is opened from a button inside the sidebar, and rendering it there put
  * it INSIDE the sidebar's DOM. A `position: fixed` element is positioned
- * against the viewport only while no ancestor creates a containing block —
+ * against the viewport only while no ancestor creates a containing block -
  * any transform, filter or backdrop-filter on a parent makes it position
  * against THAT instead. The sidebar has one, so the dialog was squeezed into
  * the left column instead of sitting over the page.
@@ -45,7 +45,7 @@ export default function ChangePasswordModal({ onClose }) {
   const [saving, setSaving] = useState(false);
 
   // Checked here only to say so before the round trip. The server checks all
-  // of it again — this is a courtesy, not the rule.
+  // of it again - this is a courtesy, not the rule.
   const tooShort = next.length > 0 && next.length < MIN_LENGTH;
   const mismatch = confirm.length > 0 && next !== confirm;
   const unchanged = next.length > 0 && next === current;
@@ -59,7 +59,7 @@ export default function ChangePasswordModal({ onClose }) {
         current_password: current, new_password: next,
       });
       // The server hands back a token stamped with the new version. Without
-      // storing it, the very next request from THIS tab would 401 — you would
+      // storing it, the very next request from THIS tab would 401 - you would
       // sign yourself out by changing your own password.
       if (response.data?.token) setToken(response.data.token);
       toast.success("Password changed. Other devices have been signed out.");

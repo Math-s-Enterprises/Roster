@@ -16,7 +16,7 @@ history where every learned thing reads it:
   * `learning.py` weights it as a single recent week, so it pulls hard
   * any hours-per-week average is dragged up by a figure nobody worked
 
-The signature is unmistakable — one person credited with more hours than
+The signature is unmistakable - one person credited with more hours than
 there are in a week. At the reference shop: 148.5 hours, which is 21 hours a
 day for seven days.
 
@@ -27,8 +27,8 @@ what puts a week into the learning, so clearing the flag IS the unlearn, and
 nothing is cached that could survive it. The roster stays in the database and
 can be approved again if this script is wrong about it.
 
-The UI cannot do this — a week that has already finished is a record and
-cannot be reopened there — which is the only reason this exists as a script.
+The UI cannot do this - a week that has already finished is a record and
+cannot be reopened there - which is the only reason this exists as a script.
 
 DRY RUN BY DEFAULT. `--commit` to apply.
 """
@@ -91,7 +91,7 @@ async def run(email: str, commit: bool) -> None:
             if worked > IMPOSSIBLE_WEEKLY_HOURS:
                 reasons.append(
                     f"{names.get(employee_id, employee_id)} credited with "
-                    f"{worked:.1f}h — more than a week contains")
+                    f"{worked:.1f}h - more than a week contains")
         for employee_id, worked_days in days.items():
             if len(worked_days) > IMPOSSIBLE_DAYS:
                 reasons.append(
@@ -101,11 +101,11 @@ async def run(email: str, commit: bool) -> None:
             suspect.append({"roster": roster, "reasons": reasons,
                             "hours": hours})
 
-    print(f"\n{shop.get('name', '?')} — {len(approved)} approved weeks")
+    print(f"\n{shop.get('name', '?')} - {len(approved)} approved weeks")
     if not suspect:
         print("\n  Nothing impossible found. The history is physically "
               "plausible.")
-        print("  Note this checks only what CANNOT have happened — it does")
+        print("  Note this checks only what CANNOT have happened - it does")
         print("  not verify that what remains is correct.")
         return
 
@@ -122,7 +122,7 @@ async def run(email: str, commit: bool) -> None:
         print()
 
     if not commit:
-        print("  DRY RUN — nothing changed.")
+        print("  DRY RUN - nothing changed.")
         print("  Re-run with --commit to unapprove these weeks, which takes")
         print("  them out of the learning without deleting anything. They")
         print("  can be approved again if this is wrong about them.")
@@ -133,7 +133,7 @@ async def run(email: str, commit: bool) -> None:
         await db.rosters.update_one(
             {"shop_id": shop["shop_id"], "roster_id": roster["roster_id"]},
             {"$set": {"approved": False,
-                      "unapproved_reason": "impossible hours — likely a "
+                      "unapproved_reason": "impossible hours - likely a "
                                            "multi-week import"}},
         )
         print(f"  unapproved {roster.get('week_start')}")

@@ -20,7 +20,7 @@ import { api, errorMessage } from "@/lib/api";
  *
  * Uploading is not a single step here. The file is parsed into a preview,
  * the manager confirms which weeks to take and maps each name on the sheet
- * to a real employee — or marks them past staff — and only then is it
+ * to a real employee - or marks them past staff - and only then is it
  * committed. The handoff describes upload as one action and says nothing
  * about that stage, so the Review screen is kept exactly as it was rather
  * than rebuilt from a spec that does not cover it. Without the name mapping
@@ -33,7 +33,7 @@ import { api, errorMessage } from "@/lib/api";
  * DEVIATIONS
  *
  * 1. SOURCE reads the file extension rather than a stored source type, and
- *    shows the sheet or file name instead of "added 23 Aug" — the history
+ *    shows the sheet or file name instead of "added 23 Aug" - the history
  *    records what a week came from, not when it was imported.
  *
  * 2. "Looks short" is computed here, against the median shift count of the
@@ -122,7 +122,7 @@ export default function ImportRosters() {
   }, []);
 
   // What this deployment can actually read. Checked up front so an
-  // unavailable format is never offered — a 503 after a slow upload is a
+  // unavailable format is never offered - a 503 after a slow upload is a
   // much worse way to learn that PDFs are not configured.
   const [caps, setCaps] = useState({ spreadsheet: true, csv: true, pdf: true, image: true, reasons: {} });
   useEffect(() => {
@@ -168,7 +168,7 @@ export default function ImportRosters() {
       return caps.reasons?.image || "Photo reading is not set up on this server.";
     }
     if (!/\.(xlsx|xlsm|xltx|xls|csv|tsv|pdf|png|jpe?g|webp|gif|bmp|heic)$/.test(name)) {
-      return "That file type cannot be read — use a spreadsheet or CSV.";
+      return "That file type cannot be read, use a spreadsheet or CSV.";
     }
     if (caps.max_bytes && file.size > caps.max_bytes) {
       return `That file is larger than the ${Math.round(caps.max_bytes / 1024 / 1024)}MB limit.`;
@@ -205,7 +205,7 @@ export default function ImportRosters() {
 
       setPreview(data);
       setEmployees(staff.data);
-      // Weeks already in the history are unticked by default — re-importing
+      // Weeks already in the history are unticked by default - re-importing
       // one would duplicate it rather than update it.
       setWeeks(data.weeks.filter((w) => !w.already_imported).map((w) => w.week_start));
       setMapping(
@@ -254,7 +254,7 @@ export default function ImportRosters() {
     }
   };
 
-  // Leavers are created too, but as history only — counting them as new
+  // Leavers are created too, but as history only - counting them as new
   // employees would overstate what the import adds to the staff list.
   const newPeople = useMemo(
     () => Object.entries(mapping).filter(([, id]) => !id).length,
@@ -311,7 +311,7 @@ export default function ImportRosters() {
           <div className="im-eyebrow">DATA</div>
           <h1 className="im-h1">Import past rosters</h1>
           <p className="im-sub">
-            Upload the rosters you already have — a spreadsheet, a PDF, or a photo of the sheet on
+            Upload the rosters you already have, a spreadsheet, a PDF, or a photo of the sheet on
             the wall. The solver learns the shifts you actually run from these, so the more history
             it has, the closer a generated week looks to yours.
           </p>
@@ -342,7 +342,7 @@ export default function ImportRosters() {
             <>
               <Loader2 size={28} className="animate-spin" color="var(--t-accent)" aria-hidden="true" />
               <h2 className="im-drop-head">Reading {reading}…</h2>
-              <p className="im-drop-sub">Photos and PDFs take longer — they are read page by page.</p>
+              <p className="im-drop-sub">Photos and PDFs take longer, they are read page by page.</p>
             </>
           ) : (
             <>
@@ -350,7 +350,7 @@ export default function ImportRosters() {
               <h2 className="im-drop-head">Drop a roster file here</h2>
               <p className="im-drop-sub">
                 Excel · CSV{caps.pdf ? " · PDF" : ""}{caps.image ? " · photo" : ""}
-                {maxMb ? ` — up to ${maxMb}MB` : ""}
+                {maxMb ? `, up to ${maxMb}MB` : ""}
                 {unavailable.length > 0 ? `. ${unavailable.join(" and ")} need server setup.` : ""}
               </p>
 
@@ -415,7 +415,7 @@ export default function ImportRosters() {
             </>
           ) : (
             <p className="im-sum-say" style={{ borderTop: 0, paddingTop: 0 }}>
-              Nothing imported yet — the scheduler will guess until you add some history.
+              Nothing imported yet, the scheduler will guess until you add some history.
             </p>
           )}
         </div>
@@ -431,7 +431,7 @@ export default function ImportRosters() {
               {reasons.length > 0
                 ? reasons.join(" · ")
                 : `${unavailable.join(" and ")} need server setup.`}
-              {" "}Spreadsheets and CSV work regardless — they need no AI.
+              {" "}Spreadsheets and CSV work regardless, they need no AI.
             </span>
           </>
         ) : (
@@ -454,7 +454,7 @@ export default function ImportRosters() {
 
       <p className="im-note">
         The scheduler learns from the last <strong>{summary?.lookback_weeks || 24} weeks</strong> only, so a
-        week older than that reads <strong>Stored only</strong> — it is kept, and it is not being learned
+        week older than that reads <strong>Stored only</strong>, it is kept, and it is not being learned
         from. A week flagged <strong>Looks short</strong> has far fewer shifts than the weeks around it,
         which usually means the wrong sheet was read rather than a quiet week; replacing it is normally
         the fix. <strong>Removing a week stops the scheduler learning from it immediately</strong> and
@@ -469,7 +469,7 @@ export default function ImportRosters() {
  * take one back out.
  *
  * Imported weeks are stored as approved past weeks, which the app otherwise
- * refuses to reopen — a week that has been worked is a record, not a plan.
+ * refuses to reopen - a week that has been worked is a record, not a plan.
  * An import is the exception: loading the wrong sheet is an ordinary mistake,
  * invisible afterwards except through the odd rosters it produces, and
  * without this it would be permanent.
@@ -516,7 +516,7 @@ function ImportedWeeks({ refreshKey, summary, department, onChange, onReplace })
         import_id: entry.import_id, week_start: entry.week_start,
       });
       toast.success(
-        `Restored ${fmtWeek(data.week_start)} — ${data.shifts_restored} shift${
+        `Restored ${fmtWeek(data.week_start)}, ${data.shifts_restored} shift${
           data.shifts_restored === 1 ? "" : "s"}`,
       );
       load();
@@ -531,7 +531,7 @@ function ImportedWeeks({ refreshKey, summary, department, onChange, onReplace })
   /**
    * A week is stored-only once it falls outside the learning window, and
    * "short" when its shift count sits well under the median of the others.
-   * The history carries neither flag, so both are worked out here — the
+   * The history carries neither flag, so both are worked out here - the
    * numbers are on the same row, so the reader can check the claim.
    */
   const decorated = useMemo(() => {
@@ -624,7 +624,7 @@ function ImportedWeeks({ refreshKey, summary, department, onChange, onReplace })
             Imported weeks <span>({decorated.length})</span>
           </h2>
           <p className="im-section-sub">
-            Weeks loaded from your files. Remove one if it was the wrong sheet or read badly — the
+            Weeks loaded from your files. Remove one if it was the wrong sheet or read badly, the
             scheduler stops learning from it immediately.
           </p>
         </div>
@@ -669,7 +669,7 @@ function ImportedWeeks({ refreshKey, summary, department, onChange, onReplace })
 
         {decorated.length === 0 ? (
           <div className="im-emptyrow">
-            No rosters imported yet — the scheduler will guess until you add some history.
+            No rosters imported yet, the scheduler will guess until you add some history.
           </div>
         ) : filtered.length === 0 ? (
           <div className="im-emptyrow">
@@ -693,7 +693,7 @@ function ImportedWeeks({ refreshKey, summary, department, onChange, onReplace })
                 </span>
                 <span className="im-num im-val" role="cell">{w.shifts}</span>
                 <span className="im-num im-val" role="cell" data-short={w.short}>
-                  {w.total_hours ? `${Math.round(w.total_hours)}h` : "—"}
+                  {w.total_hours ? `${Math.round(w.total_hours)}h` : "-"}
                 </span>
                 <span className="im-source" role="cell" title={w.source_sheet || w.filename || ""}>
                   {w.sourceLabel}
@@ -737,7 +737,7 @@ function ImportedWeeks({ refreshKey, summary, department, onChange, onReplace })
         {filtered.length > 0 && (
           <div className="im-foot">
             <span>
-              Showing {shown.length} of {filtered.length} week{filtered.length === 1 ? "" : "s"} —
+              Showing {shown.length} of {filtered.length} week{filtered.length === 1 ? "" : "s"},
               grouped by month, newest first
             </span>
             {filtered.length > shown.length && (
@@ -766,7 +766,7 @@ function ConfirmRemove({ week, busy, onCancel, onConfirm }) {
       description={`${week.shifts} shift${week.shifts === 1 ? "" : "s"} will be deleted from the roster history, and the scheduler will stop learning from them.`}
       confirmLabel="Remove week" onClose={onCancel} onConfirm={onConfirm}>
         <p className="text-xs ui-muted mb-5">
-          You can put it back afterwards — it stays readable from the file you
+          You can put it back afterwards, it stays readable from the file you
           uploaded, and appears under “Removed weeks”.
         </p>
     </ConfirmDialog>
@@ -823,11 +823,11 @@ function Review({
         <div className="rounded-2xl p-5 ui-warn-surface border ui-warn-line">
           <div className="flex items-center gap-2 ui-warn mb-2">
             <AlertTriangle size={16} />
-            <span className="text-sm font-medium">Read from a {preview.kind} — check it</span>
+            <span className="text-sm font-medium">Read from a {preview.kind}, check it</span>
           </div>
           <p className="text-xs ui-body leading-relaxed">
             Times and names were read from an image, so mistakes are possible. Check the
-            preview below before importing — this becomes the history the AI learns from.
+            preview below before importing, this becomes the history the AI learns from.
           </p>
         </div>
       )}
@@ -907,7 +907,7 @@ function Review({
           <h2 className="font-medium text-sm mb-1">People found</h2>
           <p className="text-[11px] ui-muted mb-4">
             Match each name to someone you already have, or leave as “Create new”.
-            For anyone who has left, choose <em>No longer works here</em> — their
+            For anyone who has left, choose <em>No longer works here</em>, their
             shifts stay in the history so the staffing levels stay right, but they
             are never rostered and never appear in your staff list.
           </p>
@@ -924,7 +924,7 @@ function Review({
                     </div>
                     {/* Only when the sheet and your role list disagree. The
                         title is kept as written and sorts last until you
-                        position it in Settings — worth seeing now. */}
+                        position it in Settings - worth seeing now. */}
                     {p.role_in_file && p.role_in_file !== p.role && (
                       <div className="text-[10px] truncate" style={{ color: "var(--warn)" }}>
                         sheet says “{p.role_in_file}”
@@ -944,7 +944,7 @@ function Review({
                     <option value={PAST_STAFF}>🚫 No longer works here</option>
                     {employees.map((e) => (
                       <option key={e.employee_id} value={e.employee_id}>
-                        {e.name} — {(e.departments || ["Shop Floor"]).join(", ")}
+                        {e.name}, {(e.departments || ["Shop Floor"]).join(", ")}
                       </option>
                     ))}
                   </select>
@@ -955,7 +955,7 @@ function Review({
 
           {pastCount > 0 && (
             <p className="text-[11px] mt-3" style={{ color: "var(--ink-mute-2)" }}>
-              {pastCount} {pastCount === 1 ? "person" : "people"} marked as left —
+              {pastCount} {pastCount === 1 ? "person" : "people"} marked as left,
               keeping {pastShifts} shift{pastShifts === 1 ? "" : "s"} of history
               without adding them to your staff.
             </p>
@@ -966,7 +966,7 @@ function Review({
       {s.unreadable_cells > 0 && (
         <div className="glass rounded-2xl p-5 text-xs ui-body">
           {s.unreadable_cells} cell{s.unreadable_cells === 1 ? "" : "s"} could not be read
-          and will be skipped — usually hours written without start and end times.
+          and will be skipped, usually hours written without start and end times.
         </div>
       )}
 
@@ -1001,7 +1001,7 @@ function Review({
  *
  * `weeks_in_window` is the number that actually decides roster quality: the
  * demand profile learns from a trailing window and needs a minimum before it
- * will use a learned shape at all. Counting rosters alone hid that — fifty
+ * will use a learned shape at all. Counting rosters alone hid that - fifty
  * rosters spread over three years still leaves the solver falling back to
  * generic block coverage.
  */

@@ -3,7 +3,7 @@
 WHY THIS IS NOT THE SOLVER
 --------------------------
 The solver refuses to break a rule. That is correct when it is building a
-week from nothing — there is always another arrangement to try. It is wrong
+week from nothing - there is always another arrangement to try. It is wrong
 at 6am when one person has phoned in and the shop opens in an hour: the
 manager's real choice is not "cover it legally or leave it empty", it is
 "which rule do I bend, and who do I ask".
@@ -16,13 +16,13 @@ THE HARD FLOOR
 --------------
 Four things are never offered, however short the shop is:
 
-    under-16 curfew        law, not policy — overriding exposes the owner
+    under-16 curfew        law, not policy - overriding exposes the owner
     over 12 hours          the maximum shift length
     overlapping hours      nobody can be in two places
     booked annual leave    somebody's holiday is not the manager's to take
 
-Everything else — over contract, a sixth day, an unfamiliar start, a
-requested day off — is offered with the cost stated.
+Everything else - over contract, a sixth day, an unfamiliar start, a
+requested day off - is offered with the cost stated.
 
 Note that "already working that day" is NOT a block. Somebody on 14:00-22:00
 can take a 06:00-14:00 shift; that is a long day, not an impossibility, and
@@ -71,7 +71,7 @@ def _overlaps(a_start: str, a_end: str, b_start: str, b_end: str) -> bool:
 def _adjacent(a_start: str, a_end: str, b_start: str, b_end: str) -> bool:
     """Do two shifts run into each other with no real break between?
 
-    A few minutes is not a break — somebody handed a 06:00-14:00 and a
+    A few minutes is not a break - somebody handed a 06:00-14:00 and a
     14:05-22:00 has worked sixteen hours, whatever the paperwork says.
     """
     a0, a1 = to_minutes(a_start), to_minutes(a_end)
@@ -206,7 +206,7 @@ def _hard_block(
         # hours on the floor however it is written down.
         #
         # Two shifts with a real gap are a split shift, which is ordinary in
-        # retail — somebody doing the morning and then coming back for the
+        # retail - somebody doing the morning and then coming back for the
         # evening rush has been home in between. Summing those would refuse
         # cover that is perfectly reasonable.
         if _adjacent(start, end, shift["start"], shift["end"]):
@@ -266,7 +266,7 @@ def _what_breaks(
         out.append({"rule": "day_off", "detail": "asked for this day off"})
 
     # Offered rather than blocked, and only for a sick call. Eleven hours is
-    # health and safety, so it sits high in the list — but at 6am with the
+    # health and safety, so it sits high in the list - but at 6am with the
     # shop opening in an hour, a manager who has to choose between a short
     # turnaround and an unattended shop should be shown the choice rather
     # than told nobody is available.

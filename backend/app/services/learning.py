@@ -1,6 +1,6 @@
 """Historical preference weights.
 
-WHAT THIS IS — AND IS NOT
+WHAT THIS IS - AND IS NOT
 -------------------------
 This is not machine learning. No model is trained, nothing is fitted, and
 there are no learned parameters in the statistical sense. It counts how
@@ -20,7 +20,7 @@ WHAT IT COUNTS
                                   usually works but was off
 
 Only approved rosters count. Shifts marked sick, unpaid leave, or as a
-temporary override are excluded — they represent exceptions, and treating
+temporary override are excluded - they represent exceptions, and treating
 them as preference signal would teach the solver to repeat one-offs.
 """
 import logging
@@ -34,14 +34,14 @@ EMPTY_WEIGHTS: Dict[str, Dict] = {"day": {}, "tpl": {}, "coworkers": {}, "covers
 def latest_per_week(rosters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """One roster per week, newest first, most-recently-created wins.
 
-    A week can end up with two approved rosters — approve, regenerate,
+    A week can end up with two approved rosters - approve, regenerate,
     approve again, or import a historical week that was already generated
     and approved. Counting both teaches the solver that week twice, which
     quietly doubles one week's influence over every preference weight.
 
     Deduplicating here rather than at each call site means a duplicate is
     harmless to the *maths* even when one slips past the API guards. Those
-    guards exist too, in `rosters.py` — this is the second line, not the
+    guards exist too, in `rosters.py` - this is the second line, not the
     first.
     """
     by_week: Dict[str, Dict[str, Any]] = {}
@@ -141,7 +141,7 @@ def training_summary(approved_rosters: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     `weeks_in_window` is the number that actually decides roster quality: the
     demand profile learns from a trailing window and needs a minimum before
-    it will use a learned shape at all. Counting rosters alone hid that — a
+    it will use a learned shape at all. Counting rosters alone hid that - a
     shop could import fifty rosters spread over three years and still fall
     back to generic block coverage.
     """

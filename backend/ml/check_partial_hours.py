@@ -10,8 +10,8 @@ floors each step to an hour:
     for minute in range(start_m, end_m, 60):
         covered.add((day, (minute // 60) % 24))
 
-So a shift beginning 17:30 is credited with hour 17 — the whole 17:00-18:00
-block — on the strength of being there for half of it. That is how a
+So a shift beginning 17:30 is credited with hour 17 - the whole 17:00-18:00
+block - on the strength of being there for half of it. That is how a
 gap-closing stretch from 18:00 to 17:30 "covers wed 17:00" while the shop is
 genuinely empty from 17:00 to 17:30.
 
@@ -33,7 +33,7 @@ matters: an hour credited to a 17:30 start is harmless if a colleague is
 standing there 17:00-17:30, and it is a real hole if not.
 
 Reported per week and totalled, alongside how many shifts even start or end
-off the hour — if that is near zero the whole question is theoretical for
+off the hour - if that is near zero the whole question is theoretical for
 this shop.
 
 MEASURE THE RIGHT ROSTERS
@@ -44,12 +44,12 @@ approved weeks at the reference shop are the manager's own hand-built rota,
 which is continuous by construction. There were no holes to invent, so zero
 was guaranteed before the script ran.
 
-The rounding is only exploited by the SOLVER — `_close_short_hours` is what
+The rounding is only exploited by the SOLVER - `_close_short_hours` is what
 stretches a finish by thirty minutes and then believes the hour is covered.
 So `--source` decides what is measured, and the default is the solver:
 
     generated   drafts the solver produced (default)
-    approved    the manager's own rota — the control, expected to be clean
+    approved    the manager's own rota - the control, expected to be clean
     solve       re-solve each week from scratch and measure that
 
 `solve` is the strongest: it measures today's code rather than whatever
@@ -178,7 +178,7 @@ async def _solve_recent(shop, approved, weeks):
                 if avail.contract_span_band(e)
             },
         })
-        print(f"  solved {week} — {len(result['shifts'])} shifts", flush=True)
+        print(f"  solved {week} - {len(result['shifts'])} shifts", flush=True)
     return out
 
 
@@ -187,7 +187,7 @@ def report_edges(rosters) -> None:
 
     A shape that is IN the day's learned slot list came from the shop's own
     history and is not the solver's doing. A shape that is not was
-    manufactured by a reshaping pass — gap-closing or contract-fitting — and
+    manufactured by a reshaping pass - gap-closing or contract-fitting - and
     splitting by whether the person is on a salaried contract band separates
     those two.
     """
@@ -232,7 +232,7 @@ def report_edges(rosters) -> None:
               f"of them, _contract_shift_length is the\nsource: it trims a "
               f"slot's finish to fit a contract band, in 30-minute steps.")
     else:
-        print("No half-hour finish was manufactured — every one came from the")
+        print("No half-hour finish was manufactured - every one came from the")
         print("shop's own history, and there is nothing here to change.")
 
 
@@ -251,13 +251,13 @@ async def run(email: str, weeks: int, source: str, edges: bool) -> None:
     if source == "approved":
         rosters = sorted(latest_per_week(approved),
                          key=lambda r: r.get("week_start", ""), reverse=True)[:weeks]
-        label = ("the manager's own rota — the CONTROL. A hand-built rota on a "
+        label = ("the manager's own rota - the CONTROL. A hand-built rota on a "
                  "24h shop\nis continuous by construction, so a clean result "
                  "here proves nothing about\nthe solver.")
     elif source == "solve":
-        print("Re-solving with today's code — this takes a moment.")
+        print("Re-solving with today's code - this takes a moment.")
         rosters = await _solve_recent(shop, approved, weeks)
-        label = "freshly solved by TODAY's code — the real question"
+        label = "freshly solved by TODAY's code - the real question"
     else:
         drafts = await db.rosters.find(
             {"shop_id": shop["shop_id"], "approved": {"$ne": True},
@@ -266,13 +266,13 @@ async def run(email: str, weeks: int, source: str, edges: bool) -> None:
         rosters = sorted(drafts, key=lambda r: (r.get("week_start", ""),
                                                 r.get("created_at", "")),
                          reverse=True)[:weeks]
-        label = "drafts the SOLVER produced — what we actually want to know"
+        label = "drafts the SOLVER produced - what we actually want to know"
 
     if not rosters:
         sys.exit(f"No rosters to measure for --source {source}.")
 
     open_flags = _open_minutes(shop)
-    print(f"\n{shop['name']} — {len(rosters)} week(s), "
+    print(f"\n{shop['name']} - {len(rosters)} week(s), "
           f"{'open 24h' if shop.get('open_24h') else 'using shop hours'}")
     print(f"source: {label}\n")
 
@@ -348,7 +348,7 @@ async def run(email: str, weeks: int, source: str, edges: bool) -> None:
                 #     once. This is the case the advisory shows: a 17:30
                 #     start credited with the whole 17:00 hour, so the model
                 #     reads three on when two are standing there. Nobody is
-                #     missing, so (1) sees nothing — but the required
+                #     missing, so (1) sees nothing - but the required
                 #     headcount is short and the solver cannot tell.
                 said = model_heads.get((day, hour), 0)
                 floor = min(heads) if heads else 0
@@ -372,10 +372,10 @@ async def run(email: str, weeks: int, source: str, edges: bool) -> None:
     print()
     print("=" * 68)
     print(f"EMPTY-HOLE  {grand_invented} hour(s) called covered while the shop "
-          f"is actually empty\n            for part of them — "
+          f"is actually empty\n            for part of them - "
           f"{100 * grand_invented / grand_open:.2f}% of {grand_open} open hours.")
     print(f"OVER-COUNT  {grand_over} hour(s) where the model counts more people "
-          f"than are ever\n            there at once — "
+          f"than are ever\n            there at once - "
           f"{100 * grand_over / grand_open:.2f}%. "
           f"{grand_short} shortfall-minutes in total,\n"
           f"            {grand_short / len(rosters):.0f} per week.")
@@ -388,17 +388,17 @@ async def run(email: str, weeks: int, source: str, edges: bool) -> None:
     print()
     decisive = grand_invented + grand_over
     if decisive == 0 and source == "approved":
-        print("VERDICT: none — but this was the CONTROL. A hand-built rota on")
+        print("VERDICT: none - but this was the CONTROL. A hand-built rota on")
         print("a 24h shop never has a hole, so zero here was guaranteed before")
         print("the script ran. Re-run with --source solve for the real answer.")
     elif decisive == 0:
         print("VERDICT: the rounding is not inventing coverage in practice,")
         print("in rosters the SOLVER produced. Option A would be correct in")
-        print("principle and change nothing real — fix the stretch (option C)")
+        print("principle and change nothing real - fix the stretch (option C)")
         print("and leave the coverage model alone.")
     else:
         print("VERDICT: the model is claiming cover it does not have. Option A")
-        print("is a correction, not a refinement — but expect it to surface")
+        print("is a correction, not a refinement - but expect it to surface")
         print(f"these {decisive} hours as gaps in weeks that look clean today.")
 
 

@@ -4,15 +4,15 @@
 
 WHY THIS EXISTS
 ---------------
-`why_slot.py` answers a different question — who OWNED a slot and what beat
-them — and on a day where a slot went unfilled it prints an empty table,
+`why_slot.py` answers a different question - who OWNED a slot and what beat
+them - and on a day where a slot went unfilled it prints an empty table,
 which reads as "no answer" rather than "wrong question". That happened, and
 it cost a round trip.
 
 The solver already knows. `_is_eligible` checks each rule in order and calls
 `_note_exclusion` with a sentence whenever somebody is turned away. Those
 sentences are collected per PERSON for the unrostered list, so by the end of
-the week they say whatever the LAST rejection was — not the one that mattered
+the week they say whatever the LAST rejection was - not the one that mattered
 on Friday. This keeps every rejection tagged with the day it happened on.
 
 THE SPY ALONE IS NOT ENOUGH, AND THAT WAS MEASURED
@@ -21,12 +21,12 @@ Two gaps, both found by checking the instrumentation could return a non-zero
 answer before trusting a zero:
 
   * `_is_eligible` returns False with NO note for "already on a shift today"
-    and "their preferred day off" — so those are re-derived from its own
+    and "their preferred day off" - so those are re-derived from its own
     arguments when a silent False comes back.
   * Somebody on approved leave never reaches `_is_eligible` at all. The
     candidate lists filter on `employee_off_dates` first, so a spy on the
     eligibility check reports nothing whatsoever about the person who is on
-    holiday — which is the likeliest reason a day is short in the first
+    holiday - which is the likeliest reason a day is short in the first
     place.
 
 So the report is built from the roster outwards: every active person who was
@@ -39,10 +39,10 @@ When a slot cannot be filled there are two very different causes, needing
 opposite fixes:
 
   * somebody COULD work it but the week had already spent their hours by the
-    time the solver arrived — the fill is forward-only and never revisits an
+    time the solver arrived - the fill is forward-only and never revisits an
     earlier day, so a swap-to-unlock pass would fix it
-  * somebody is blocked for a reason freeing hours would not change —
-    familiarity, leave, a curfew, a custom rule — and no reshuffling helps
+  * somebody is blocked for a reason freeing hours would not change -
+    familiarity, leave, a curfew, a custom rule - and no reshuffling helps
 
 Answer the first before building anything.
 
@@ -70,7 +70,7 @@ ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 # Which rejections a reshuffle could do something about. Matched on the
 # distinctive fragment of each message in `_is_eligible`, not on loose
-# keywords — "hours" appears in half of them and means nothing on its own.
+# keywords - "hours" appears in half of them and means nothing on its own.
 FREEABLE = (
     "would exceed their",             # contracted band or weekly cap
     "rest since their last shift",    # 11-hour gap, caused by what came before
@@ -156,7 +156,7 @@ async def run(email: str, week: str, day: str) -> None:
               if not (s.get("paid_holiday") or s.get("unpaid_holiday"))]
     date_iso = _date_for(week, day)
 
-    print(f"\n{shop.get('name', '?')} — week of {week}, "
+    print(f"\n{shop.get('name', '?')} - week of {week}, "
           f"{day.upper()} {date_iso}")
     print(f"{len(employees)} employees · demand profile: {profile.source}")
 
@@ -182,7 +182,7 @@ async def run(email: str, week: str, day: str) -> None:
                   + "".join(f"{c:>11}" for c in row))
 
     # What the demand profile even ASKED for on this day. A day with no
-    # slots is never filled at all — the coverage check notices the gap
+    # slots is never filled at all - the coverage check notices the gap
     # afterwards, so it presents identically to a day nobody could work.
     # Two opposite causes, and this is what tells them apart.
     asked = profile.day_slots.get(day) or []
@@ -195,13 +195,13 @@ async def run(email: str, week: str, day: str) -> None:
         print("    NOTHING. The learned profile has no slots for this day,")
         print("    so no pass ever tried to fill it. The gap is reported")
         print("    afterwards by the coverage check, which is why it looks")
-        print("    like nobody could work — the question was never asked.")
+        print("    like nobody could work - the question was never asked.")
     for other in ORDER:
         if other != day:
             print(f"    ({other}: {len(profile.day_slots.get(other) or [])} slots)")
 
-    # EVERY distinct reason, not just the first. The passes run twice — once
-    # strict, once with preferences relaxed — so the first rejection is
+    # EVERY distinct reason, not just the first. The passes run twice - once
+    # strict, once with preferences relaxed - so the first rejection is
     # routinely a preferred day off that the second pass then forgave. Keeping
     # only the first reported exactly that and hid the one that bit.
     spoken: Dict[str, List[str]] = defaultdict(list)
@@ -237,12 +237,12 @@ async def run(email: str, week: str, day: str) -> None:
         used = hours.get(eid, 0.0)
         room = cap - used
 
-        # Derived reasons first, in the order the solver applies them —
+        # Derived reasons first, in the order the solver applies them -
         # these are the ones it never gets far enough to say out loud.
         if eid in on_leave:
             reason, freeing_helps = "On approved leave.", False
         elif len(days_worked.get(eid, ())) >= max_days:
-            reason = (f"Already on {len(days_worked[eid])} days — "
+            reason = (f"Already on {len(days_worked[eid])} days - "
                       f"the limit is {max_days}.")
             freeing_helps = True
         elif spoken.get(eid):
@@ -252,7 +252,7 @@ async def run(email: str, week: str, day: str) -> None:
             reason = f"Week already at {used:g}h of their {cap:g}h."
             freeing_helps = True
         else:
-            reason = (f"Never considered — {room:g}h still spare. "
+            reason = (f"Never considered - {room:g}h still spare. "
                       f"The day was judged covered.")
             freeing_helps = False
 
@@ -267,7 +267,7 @@ async def run(email: str, week: str, day: str) -> None:
         print(f"  YES, for: {', '.join(freeable)}")
         print("    Nothing about them is unsuitable. The week had already")
         print("    spent them before it reached this day, and the fill is")
-        print("    forward-only — moving one of their earlier shifts to a")
+        print("    forward-only - moving one of their earlier shifts to a")
         print("    colleague would free them, which it cannot do.")
     else:
         print("  NO. Nobody was short of room.")
@@ -290,7 +290,7 @@ def _where_could_it_land(freeable_ids, employees, names, shifts, approved,
     nothing. That is the difference between a fix and wasted work, so it is
     measured rather than assumed.
 
-    Only the state-INDEPENDENT blocks are checked — availability, familiarity
+    Only the state-INDEPENDENT blocks are checked - availability, familiarity
     and the curfew. Those cannot be argued with by rearranging the week. Hours
     and days can, and are exactly what the swap would be freeing, so counting
     them here would rule out the very thing being tested.
@@ -337,7 +337,7 @@ def _where_could_it_land(freeable_ids, employees, names, shifts, approved,
     if landed:
         print("  A swap has somewhere to land. Freeing the day is worth doing.")
     else:
-        print("  Nowhere to land. A swap pass would run and change nothing —")
+        print("  Nowhere to land. A swap pass would run and change nothing -")
         print("  the shortage is people who can work these shapes, not the")
         print("  order the week was filled in.")
 

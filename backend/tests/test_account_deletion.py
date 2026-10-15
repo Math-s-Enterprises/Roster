@@ -1,12 +1,16 @@
-"""Deleting your own account erases everything it owns, and nothing else.
+"""Deleting your own account closes it at once and erases it thirty days later.
 
-This is irreversible, so the tests are written around the ways it could go wrong: leaving
-data behind, taking somebody else's, being triggered by the wrong person, deleting data
-while a subscription keeps charging, and being left half-done by a failure.
+The tests are written around the ways this could go wrong: leaving data behind, taking
+somebody else's, being triggered by the wrong person, erasing too soon (before the thirty days)
+or never, deleting data while a subscription keeps charging, a closed account still being
+usable, a person who changed their mind not being able to come back, and being left half-done
+by a failure.
 """
 import asyncio
+import contextlib
 import json
 import types
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -101,6 +105,25 @@ def belonging_to(snapshot, user_id, shop_id):
     return found
 
 
+def purge(days=31):
+    """Run the clean-up as if `days` had gone by since now. Returns the ids it erased."""
+    return run(ad.purge_due(now=datetime.now(timezone.utc) + timedelta(days=days)))
+
+
+def user_row(user_id):
+    return [u for u in docs("users") if u["user_id"] == user_id][0]
+
+
+def login(client, email="owner@example.com", password=PASSWORD):
+    return client.post("/api/auth/login", json={"email": email, "password": password})
+
+
+def set_user(user_id, **fields):
+    async def write():
+        await db.users.update_one({"user_id": user_id}, {"$set": fields})
+    run(write())
+
+
 def delete(client, token, email="owner@example.com", password=PASSWORD, **extra):
     body = {"confirm_email": email, **({"password": password} if password is not None else {}), **extra}
     return client.post("/api/auth/delete-account", json=body, headers=auth(token))
@@ -145,13 +168,23 @@ class TestEveryCollectionIsAccountedFor:
         assert sum(len(g) for g in groups) == len(ad.ERASURE_PLAN)
 
 
-# --- the thing itself ---------------------------------------------------------------------
-class TestDeletingAnAccount:
+# --- step one: the request closes the account and keeps the data ------------------------------
+class TestRequestingDeletion:
     def test_it_needs_you_to_be_signed_in(self, client):
         response = client.post("/api/auth/delete-account", json={"confirm_email": "a@b.ie", "password": "x"})
         assert response.status_code == 401
 
-    def test_everything_goes(self, client):
+    def test_it_says_when_everything_will_be_erased(self, client):
+        token = register(client)
+        response = delete(client, token)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["scheduled"] is True and body["days"] == 30
+        when = datetime.fromisoformat(body["delete_on"])
+        assert abs((when - datetime.now(timezone.utc)) - timedelta(days=30)) < timedelta(minutes=1)
+        assert "deleted" not in body, "nothing has been deleted yet, and the answer must not say it has"
+
+    def test_nothing_is_erased_yet(self, client):
         token = register(client)
         user_id, shop_id = populate(client, token)
         before = everything()
@@ -161,63 +194,404 @@ class TestDeletingAnAccount:
             "the test must start with a row in every account-owned collection"
         )
 
-        response = delete(client, token)
 
-        assert response.status_code == 200, response.text
-        assert response.json() == {"deleted": True}
-        after = everything()
-        assert belonging_to(after, user_id, shop_id) == {}
-        assert total(after) == 0, f"left behind: { {k: v for k, v in after.items() if v} }"
-
-    def test_no_trace_of_the_person_or_their_staff_is_left_in_any_text(self, client):
-        token = register(client)
-        user_id, shop_id = populate(client, token)
         delete(client, token)
-        leftovers = json.dumps(everything(), default=str)
-        for needle in ("owner@example.com", user_id, shop_id, "Staff a0", "stafffa1@example.com", "staffa1@example.com"):
-            assert needle not in leftovers
 
-    def test_the_sign_in_stops_working_at_once_on_every_device(self, client):
+        after = everything()
+        untouched = [n for n in ALL if n not in ("users", "user_sessions", *ad.NON_ACCOUNT_COLLECTIONS)]
+        assert {n: after[n] for n in untouched} == {n: before[n] for n in untouched}, "data was changed or removed at the request"
+        assert [r for r in after["users"] if r["user_id"] == user_id], "the user record must stay for the thirty days"
+
+    def test_the_record_carries_the_two_dates(self, client):
+        token = register(client)
+        user_id, _ = ids(client, token)
+        delete(client, token)
+        row = user_row(user_id)
+        requested = datetime.fromisoformat(row["deletion_requested_at"])
+        scheduled = datetime.fromisoformat(row["deletion_scheduled_for"])
+        assert abs(requested - datetime.now(timezone.utc)) < timedelta(minutes=1)
+        assert scheduled - requested == timedelta(days=ad.GRACE_DAYS) == timedelta(days=30)
+
+    def test_the_paid_plan_is_switched_off_so_coming_back_does_not_keep_it_for_free(self, client):
+        token = register(client)
+        user_id, _ = ids(client, token)
+        set_user(user_id, pro=True, pro_since="2026-01-01T00:00:00+00:00")
+        delete(client, token)
+        row = user_row(user_id)
+        assert row["pro"] is False and "pro_since" not in row
+
+    def test_every_sign_in_stops_working_at_once_on_every_device(self, client):
         token = register(client)
         delete(client, token)
         assert me(client, token).status_code == 401
         assert client.get("/api/employees", headers=auth(token)).status_code == 401
         assert client.get("/api/shop", headers=auth(token)).status_code == 401
 
-    def test_the_password_no_longer_signs_in(self, client):
+    def test_sessions_are_removed(self, client):
         token = register(client)
+        user_id, shop_id = populate(client, token)
         delete(client, token)
-        login = client.post("/api/auth/login", json={"email": "owner@example.com", "password": PASSWORD})
-        assert login.status_code == 401
-
-    def test_the_same_email_can_start_again_with_nothing_carried_over(self, client):
-        """The point of it: leave one company, begin at another on the same address."""
-        token = register(client)
-        populate(client, token)
-        delete(client, token)
-
-        fresh = register(client)                        # same email, same password
-        assert client.get("/api/employees", headers=auth(fresh)).json() == []
-        assert client.get("/api/shop", headers=auth(fresh)).json()["onboarded"] is False
-        user_id, shop_id = ids(client, fresh)
-        assert user_id != "" and shop_id != ""
-
-    def test_a_second_attempt_finds_nothing_to_delete_and_does_not_crash(self, client):
-        token = register(client)
-        delete(client, token)
-        again = delete(client, token)
-        assert again.status_code == 401
+        assert [r for r in docs("user_sessions") if r["user_id"] == user_id] == []
 
     def test_the_session_cookie_is_cleared(self, client):
         token = register(client)
         response = delete(client, token)
         assert "session_token=" in response.headers.get("set-cookie", "")
 
-    def test_the_account_is_gone_from_the_users_table_specifically(self, client):
+    def test_a_second_request_with_the_old_token_is_refused_and_does_not_crash(self, client):
+        token = register(client)
+        delete(client, token)
+        assert delete(client, token).status_code == 401
+
+    def test_asking_twice_keeps_the_original_date(self, client):
         token = register(client)
         user_id, _ = ids(client, token)
         delete(client, token)
+        first = user_row(user_id)["deletion_scheduled_for"]
+        run(ad.request_deletion(user_row(user_id)))
+        assert user_row(user_id)["deletion_scheduled_for"] == first
+
+    def test_a_wrong_answer_schedules_nothing(self, client):
+        token = register(client)
+        user_id, _ = ids(client, token)
+        delete(client, token, password="nope")
+        assert "deletion_scheduled_for" not in user_row(user_id)
+
+
+# --- the thirty days -------------------------------------------------------------------------
+class TestThirtyDays:
+    def request(self, client, label="a"):
+        token = register(client)
+        user_id, shop_id = populate(client, token, label)
+        delete(client, token)
+        return token, user_id, shop_id
+
+    def test_nothing_is_erased_before_the_date(self, client):
+        token, user_id, shop_id = self.request(client)
+        before = everything()
+        assert purge(days=29.9) == []
+        assert everything() == before
+
+    def test_it_is_erased_once_the_date_has_passed(self, client):
+        token, user_id, shop_id = self.request(client)
+        assert purge(days=30.1) == [user_id]
+        after = everything()
+        assert belonging_to(after, user_id, shop_id) == {}
+        assert total(after) == 0, f"left behind: { {k: v for k, v in after.items() if v} }"
+
+    def test_the_date_itself_counts_as_the_day(self, client):
+        token, user_id, shop_id = self.request(client)
+        due = ad.parse_when(user_row(user_id)["deletion_scheduled_for"])
+        assert run(ad.purge_due(now=due - timedelta(seconds=1))) == []
+        assert run(ad.purge_due(now=due)) == [user_id]
+
+    def test_no_trace_of_the_person_or_their_staff_is_left_in_any_text(self, client):
+        token, user_id, shop_id = self.request(client)
+        purge()
+        leftovers = json.dumps(everything(), default=str)
+        for needle in ("owner@example.com", user_id, shop_id, "Staff a0", "staffa1@example.com"):
+            assert needle not in leftovers
+
+    def test_the_account_is_gone_from_the_users_table_specifically(self, client):
+        token, user_id, _ = self.request(client)
+        purge()
         assert not [u for u in docs("users") if u["user_id"] == user_id]
+
+    def test_the_same_email_can_start_again_once_it_is_gone_with_nothing_carried_over(self, client):
+        """The point of it: leave one company, begin at another on the same address."""
+        token, user_id, shop_id = self.request(client)
+        purge()
+        fresh = register(client)                        # same email, same password
+        assert client.get("/api/employees", headers=auth(fresh)).json() == []
+        assert client.get("/api/shop", headers=auth(fresh)).json()["onboarded"] is False
+        assert ids(client, fresh)[0] != user_id
+
+    def test_the_password_no_longer_signs_in_once_it_is_gone(self, client):
+        self.request(client)
+        purge()
+        response = login(client)
+        # The account is gone for good, so its address is simply not registered any more.
+        assert response.status_code == 404 and response.json()["detail"]["code"] == "email_not_found"
+
+    def test_running_the_clean_up_again_finds_nothing_and_is_harmless(self, client):
+        token, user_id, _ = self.request(client)
+        assert purge() == [user_id]
+        assert purge() == []
+        assert total(everything()) == 0
+
+    def test_an_account_that_never_asked_is_never_erased_however_old(self, client):
+        token = register(client)
+        populate(client, token)
+        before = everything()
+        assert purge(days=100000) == []
+        assert everything() == before
+
+    def test_only_the_account_that_asked_is_erased(self, client):
+        a = register(client, email="a@example.com")
+        b = register(client, email="b@example.com")
+        a_user, a_shop = populate(client, a, "a")
+        b_user, b_shop = populate(client, b, "b")
+        delete(client, a, email="a@example.com")
+        assert purge() == [a_user]
+        after = everything()
+        assert belonging_to(after, a_user, a_shop) == {}
+        assert set(belonging_to(after, b_user, b_shop)) == set(ALL) - set(ad.NON_ACCOUNT_COLLECTIONS)
+
+    def test_every_account_that_is_due_is_erased_in_one_run(self, client):
+        users = []
+        for number in range(3):
+            email = f"due{number}@example.com"
+            token = register(client, email=email)
+            users.append(populate(client, token, f"d{number}")[0])
+            delete(client, token, email=email)
+        assert sorted(purge()) == sorted(users)
+        assert total(everything()) == 0
+
+    def test_one_account_failing_does_not_stop_the_others_and_it_is_tried_again(self, client, monkeypatch):
+        first = register(client, email="first@example.com"); second = register(client, email="second@example.com")
+        first_id, _ = populate(client, first, "f"); second_id, _ = populate(client, second, "s")
+        delete(client, first, email="first@example.com"); delete(client, second, email="second@example.com")
+        real = ad.erase
+
+        async def fails_for_the_first(user):
+            if user["user_id"] == first_id:
+                raise RuntimeError("the database went away")
+            return await real(user)
+
+        monkeypatch.setattr(ad, "erase", fails_for_the_first)
+        assert purge() == [second_id]
+        assert [u for u in docs("users") if u["user_id"] == first_id], "the failed account must remain to be retried"
+        monkeypatch.setattr(ad, "erase", real)
+        assert purge() == [first_id]
+        assert total(everything()) == 0
+
+
+    def test_shared_security_data_is_not_erased_with_an_account(self, client):
+        """auth_rate_limits is not account data: it is kept, on purpose, whoever is erased."""
+        token, user_id, shop_id = self.request(client)
+        async def add():
+            await db.auth_rate_limits.insert_one({"key": "shared-limit", "hits": 3})
+        run(add())
+        assert purge() == [user_id]
+        assert [r["key"] for r in docs("auth_rate_limits") if r.get("key") == "shared-limit"] == ["shared-limit"]
+
+
+class TestTheHourlyJob:
+    def due_account(self, client):
+        token = register(client)
+        user_id, _ = populate(client, token)
+        delete(client, token)
+        set_user(user_id, deletion_scheduled_for=(datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat())
+        return user_id
+
+    def run_loop(self, seconds, **kwargs):
+        async def go():
+            task = asyncio.create_task(ad.purge_loop(**kwargs))
+            await asyncio.sleep(seconds)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        run(go())
+
+    def test_it_erases_what_is_due(self, client):
+        self.due_account(client)
+        self.run_loop(0.3, first_run_after=0, every=0.05)
+        assert total(everything()) == 0
+
+    def test_it_waits_before_its_first_run(self, client):
+        self.due_account(client)
+        before = everything()
+        self.run_loop(0.2, first_run_after=60, every=60)
+        assert everything() == before
+
+    def test_an_error_in_one_run_does_not_stop_it(self, client, monkeypatch):
+        self.due_account(client)
+        real = ad.purge_due
+        calls = {"n": 0}
+
+        async def flaky(now=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("a hiccup")
+            return await real(now)
+
+        monkeypatch.setattr(ad, "purge_due", flaky)
+        self.run_loop(0.4, first_run_after=0, every=0.05)
+        assert calls["n"] >= 2
+        assert total(everything()) == 0
+
+    def test_the_server_starts_it_and_stops_it_on_shutdown(self, client, monkeypatch):
+        from fastapi.testclient import TestClient
+        from app.main import app
+        events = []
+
+        async def stand_in():
+            events.append("started")
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                events.append("cancelled")
+                raise
+
+        async def record_close():
+            events.append("database closed")
+
+        monkeypatch.setattr(ad, "purge_loop", stand_in)
+        monkeypatch.setattr(db, "close", record_close)
+        with TestClient(app):
+            pass
+        # Stopped by the server's own shutdown code, and before the database goes away: the
+        # test framework would cancel a forgotten task too, but only afterwards.
+        assert events == ["started", "cancelled", "database closed"]
+
+    def test_the_real_job_defaults_are_a_minute_then_hourly(self):
+        assert ad.PURGE_FIRST_RUN_SECONDS == 60 and ad.PURGE_EVERY_SECONDS == 3600
+
+
+# --- changing your mind ----------------------------------------------------------------------
+class TestComingBack:
+    def closed(self, client):
+        token = register(client)
+        user_id, shop_id = populate(client, token)
+        delete(client, token)
+        return token, user_id, shop_id
+
+    def test_signing_in_within_the_thirty_days_cancels_the_deletion(self, client):
+        old, user_id, shop_id = self.closed(client)
+        response = login(client)
+        assert response.status_code == 200, response.text
+        assert response.json()["restored"] is True
+        row = user_row(user_id)
+        assert "deletion_scheduled_for" not in row and "deletion_requested_at" not in row
+
+    def test_everything_is_as_it_was_left(self, client):
+        old, user_id, shop_id = self.closed(client)
+        token = login(client).json()["token"]
+        names = sorted(e["name"] for e in client.get("/api/employees", headers=auth(token)).json())
+        assert names == ["Staff a0", "Staff a1", "Staff a2"]
+        assert me(client, token).status_code == 200
+
+    def test_an_ordinary_sign_in_does_not_say_restored(self, client):
+        register(client)
+        assert "restored" not in login(client).json()
+
+    def test_the_old_sign_ins_stay_dead_only_the_new_one_works(self, client):
+        old, user_id, shop_id = self.closed(client)
+        new = login(client).json()["token"]
+        assert me(client, old).status_code == 401
+        assert me(client, new).status_code == 200
+
+    def test_the_paid_plan_does_not_come_back_with_it(self, client):
+        token = register(client)
+        user_id, _ = ids(client, token)
+        set_user(user_id, pro=True)
+        delete(client, token)
+        response = login(client)
+        assert response.json()["user"]["pro"] is False
+        assert user_row(user_id)["pro"] is False
+
+    def test_after_coming_back_the_clean_up_leaves_it_alone(self, client):
+        old, user_id, shop_id = self.closed(client)
+        login(client)
+        assert purge(days=400) == []
+        # Every collection still holds its row. Only the sessions are gone: they were removed
+        # when the account was closed, and a JWT sign-in does not make one.
+        assert set(belonging_to(everything(), user_id, shop_id)) == set(ALL) - {"user_sessions"} - set(ad.NON_ACCOUNT_COLLECTIONS)
+        assert user_row(user_id)
+
+    def test_deleting_again_starts_a_fresh_thirty_days(self, client):
+        old, user_id, shop_id = self.closed(client)
+        first = user_row(user_id)["deletion_scheduled_for"]
+        token = login(client).json()["token"]
+        assert delete(client, token).status_code == 200
+        assert user_row(user_id)["deletion_scheduled_for"] >= first
+
+    def test_the_wrong_password_does_not_bring_it_back(self, client):
+        old, user_id, shop_id = self.closed(client)
+        assert login(client, password="wrong").status_code == 401
+        assert user_row(user_id)["deletion_scheduled_for"]
+
+    def test_after_the_date_it_cannot_come_back_even_before_the_clean_up_runs(self, client):
+        old, user_id, shop_id = self.closed(client)
+        set_user(user_id, deletion_scheduled_for=(datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat())
+        response = login(client)
+        assert response.status_code == 401
+        assert user_row(user_id).get("deletion_scheduled_for"), "an expired account must not be restored by a late sign-in"
+        assert purge(days=0) == [user_id]
+
+    def test_google_sign_in_brings_it_back_too(self, client, monkeypatch):
+        profile = {"email": "gina@gmail.com", "google_sub": "sub-gina", "name": "Gina G", "picture": ""}
+        monkeypatch.setattr(google_auth, "verify_id_token", lambda c: dict(profile))
+        first = client.post("/api/auth/google", json={"credential": "x"}).json()
+        assert "restored" not in first
+        sent = client.post("/api/auth/delete-account", headers=auth(first["token"]),
+                           json={"confirm_email": "gina@gmail.com", "google_credential": "fresh"})
+        assert sent.status_code == 200
+        back = client.post("/api/auth/google", json={"credential": "x"})
+        assert back.status_code == 200 and back.json()["restored"] is True
+        assert me(client, back.json()["token"]).status_code == 200
+
+    def test_google_sign_in_after_the_date_is_refused(self, client, monkeypatch):
+        profile = {"email": "gina@gmail.com", "google_sub": "sub-gina", "name": "Gina G", "picture": ""}
+        monkeypatch.setattr(google_auth, "verify_id_token", lambda c: dict(profile))
+        first = client.post("/api/auth/google", json={"credential": "x"}).json()
+        client.post("/api/auth/delete-account", headers=auth(first["token"]),
+                    json={"confirm_email": "gina@gmail.com", "google_credential": "fresh"})
+        user_id = [u for u in docs("users")][0]["user_id"]
+        set_user(user_id, deletion_scheduled_for=(datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat())
+        assert client.post("/api/auth/google", json={"credential": "x"}).status_code == 401
+
+
+# --- a closed account cannot be used --------------------------------------------------------
+class TestWhileItWaits:
+    def test_a_sign_in_that_slipped_through_still_cannot_use_a_closed_account(self, client):
+        """Close it WITHOUT bumping the token version, so the old token still matches."""
+        token = register(client)
+        user_id, _ = ids(client, token)
+        set_user(user_id, deletion_scheduled_for="2999-01-01T00:00:00+00:00")
+        assert me(client, token).status_code == 401
+        assert client.get("/api/employees", headers=auth(token)).status_code == 401
+
+    def test_a_cookie_session_cannot_use_a_closed_account_either(self, client):
+        token = register(client)
+        user_id, _ = ids(client, token)
+        async def make():
+            await db.user_sessions.insert_one({"session_token": "cookie-tok", "user_id": user_id, "expires_at": "2999-01-01T00:00:00+00:00"})
+        run(make())
+        assert client.get("/api/auth/me", cookies={"session_token": "cookie-tok"}).status_code == 200
+        set_user(user_id, deletion_scheduled_for="2999-01-01T00:00:00+00:00")
+        assert client.get("/api/auth/me", cookies={"session_token": "cookie-tok"}).status_code == 401
+
+    def test_other_accounts_are_not_locked_out(self, client):
+        a = register(client, email="a@example.com"); b = register(client, email="b@example.com")
+        delete(client, a, email="a@example.com")
+        assert me(client, b).status_code == 200
+
+
+class TestSigningUpAgainEarly:
+    def test_the_address_of_a_waiting_account_says_what_to_do(self, client):
+        token = register(client)
+        delete(client, token)
+        response = client.post("/api/auth/signup", json={"email": "owner@example.com", "password": PASSWORD, "name": "N", "shop_name": "S"})
+        assert response.status_code == 409
+        detail = response.json()["detail"]
+        assert "scheduled for deletion" in detail and "Sign in to cancel the deletion" in detail
+        assert str((datetime.now(timezone.utc) + timedelta(days=30)).year) in detail
+
+    def test_an_ordinary_taken_address_keeps_the_old_message(self, client):
+        register(client)
+        response = client.post("/api/auth/signup", json={"email": "owner@example.com", "password": PASSWORD, "name": "N", "shop_name": "S"})
+        assert response.status_code == 409 and response.json()["detail"] == "That email is already registered"
+
+    def test_nothing_is_created_by_the_refused_sign_up(self, client):
+        token = register(client)
+        delete(client, token)
+        def owned(snapshot):
+            return {name: rows for name, rows in snapshot.items() if name not in ad.NON_ACCOUNT_COLLECTIONS}
+
+        before = owned(everything())
+        client.post("/api/auth/signup", json={"email": "owner@example.com", "password": PASSWORD, "name": "N", "shop_name": "S"})
+        assert owned(everything()) == before
 
 
 # --- it must be you, and you must mean it ---------------------------------------------------
@@ -304,6 +678,7 @@ class TestOtherAccountsAreUntouched:
                     for name, rows in before.items()}
 
         assert delete(client, a, email="a@example.com").status_code == 200
+        assert purge() == [a_user]
 
         after = everything()
         assert belonging_to(after, a_user, a_shop) == {}
@@ -319,6 +694,7 @@ class TestOtherAccountsAreUntouched:
         populate(client, b, "b")
         delete(client, a, email="a@example.com")
         assert me(client, b).status_code == 200
+        purge()
         names = sorted(e["name"] for e in client.get("/api/employees", headers=auth(b)).json())
         assert names == ["Staff b0", "Staff b1", "Staff b2"]
         assert client.post("/api/auth/login", json={"email": "b@example.com", "password": PASSWORD}).status_code == 200
@@ -358,13 +734,16 @@ class TestGoogleAccounts:
         _, user = gina
         assert user["has_password"] is False
 
-    def test_a_google_account_deletes_with_a_fresh_google_confirmation(self, client, gina):
+    def test_a_google_account_closes_with_a_fresh_google_confirmation(self, client, gina):
         token, user = gina
         client.post("/api/employees", headers=auth(token), json={**EMPLOYEE, "email": "g@example.com"})
         response = self.go(client, token)
         assert response.status_code == 200, response.text
-        assert total(everything()) == 0
+        assert response.json()["scheduled"] is True
+        assert total(everything()) > 0, "nothing is erased until the thirty days are up"
         assert me(client, token).status_code == 401
+        assert purge() == [user["user_id"]]
+        assert total(everything()) == 0
 
     def test_without_the_google_confirmation_nothing_is_deleted(self, client, gina):
         token, user = gina
@@ -504,12 +883,15 @@ class TestBillingIsCancelledFirst:
         assert delete(client, token).status_code == 200
         assert stripe.calls == []
 
-    def test_a_subscription_is_cancelled_and_then_the_data_goes(self, client, stripe):
+    def test_a_subscription_is_cancelled_at_once_and_the_data_goes_after_thirty_days(self, client, stripe):
         token = register(client)
         self.pay(client, token, session_id="cs_1", stripe_subscription_id="sub_1")
         assert delete(client, token).status_code == 200
         assert stripe.calls == [("cancel", "sub_1")]
+        assert total(everything()) > 0, "the data stays for the thirty days"
+        purge()
         assert total(everything()) == 0
+        assert stripe.calls == [("cancel", "sub_1")], "the clean-up must never wait for, or call, Stripe"
 
     def test_every_subscription_is_cancelled(self, client, stripe):
         token = register(client)
@@ -566,7 +948,7 @@ class TestBillingIsCancelledFirst:
         stripe.cancel_error = FakeStripeError("No such subscription", code="resource_missing")
         assert delete(client, token).status_code == 200
 
-    def test_if_stripe_will_not_cancel_nothing_at_all_is_deleted(self, client, stripe):
+    def test_if_stripe_will_not_cancel_the_account_is_not_closed_and_nothing_is_deleted(self, client, stripe):
         token = register(client)
         user_id, shop_id = populate(client, token)
         self.pay(client, token, session_id="cs_1", stripe_subscription_id="sub_1")
@@ -576,8 +958,8 @@ class TestBillingIsCancelledFirst:
         response = delete(client, token)
 
         assert response.status_code == 502
-        assert "nothing" in response.json()["detail"].lower()
-        assert everything() == before, "a failed cancellation must leave every row in place"
+        assert "has not been deleted" in response.json()["detail"]
+        assert everything() == before, "a failed cancellation must leave every row in place, and schedule nothing"
         assert me(client, token).status_code == 200
 
     def test_the_message_does_not_leak_the_providers_internals(self, client, stripe):
@@ -594,8 +976,10 @@ class TestBillingIsCancelledFirst:
         assert delete(client, token).status_code == 502
         stripe.cancel_error = None
         assert delete(client, token).status_code == 200
-        assert total(everything()) == 0
         assert stripe.calls.count(("cancel", "sub_1")) == 2
+        assert total(everything()) > 0
+        purge()
+        assert total(everything()) == 0
 
     def test_a_subscription_with_billing_unavailable_is_refused_not_stranded(self, client, monkeypatch):
         fake = FakeStripe()
@@ -623,6 +1007,8 @@ class TestBillingIsCancelledFirst:
         self.pay(client, b, session_id="cs_b", stripe_subscription_id="sub_b")
         delete(client, a, email="a@example.com")
         assert stripe.calls == [("cancel", "sub_a")]
+        assert sorted(r["session_id"] for r in docs("payment_transactions")) == ["cs_a", "cs_b"]
+        purge()
         assert [r["session_id"] for r in docs("payment_transactions")] == ["cs_b"]
 
 
@@ -712,6 +1098,7 @@ class TestFailuresAndRaces:
     def test_a_shop_with_no_data_at_all_is_fine(self, client):
         token = register(client)
         assert delete(client, token).status_code == 200
+        purge()
         assert total(everything()) == 0
 
     def test_the_counts_say_what_was_removed(self, client):

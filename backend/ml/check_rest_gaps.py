@@ -4,7 +4,7 @@ WHY ASK BEFORE BUILDING
 -----------------------
 The rest rule is about to become a constraint on roster generation. If the
 real rosters break it, making it a hard block would leave the app unable to
-reproduce the very schedules it learns from — every generated week would
+reproduce the very schedules it learns from - every generated week would
 fight the history. So the honest order is: measure first, then decide whether
 to refuse or to warn.
 

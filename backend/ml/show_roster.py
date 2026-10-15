@@ -53,7 +53,7 @@ async def run(email: str, week: str | None, historical: bool) -> None:
         for e in await db.employees.find({"shop_id": shop["shop_id"]}, {"_id": 0}).to_list(1000)
     }
 
-    print(f"\n{shop['name']} — week of {roster['week_start']}  ({roster.get('version')})")
+    print(f"\n{shop['name']} - week of {roster['week_start']}  ({roster.get('version')})")
     print(f"compliance {roster.get('compliance_score')}/100 · "
           f"{len(roster.get('shifts', []))} shifts · "
           f"{roster.get('total_hours')}h · "
@@ -88,7 +88,7 @@ async def run(email: str, week: str | None, historical: bool) -> None:
         name = (employee.get("name") or employee_id)[:17]
         role = (employee.get("role") or "?")[:3]
         row = "".join(by_employee[employee_id].get(d, "·").ljust(COLUMN) for d in DAYS)
-        # Leave entries carry no times — somebody on holiday has no span —
+        # Leave entries carry no times - somebody on holiday has no span -
         # so they are excluded before any arithmetic. Including them crashed
         # this script on an empty string.
         mine = [
@@ -101,7 +101,7 @@ async def run(email: str, week: str | None, historical: bool) -> None:
         paid = sum(s.get("paid_hours", paid_hours(s["start"], s["end"])) for s in mine)
         # The cap the SOLVER enforces for this week, not the raw contract
         # field. A student on summer break has a higher ceiling, and showing
-        # the term-time number made a legal 30.5h week read as 152% of 20 —
+        # the term-time number made a legal 30.5h week read as 152% of 20 -
         # a breach that was not happening.
         contract = avail.weekly_hour_cap(employee, roster.get("week_start", ""))
         fill = f"{paid / contract:4.0%}" if contract else "   -"
@@ -118,7 +118,7 @@ async def run(email: str, week: str | None, historical: bool) -> None:
 
     critical = roster.get("critical_issues") or []
     if critical:
-        print(f"\nCRITICAL ({len(critical)}) — the shop would be unattended:")
+        print(f"\nCRITICAL ({len(critical)}) - the shop would be unattended:")
         for issue in critical:
             print(f"  ! {issue}")
 
@@ -158,7 +158,7 @@ def _print_coverage(roster, shop, employees, approved_rosters) -> None:
         for hour in _RosterBuilder.hours_spanned(shift["start"], shift["end"]):
             actual[shift["day"]][hour] += 1
 
-    print("\nCOVERAGE — actual / target per hour")
+    print("\nCOVERAGE - actual / target per hour")
     print("      " + "".join(f"{h:>5}" for h in range(0, 24, 2)))
     for day in DAYS:
         cells = []

@@ -3,6 +3,8 @@
 Run it with:
     uvicorn app.main:app --reload --port 8001
 """
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -13,6 +15,7 @@ from app import config, db
 from app.routes import (
     ai_rules, auth, dev, holidays, imports, payments, reports, rosters, shop,
 )
+from app.services import account_deletion
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +29,7 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown.
 
     Replaces the deprecated @app.on_event hooks. Indexes are ensured on
-    every boot — cheap when they already exist, and it means a fresh
+    every boot - cheap when they already exist, and it means a fresh
     database is correctly constrained without a manual migration step.
     """
     await db.ensure_indexes()
@@ -51,8 +54,16 @@ async def lifespan(app: FastAPI):
     if config.DEV_ROUTES_ENABLED:
         log.warning("  Dev routes are ENABLED (/dev/reset, /seed-demo)")
 
+    # Permanently erases accounts whose thirty days are up. It waits a minute before its
+    # first run and then checks hourly; see services/account_deletion.py.
+    purge_task = asyncio.create_task(account_deletion.purge_loop())
+    log.info("  Account clean-up: hourly (closed accounts are erased after %s days)", account_deletion.GRACE_DAYS)
+
     yield
 
+    purge_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await purge_task
     await db.close()
     log.info("Roster API stopped")
 

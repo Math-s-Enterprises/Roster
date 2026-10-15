@@ -7,7 +7,7 @@ import AuthShell from "@/components/AuthShell";
 import { FORGOT_PASSWORD } from "@/constants/testIds/auth";
 
 /**
- * Forgot password — the sign-in page's frame, one card.
+ * Forgot password - the sign-in page's frame, one card.
  *
  * The confirmation says "if an account exists" on purpose. The backend
  * answers identically whether or not the address is registered, and the

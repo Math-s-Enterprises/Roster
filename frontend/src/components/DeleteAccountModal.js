@@ -1,8 +1,10 @@
 /**
- * Delete your own account, and everything in it.
+ * Delete your own account. It closes now, and everything in it is permanently deleted 30 days
+ * later.
  *
- * IT CANNOT BE UNDONE, so the button is hard to press by accident and impossible to press
- * for somebody else:
+ * FOR THOSE 30 DAYS IT CAN BE UNDONE - signing in again cancels the deletion - so the dialog
+ * says plainly what happens today, what happens in between, and what happens after. It is
+ * still hard to press by accident and impossible to press for somebody else:
  *
  *   - The email address has to be typed out. A mis-click or a slip of the Enter key cannot
  *     do that; it also makes the person read which account this is.
@@ -14,12 +16,13 @@
  *   - The button stays off until both are done, and while it is working nothing can close
  *     the dialog, so it cannot be abandoned half way by a stray click.
  *
- * WHEN IT WORKS, this browser is cleaned as well. The server has erased the account, but
+ * WHEN IT WORKS, this browser is cleaned as well. The server has closed the account, but
  * this browser still holds the sign-in token, the last 20 notifications (which name staff)
- * and a count of wrong passwords for this email. "Everything" includes those, so they go
- * too, and the person is signed out and taken to the sign-in page.
+ * and a count of wrong passwords for this email. Those go now; somebody who comes back signs
+ * in afresh. The person is signed out, told the date everything will be deleted and how to
+ * cancel it, and taken to the sign-in page.
  *
- * WHEN IT FAILS, nothing has been deleted - the server cancels billing first and stops if it
+ * WHEN IT FAILS, nothing has changed - the server cancels billing first and stops if it
  * cannot - and the message it sends says so. The dialog stays open and the password is
  * cleared, so it can be tried again.
  *
@@ -54,13 +57,28 @@ export function eraseBrowserTraces(user) {
   clearGuard(user.email);
 }
 
+// What happens, in the order it happens. Kept in step by hand with the server and with the
+// Terms and Privacy Policy, which say the same thing.
+const TIMELINE = [
+  "Today: you are signed out on every device, and any subscription is cancelled, so you are not charged again.",
+  "For 30 days: we keep your data, but nobody can see or use it.",
+  "Changed your mind? Sign in again within 30 days to cancel the deletion and get your account back. Your subscription stays cancelled.",
+];
+
+// What is deleted from the database when the 30 days are over.
 const ERASED = [
   "Your shop settings, roster groups, roles and opening hours",
   "Every employee and their details, holiday balances and sick leave",
   "Every roster, including past weeks, and all fixed shifts",
   "Your AI rules, imported history and activity log",
-  "Your sign-in: you will be signed out on every device",
 ];
+
+/** "13 November 2026", from the date the server sent; null if it sent nothing usable. */
+export function formatDeleteDate(iso) {
+  const when = new Date(iso);
+  if (!iso || Number.isNaN(when.getTime())) return null;
+  return when.toLocaleDateString("en-IE", { day: "numeric", month: "long", year: "numeric" });
+}
 
 export default function DeleteAccountModal({ onClose }) {
   const { user, providers, logout } = useAuth();
@@ -143,13 +161,14 @@ export default function DeleteAccountModal({ onClose }) {
   const submit = async () => {
     if (!ready) return;
     setDeleting(true);
+    let answer;
     try {
-      await api.post("/auth/delete-account", {
+      answer = await api.post("/auth/delete-account", {
         confirm_email: typed.trim(),
         ...(hasPassword ? { password } : { google_credential: credential }),
       });
     } catch (err) {
-      // Nothing was deleted. Say why, and let them try again with the secret cleared.
+      // Nothing changed. Say why, and let them try again with the secret cleared.
       toast.error(errorMessage(err, "Could not delete the account"));
       setPassword("");
       setCredential("");
@@ -157,9 +176,17 @@ export default function DeleteAccountModal({ onClose }) {
       if (hasPassword) setRetry((n) => n + 1);
       return;
     }
-    // Gone on the server. Leave nothing behind in this browser either, then sign out.
+    // Closed on the server. Leave nothing behind in this browser either, tell them the date,
+    // then sign out.
     eraseBrowserTraces(user);
-    toast.success("Your account and all its data have been deleted.");
+    const sent = (answer && answer.data) || {};
+    const when = formatDeleteDate(sent.delete_on);
+    const days = sent.days || 30;
+    toast.success(
+      `Your account is closed. Everything in it will be permanently deleted ${when ? `on ${when}` : `in ${days} days`}. ` +
+        "Sign in again before then to cancel the deletion.",
+      { duration: 12000 },
+    );
     await logout();
     navigate("/login", { replace: true });
   };
@@ -199,16 +226,21 @@ export default function DeleteAccountModal({ onClose }) {
 
         <div id={bodyId}>
           <p className="text-[13px] mb-3" style={{ color: "var(--ink)" }}>
-            <strong>This permanently erases everything in this account, and it cannot be undone.</strong>
+            <strong>Your account is closed now. Everything in it is permanently deleted after 30 days.</strong>
+          </p>
+          <ul className="text-[13px] mb-3 space-y-1 list-disc pl-5" style={{ color: "var(--ink-mute)" }} data-testid="delete-account-timeline">
+            {TIMELINE.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+          <p className="text-[12px] mb-1" style={{ color: "var(--ink)" }}>
+            After 30 days these are deleted from our database, and cannot be recovered:
           </p>
           <ul className="text-[13px] mb-3 space-y-1 list-disc pl-5" style={{ color: "var(--ink-mute)" }} data-testid="delete-account-erased">
             {ERASED.map((line) => <li key={line}>{line}</li>)}
-            <li>Any subscription is cancelled first, so you are not charged again</li>
           </ul>
           <p className="text-[12px] mb-5" style={{ color: "var(--ink-mute)" }}>
             Want to keep anything? Download it first: the Employees page and every roster have
-            export options. Once you press Delete, nobody can get it back, including us. You can
-            sign up again later with the same email; that account starts completely empty.
+            export options. After the 30 days, nobody can get it back, including us. You can sign
+            up again later with the same email; that account starts completely empty.
           </p>
         </div>
 
@@ -293,7 +325,7 @@ export default function DeleteAccountModal({ onClose }) {
             className="btn btn-danger flex-1 font-medium"
           >
             {deleting ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
-            {deleting ? "Deleting…" : "Delete everything"}
+            {deleting ? "Deleting…" : "Delete my account"}
           </button>
         </div>
       </div>

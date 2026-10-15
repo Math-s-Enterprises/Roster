@@ -1,8 +1,8 @@
 """Rules applied to hand-edited rosters.
 
 Before this existed, the save route checked only shift length and
-double-booking. Every other rule the generator enforces — curfew, hour caps,
-availability, leave — could be walked straight past by dragging a cell.
+double-booking. Every other rule the generator enforces - curfew, hour caps,
+availability, leave - could be walked straight past by dragging a cell.
 """
 from app.services.roster_validation import validate_shifts
 
@@ -134,7 +134,7 @@ class TestBlocking:
 
     def test_a_sixth_working_day_is_refused(self):
         """Everybody gets two days off. A global rule, and one the solver had
-        no notion of — it would give somebody all seven if the hours fitted."""
+        no notion of - it would give somebody all seven if the hours fitted."""
         shifts = [
             shift(day=d, start="09:00", end="14:00")
             for d in ("mon", "tue", "wed", "thu", "fri", "sat")
@@ -152,7 +152,7 @@ class TestBlocking:
 
     def test_going_over_contracted_hours_is_refused(self):
         """Contracted hours are what the employee agreed to and what payroll
-        pays against — exceeding them is discovered at the till, not a call
+        pays against - exceeding them is discovered at the till, not a call
         for the manager to wave through."""
         shifts = [
             shift(day=d, start="08:00", end="18:00")
@@ -164,9 +164,9 @@ class TestBlocking:
 
     def test_a_42_5_hour_contract_is_the_ceiling(self):
         """Full-time is 42.5 PAID hours. Time on the floor is longer, because
-        unpaid breaks sit on top — the check must compare paid against paid."""
+        unpaid breaks sit on top - the check must compare paid against paid."""
         # Five 9h30 spans = 43.75h paid. Five days, so the two-days-off rule
-        # is not what trips it — the hours are.
+        # is not what trips it - the hours are.
         shifts = [
             shift(day=d, start="09:00", end="18:30")
             for d in ("mon", "tue", "wed", "thu", "fri")
@@ -302,7 +302,7 @@ class TestWarnings:
 class TestMaximumShiftLength:
     """The cap is 12 hours.
 
-    Asserted against the number, not just against ABSOLUTE_MAX_SHIFT_HOURS —
+    Asserted against the number, not just against ABSOLUTE_MAX_SHIFT_HOURS -
     a test written in terms of the constant passes whatever the constant
     happens to be, which is no protection against changing it by accident.
     """

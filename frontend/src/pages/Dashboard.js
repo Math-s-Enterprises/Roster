@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { CheckCircle2, AlertCircle, Wand2, Sparkles } from "lucide-react";
 
 /**
- * Dashboard — shop home (handoff: Dashboard).
+ * Dashboard - shop home (handoff: Dashboard).
  *
  * Land, see the shop is in a fit state, deal with anything flagged, generate
  * the next roster. Styling is the handoff's palette, scoped to .db-*.
@@ -28,7 +28,7 @@ import { CheckCircle2, AlertCircle, Wand2, Sparkles } from "lucide-react";
  *    <table>. The handoff asks for both a real table and minmax() tracks,
  *    and a table cannot express minmax. Same choice as the sibling pages.
  *
- * 3. Activity entries carry no actor or link of their own — the log stores
+ * 3. Activity entries carry no actor or link of their own - the log stores
  *    an action and a sentence. The action is mapped to a route so entries
  *    are still clickable, a leading email is emboldened as the actor, and
  *    anything mentioning broken rules is marked in amber.
@@ -47,7 +47,7 @@ import { CheckCircle2, AlertCircle, Wand2, Sparkles } from "lucide-react";
  * 95px. Six entries is roughly 568px, which is eight roster rows.
  *
  * Both footers are pinned to the bottom of their column, so an uneven count
- * only shows as a gap above one of them — these numbers keep that gap small.
+ * only shows as a gap above one of them - these numbers keep that gap small.
  */
 const ACTIVITY_ROWS = 6;
 const ROSTER_ROWS = 8;
@@ -203,7 +203,7 @@ export default function Dashboard() {
   const brokenRules = forced?.overridden_rules || [];
 
   /**
-   * The first week from today with no roster at all — the week Generate is
+   * The first week from today with no roster at all - the week Generate is
    * actually for. Capped so a fully-rostered shop still gets an answer.
    */
   const nextOpenWeek = useMemo(() => {
@@ -258,7 +258,7 @@ export default function Dashboard() {
     setResetting(true);
     try {
       await api.post("/dev/reset");
-      toast.success("Data reset — the shop is empty");
+      toast.success("Data reset, the shop is empty");
       setConfirmOpen(false);
       setConfirmText("");
       await load();
@@ -356,18 +356,18 @@ export default function Dashboard() {
         <div className="db-stat">
           <div className="db-stat-label">Compliance</div>
           <div className="db-stat-value" data-tone={complianceTone(latest?.compliance_score)}>
-            {latest ? latest.compliance_score : "—"}
+            {latest ? latest.compliance_score : "-"}
             {latest && <span className="db-stat-unit">/100</span>}
           </div>
         </div>
         <div className="db-stat">
           <div className="db-stat-label">Weekly cost</div>
-          <div className="db-stat-value">{latest ? fmtMoney(latest.labor_cost) : "—"}</div>
+          <div className="db-stat-value">{latest ? fmtMoney(latest.labor_cost) : "-"}</div>
         </div>
         <div className="db-stat">
           <div className="db-stat-label">Utilisation</div>
           <div className="db-stat-value">
-            {latest ? `${latest.utilization}%` : "—"}
+            {latest ? `${latest.utilization}%` : "-"}
             {latest && <span className="db-stat-unit">of capacity</span>}
           </div>
         </div>
@@ -385,8 +385,8 @@ export default function Dashboard() {
                   {brokenRules.length} rule{brokenRules.length === 1 ? "" : "s"} broken
                 </strong>
                 {forced.force_approved_by ? ` by ${forced.force_approved_by}` : ""}
-                {forced.force_approved_reason ? ` — “${forced.force_approved_reason}”` : ""}
-                {" "}— worth checking before the same happens next week.
+                {forced.force_approved_reason ? `, “${forced.force_approved_reason}”` : ""}
+                , worth checking before the same happens next week.
               </p>
             </div>
             <div className="db-forced-acts">
@@ -422,7 +422,7 @@ export default function Dashboard() {
 
           {recent.length === 0 ? (
             <div className="db-empty">
-              <span>No rosters yet — generate your first.</span>
+              <span>No rosters yet, generate your first.</span>
               <button
                 type="button"
                 className="db-btn db-btn-1"
@@ -461,7 +461,7 @@ export default function Dashboard() {
                       <span className="db-rowsub">
                         {r.approved
                           ? stamp ? `Approved ${stamp.label}` : "Approved"
-                          : r.archived ? "Superseded" : "Draft — not approved"}
+                          : r.archived ? "Superseded" : "Draft, not approved"}
                         {r.force_approved ? " · force-approved" : ""}
                       </span>
                     </span>
@@ -473,7 +473,7 @@ export default function Dashboard() {
                     >
                       {fmtMoney(cost)}
                     </span>
-                    <span className="db-num db-val" role="cell">{r.compliance_score ?? "—"}</span>
+                    <span className="db-num db-val" role="cell">{r.compliance_score ?? "-"}</span>
                     <span className="db-num" role="cell">
                       {r.approved
                         ? <span className="db-tag">Approved</span>
@@ -571,9 +571,9 @@ export default function Dashboard() {
 
       <p className="db-note">
         <strong>Generate roster</strong> builds a draft for the next week with no roster yet
-        {nextOpenWeek ? ` — currently the week of ${fmtWeek(nextOpenWeek)}` : ""}. It never overwrites an
+        {nextOpenWeek ? `, currently the week of ${fmtWeek(nextOpenWeek)}` : ""}. It never overwrites an
         approved roster: reopening one starts a new version and says so.{" "}
-        <strong>Reset all data cannot be undone</strong> — it deletes every employee, roster, rule and
+        <strong>Reset all data cannot be undone</strong>, it deletes every employee, roster, rule and
         fixed shift in this shop, and there is no copy kept.
       </p>
 

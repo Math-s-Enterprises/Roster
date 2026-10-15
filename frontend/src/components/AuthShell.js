@@ -6,21 +6,21 @@ import { Link } from "react-router-dom";
  * reset password. (Handoff: Sign in, doodle background.)
  *
  * One component rather than three copies. These pages have to look like
- * one place — a recovery link that opened onto a differently built page
+ * one place - a recovery link that opened onto a differently built page
  * reads as a phishing clone of the real one.
  *
- * The background is a tiling SVG pattern of roster motifs — clocks,
+ * The background is a tiling SVG pattern of roster motifs - clocks,
  * calendars, staff, shift bars, timesheets, rota grids, wages. Two layers
  * of the same tile: a small rotated one behind, the full-size one on top.
  * The motif set is defined once and referenced by both, so it can be
  * re-authored in one place, and it draws in currentColor so the colour
  * comes from the page's token rather than being baked into every stroke.
- * It is two <rect>s filled with patterns — no JS, no per-motif nodes, and
+ * It is two <rect>s filled with patterns - no JS, no per-motif nodes, and
  * deliberately never animated.
  *
  * It also owns the theme. While a signed-out page is showing, the document
- * runs light to match this design — body, scrollbars and native controls
- * included — whatever the stored preference. The stored preference is not
+ * runs light to match this design - body, scrollbars and native controls
+ * included - whatever the stored preference. The stored preference is not
  * touched, and the app re-applies it once signed in. useLayoutEffect so the
  * switch lands before the first paint.
  */
@@ -129,7 +129,7 @@ export default function AuthShell({ children, barRight = null, single = false })
 
       <div className="si-fore">
         <header className="si-bar">
-          <Link to="/login" className="si-brand" aria-label="Roster — sign in">
+          <Link to="/login" className="si-brand" aria-label="Roster, sign in">
             <span className="si-brand-mark"><WandMark /></span>
             <span>
               <span className="si-brand-name">Roster</span>

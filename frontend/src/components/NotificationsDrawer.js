@@ -7,7 +7,7 @@ import { MAX_NOTIFICATIONS, formatWhen, useNotifications } from "@/lib/notificat
  * The Notifications drawer: the last 20 pop-up messages, newest first.
  *
  * Opened from the sidebar, so it is reachable on every screen and in every
- * roster group — the Dashboard only exists for the main group, which would
+ * roster group - the Dashboard only exists for the main group, which would
  * have hidden it from the rest. It is not the Dashboard's Activity feed:
  * that is a permanent record kept on the server of what was done; this is
  * what the screen told you, errors and warnings included, kept in this
@@ -155,7 +155,7 @@ export default function NotificationsDrawer({ onClose }) {
         )}
 
         <footer className="nt-foot">
-          Only the latest {MAX_NOTIFICATIONS} are kept — the oldest makes room as new ones arrive.
+          Only the latest {MAX_NOTIFICATIONS} are kept - the oldest makes room as new ones arrive.
           They stay on this device, for your account only, until you clear them.
         </footer>
       </aside>

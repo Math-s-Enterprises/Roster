@@ -8,15 +8,15 @@ import { DOCS, LegalDocument, LegalNavProvider } from "@/components/LegalText";
  *
  * Opened from the sign-up form, so it must never navigate: a new page would
  * throw away what has been typed. Opening it also never ticks the agreement
- * box — reading the terms and agreeing to them are two separate acts.
+ * box - reading the terms and agreeing to them are two separate acts.
  *
  * The two documents can be swapped from inside the dialog, because each
  * refers to the other. The text itself lives in LegalText.js, shared with the
  * full /terms and /privacy pages.
  *
  * Built like the app's other dialogs, so the keyboard works the same way:
- *   - Focus moves in on open — to the text itself, so the arrow keys scroll it
- *     at once — and goes back to whatever opened it on close.
+ *   - Focus moves in on open - to the text itself, so the arrow keys scroll it
+ *     at once - and goes back to whatever opened it on close.
  *   - Tab stays inside and wraps; Escape closes; so does a click on the
  *     backdrop, but not a drag that began inside the dialog and ended outside.
  *   - The text is a labelled, focusable region, because a scrolling area that

@@ -5,7 +5,7 @@ exported here, so there is exactly one client for the whole process.
 
 Why indexes matter here: several correctness guarantees in this app cannot
 be enforced by application code alone. The classic example is "one account
-per email" — an application-level `find_one` check followed by an `insert`
+per email" - an application-level `find_one` check followed by an `insert`
 is not atomic, so two simultaneous signups can both pass the check. Only a
 unique index makes that impossible. See ensure_indexes() below.
 """
@@ -20,7 +20,7 @@ log = logging.getLogger("roster.db")
 client = AsyncIOMotorClient(config.MONGO_URL)
 db = client[config.DB_NAME]
 
-# Collection handles — import these rather than reaching through `db`, so
+# Collection handles - import these rather than reaching through `db`, so
 # a typo'd collection name fails at import instead of silently creating an
 # empty collection at runtime (MongoDB creates collections on first write).
 users = db.users
@@ -46,7 +46,7 @@ async def _dedupe_system_rules() -> None:
     """Remove duplicate locked rules left by the old seeding race.
 
     Runs before the unique index is created, because MongoDB refuses to build
-    a unique index over data that already violates it — and a shop that hit
+    a unique index over data that already violates it - and a shop that hit
     the race would otherwise be unable to start the app at all.
 
     Keeps the oldest of each set, so whichever copy the manager may already
@@ -101,7 +101,7 @@ async def ensure_indexes() -> None:
     await _dedupe_system_rules()
     # One LOCKED rule per title per shop. seed_system_rules runs on every
     # authenticated request, and the browser makes several in parallel on page
-    # load — without this, two could both find a newly added rule missing and
+    # load - without this, two could both find a newly added rule missing and
     # both insert it. The upsert there converges on its own; this makes the
     # duplicate impossible rather than merely unlikely.
     #

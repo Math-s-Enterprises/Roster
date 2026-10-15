@@ -27,7 +27,7 @@ There are only a few ways that happens, and they need different fixes:
      assuming the roster page is at fault.
 
   4. IT REALLY IS STALE. If the stored figure and the live one disagree,
-     that is a bug in the app, not in the data — and this says so.
+     that is a bug in the app, not in the data - and this says so.
 
 Everything below is read live, the same way the roster page reads it. If
 this prints a cap you did not expect, the cap is the problem. If it prints
@@ -102,7 +102,7 @@ async def run(email: str, who: str, week: str | None) -> None:
             print(f"  --> contract band            : {band[0]:g}h to {band[1]:g}h")
 
         # WHICH FIELD IS LOAD-BEARING. This is the whole point of the script,
-        # and the first version of it GUESSED from the employment type — which
+        # and the first version of it GUESSED from the employment type - which
         # was wrong for the very case it was written for. A student's cap can
         # come from any of three fields depending on the date, so the answer
         # is asked of the same function the roster page asks.
@@ -151,12 +151,12 @@ async def run(email: str, who: str, week: str | None) -> None:
     )
     stored = roster.get("under_contract") or []
     print(f"\n{'=' * 72}")
-    print("  BELOW-CONTRACT PANEL — stored at generation vs derived now")
+    print("  BELOW-CONTRACT PANEL - stored at generation vs derived now")
     print(f"{'=' * 72}")
     print(f"  stored : {sorted(u['name'] for u in stored) or 'nobody'}")
     print(f"  live   : {sorted(u['name'] for u in live) or 'nobody'}")
     if {u["employee_id"] for u in stored} != {u["employee_id"] for u in live}:
-        print("\n  They differ — which is the point of deriving it on read.")
+        print("\n  They differ - which is the point of deriving it on read.")
         print("  The roster page shows the LIVE list.")
     print()
 

@@ -105,7 +105,7 @@ class TestHardFloor:
         assert out["candidates"] == []
 
     def test_overlapping_hours_are_never_offered(self):
-        """Nobody can be in two places — this is physics, not policy."""
+        """Nobody can be in two places - this is physics, not policy."""
         out = cover(
             [employee("sick_one"), employee("jane")],
             [shift("sick_one", "thu"), shift("jane", "thu", "05:00", "13:00")],
@@ -127,7 +127,7 @@ class TestSameDayIsAllowed:
         """Morning off sick, covered by someone doing the evening rush.
 
         They go home in between, so this is two shifts rather than one long
-        one — ordinary in retail and wrong to refuse.
+        one - ordinary in retail and wrong to refuse.
         """
         out = cover(
             [employee("sick_one"), employee("tiago")],

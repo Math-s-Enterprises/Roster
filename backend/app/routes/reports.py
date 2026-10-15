@@ -71,7 +71,7 @@ async def sick_balance_report(scope: ShopScope = CurrentScope):
 
 @router.get("/reports/sick-leave")
 async def sick_leave_report(scope: ShopScope = CurrentScope):
-    """Sick leave per employee. HR reporting only — never training signal."""
+    """Sick leave per employee. HR reporting only - never training signal."""
     absences = await scope.holidays.find({"scope": "sick"}, limit=1000)
     employees = {
         e["employee_id"]: e for e in _group_employees(
@@ -170,7 +170,7 @@ async def corrections_report(scope: ShopScope = CurrentScope):
     say what it is still getting wrong. A falling number with no patterns left
     is the product working.
 
-    Nothing here is cached — it is recomputed from approved rosters on every
+    Nothing here is cached - it is recomputed from approved rosters on every
     request, in line with the rest of the app. A stored summary starts lying
     the moment a week is unapproved.
     """
@@ -261,7 +261,7 @@ async def apply_suggestion(
     if not offer:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
-            "That suggestion no longer applies — the corrections behind it "
+            "That suggestion no longer applies, the corrections behind it "
             "have changed.",
         )
 

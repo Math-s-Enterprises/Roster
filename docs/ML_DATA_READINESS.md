@@ -1,6 +1,6 @@
-# ML data readiness — 10 September 2026
+# ML data readiness - 10 September 2026
 
-## Implementation update — 10 September 2026
+## Implementation update - 10 September 2026
 
 Training evidence capture is complete for future generated approvals. The production scheduler still makes every roster decision; no ML model has been deployed.
 
@@ -46,7 +46,7 @@ Executed the existing pure parser with no employees:
 
 This verifies a local parsing gap, not the behaviour of the optional LLM compilation path. Closing-only scope needs a supported representation and checks through parsing, assignment, post-edit validation and approval. Clarify whether closing means the final opening interval or a separate closing task before implementing it. An unsupported rule must be visibly inactive; a broader rule must not be silently substituted.
 
-## Data access — resolved on 8 September 2026
+## Data access - resolved on 8 September 2026
 
 The initial connection error was a DNS timeout inside the restricted environment. The same configured connection succeeded outside the sandbox; credentials and database configuration were not changed. Read-only inventory completed, discovering shop registry metadata and using `ShopScope` for tenant records. No database writes or personal contact exports were performed.
 

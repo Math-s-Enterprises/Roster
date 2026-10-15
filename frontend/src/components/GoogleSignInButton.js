@@ -35,7 +35,7 @@ function loadGoogleScript() {
  *
  * Google hands us a signed ID token in the callback; we pass it straight to
  * onCredential, which sends it to the backend for verification. The token is
- * never trusted client-side — it's just a bearer of claims until the server
+ * never trusted client-side - it's just a bearer of claims until the server
  * checks its signature.
  */
 export default function GoogleSignInButton({ clientId, onCredential, disabled }) {

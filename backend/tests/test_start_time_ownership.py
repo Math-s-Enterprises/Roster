@@ -11,7 +11,7 @@ every one of them was right. Her real Monday, from 31 approved weeks:
 
 She owns the short opener outright. `day_slots` picks the shop's most COMMON
 shapes and drops hers for being rarer than its neighbours, so the solver
-never offers it — and she is left competing for a 06:00-16:00 she works a
+never offers it - and she is left competing for a 06:00-16:00 she works a
 third of the time, which she loses on the tie-break. She did not lose the
 slot she owns. It was never on the board.
 
@@ -56,12 +56,12 @@ def emmas_mondays(weeks=20):
     """Emma opens at 06:00 nearly every week; her finish varies.
 
     Deliberately built so no single shape reaches the 60% bar while the
-    START does — the shape of the real problem.
+    START does - the shape of the real problem.
     """
     out = []
     for w in range(weeks):
         # Emma opens every week. The LONG opener rotates between two
-        # colleagues so neither reaches the bar on it — that shape has to be
+        # colleagues so neither reaches the bar on it - that shape has to be
         # genuinely unowned, or `owner_of` answers and the start-time branch
         # never runs. A first version had one colleague on it every week,
         # which made the test pass for the wrong reason.
@@ -86,7 +86,7 @@ class TestAStartTimeIsAClaim:
     def test_the_fixture_reproduces_the_reported_shape_of_the_problem(self):
         """Guard for the guards, and it is not what I first assumed.
 
-        Emma DOES own her short opener outright — 13 of the 13 weeks it ran,
+        Emma DOES own her short opener outright - 13 of the 13 weeks it ran,
         exactly as in the real data (93% of 14). The fault is not that she
         owns nothing. It is that the shape she owns is not offered, and she
         has no claim on the one that is. A first version of this test
@@ -100,7 +100,7 @@ class TestAStartTimeIsAClaim:
         )
         assert slot_owners.owner_of(
             owners, "mon", "06:00", "16:00") != "emma", (
-            "fixture: emma must NOT own the long opener — that is the shape "
+            "fixture: emma must NOT own the long opener - that is the shape "
             "the solver offers and the one she keeps losing"
         )
         assert "emma" in slot_owners.regulars_of_start(
@@ -112,7 +112,7 @@ class TestAStartTimeIsAClaim:
 
         Asserted on `_history_rank` rather than through a full solve, because
         whether Emma's own shape survives apportionment into `day_slots`
-        varies with the fixture — and it is not what this change is about.
+        varies with the fixture - and it is not what this change is about.
         This is: when the shop offers a 06:00-16:00 that NOBODY owns, the
         person who opens at 06:00 every week is first in the queue for it
         instead of losing on a tie-break.
@@ -179,7 +179,7 @@ class TestAStartTimeIsAClaim:
 
         # Asserted on the ranks, not through a solve. Run end to end, the
         # later tie-breaks rescue the right answer even when both are ranked
-        # 0 — so a full-solve version of this test stayed green when the
+        # 0 - so a full-solve version of this test stayed green when the
         # start-time branch was allowed to override an exact owner.
         ranks = builder._history_rank(team, "mon", "06:00", "16:00")
         assert ranks.get("exact") == 0, ranks
@@ -197,7 +197,7 @@ class TestItDoesNotOverreach:
         for w in range(20):
             shifts = [{"employee_id": "regular", "day": "mon",
                        "start": "06:00", "end": "16:00"}]
-            if w % 4 == 0:                      # 5 of 20 — a quarter
+            if w % 4 == 0:                      # 5 of 20 - a quarter
                 shifts[0]["employee_id"] = "occasional"
             hist.append({
                 "week_start": (date(2026, 4, 27)
@@ -211,7 +211,7 @@ class TestItDoesNotOverreach:
             slot_owners.build_start_owners(hist), "mon", "06:00")
 
     def test_too_few_weeks_is_not_a_habit(self):
-        """MIN_OCCURRENCES applies to starts as it does to shapes — three
+        """MIN_OCCURRENCES applies to starts as it does to shapes - three
         openings is not a pattern."""
         hist = [{
             "week_start": (date(2026, 8, 31)
@@ -239,7 +239,7 @@ class TestNearbyStartsArePooled:
         sat 10:00    7 of 18   39%   no claim
         sat 11:00    8 of 19   42%   no claim
 
-    Nothing clears the bar alone, so she has no claim on any Saturday — while
+    Nothing clears the bar alone, so she has no claim on any Saturday - while
     plainly being the person who does late-morning Saturdays. Pooling starts
     within an hour gives her one, and leaves her 06:00 separate, four hours
     away. That is the tolerance familiarity has always used (§2).
@@ -299,7 +299,7 @@ class TestNearbyStartsArePooled:
 
         Pooling 10:00 and 11:00 means "weeks either ran". Summing the two
         week counts would double every week in which both ran, halving every
-        share and finding no owners at all — or, added the other way, push
+        share and finding no owners at all - or, added the other way, push
         shares over 100% and make everybody an owner of everything.
         """
         starts = slot_owners.build_start_owners(self._janes_saturdays())

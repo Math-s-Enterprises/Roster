@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Plus } from "lucide-react";
 
 /**
- * AI rules engine — table layout (handoff: AI rules).
+ * AI rules engine - table layout (handoff: AI rules).
  *
  * The form-plus-cards layout became one table grouped LEGAL / SAFETY /
  * CUSTOM, with creation moved to a drawer behind the New rule button.
@@ -16,7 +16,7 @@ import { Plus } from "lucide-react";
  * The handoff's state machine goes Compile -> "On · compiled". The backend
  * does not work that way and deliberately so: POST /compile sets
  * approved:false, and the solver honours a rule only once a human approves
- * the compiled constraint. The comment on that endpoint says why — it stops
+ * the compiled constraint. The comment on that endpoint says why - it stops
  * a model misreading a rule from silently changing how people are
  * scheduled. Printing "On · compiled" over an unapproved rule would tell
  * the manager their constraint is live while the solver ignores it, which
@@ -26,7 +26,7 @@ import { Plus } from "lucide-react";
  *
  *   Always on      locked system rule, enforced, cannot be changed
  *   Enforced       compiled and approved
- *   Needs approval compiled, awaiting sign-off — NOT enforced yet
+ *   Needs approval compiled, awaiting sign-off - NOT enforced yet
  *   Not in force   no compiled constraint; the solver cannot read it
  *   Paused         enabled:false
  *
@@ -158,7 +158,7 @@ export default function AIRules() {
     try {
       if (draft.rule_id) {
         await api.put(`/ai-rules/${draft.rule_id}`, payload);
-        toast.success("Rule updated — re-read and re-checked");
+        toast.success("Rule updated, re-read and re-checked");
       } else {
         await api.post("/ai-rules", payload);
         toast.success("Rule added");
@@ -176,7 +176,7 @@ export default function AIRules() {
     setCompiling(rule.rule_id);
     try {
       await api.post(`/ai-rules/${rule.rule_id}/compile`);
-      toast.success("Compiled — review it, then approve to enforce");
+      toast.success("Compiled, review it, then approve to enforce");
       await load();
     } catch (err) {
       // 503 means no ANTHROPIC_API_KEY on the server. Saying so is more use
@@ -193,7 +193,7 @@ export default function AIRules() {
   const approve = async (rule) => {
     try {
       await api.post(`/ai-rules/${rule.rule_id}/approve-compiled`);
-      toast.success("Approved — the solver will enforce it");
+      toast.success("Approved, the solver will enforce it");
       await load();
     } catch (err) {
       toast.error(errorMessage(err, "Could not approve the rule"));
@@ -209,7 +209,7 @@ export default function AIRules() {
         enabled,
         departments: rule.departments || [],
       });
-      toast.success(enabled ? "Resumed" : "Paused — the solver will ignore it");
+      toast.success(enabled ? "Resumed" : "Paused, the solver will ignore it");
       await load();
     } catch (err) {
       toast.error(errorMessage(err, "Could not change the rule"));
@@ -243,9 +243,9 @@ export default function AIRules() {
     }
     setBusy(false);
     await load();
-    if (ok && !failed) toast.success(`Compiled ${ok} — approve them to enforce`);
+    if (ok && !failed) toast.success(`Compiled ${ok}, approve them to enforce`);
     else if (ok) toast.warning(`Compiled ${ok}, ${failed} failed`);
-    else toast.error("Nothing compiled — the rule compiler may be switched off on the server.");
+    else toast.error("Nothing compiled, the rule compiler may be switched off on the server.");
   };
 
   // --- rendering ----------------------------------------------------
@@ -306,7 +306,7 @@ export default function AIRules() {
         </button>
       );
     }
-    return acts.length ? acts : <span className="air-none">—</span>;
+    return acts.length ? acts : <span className="air-none">-</span>;
   };
 
   const row = (rule) => {
@@ -383,7 +383,7 @@ export default function AIRules() {
       <div className="air-hero">
         <div className="air-hero-l">
           <div className="air-hero-label">
-            RIGHT NOW — {new Date().toLocaleDateString(undefined, {
+            RIGHT NOW, {new Date().toLocaleDateString(undefined, {
               weekday: "short", day: "numeric", month: "short", year: "numeric",
             }).toUpperCase()}
           </div>
@@ -412,11 +412,11 @@ export default function AIRules() {
                   <><strong>{hero.dead}</strong> {hero.dead === 1 ? "rule has" : "rules have"} nothing compiled,
                     so {hero.dead === 1 ? "it is" : "they are"} <strong>not being applied</strong>. </>
                 )}
-                Legal rules are never broken — the AI fails the run instead.
+                Legal rules are never broken, the AI fails the run instead.
               </>
             ) : (
               <>
-                <strong>Legal and safety rules are never broken</strong> — the AI fails the run instead of
+                <strong>Legal and safety rules are never broken</strong>, the AI fails the run instead of
                 bending one. A custom rule only takes effect once its compiled constraint has been approved.
               </>
             )}
@@ -473,11 +473,11 @@ export default function AIRules() {
           return (
             <div key={g.key} role="rowgroup">
               <div className="air-grouphead" data-later={gi > 0}>
-                {g.key} ({list.length}){g.caption ? ` — ${g.caption}` : ""}
+                {g.key} ({list.length}){g.caption ? `, ${g.caption}` : ""}
               </div>
               {list.length === 0 ? (
                 <div className="air-emptyrow">
-                  <span>No custom rules yet — describe one in plain English.</span>
+                  <span>No custom rules yet, describe one in plain English.</span>
                   <button
                     type="button"
                     className="air-link"
@@ -518,7 +518,7 @@ export default function AIRules() {
         It does not switch the rule on: the compiled result has to be <strong>approved</strong> first,
         so a misreading cannot quietly change how people are scheduled. A rule showing{" "}
         <strong>Not in force</strong> has nothing compiled behind it and is being ignored entirely.
-        <strong> Legal rules cannot be paused, edited or removed</strong> — they are enforced on every
+        <strong> Legal rules cannot be paused, edited or removed</strong>, they are enforced on every
         run and the AI fails rather than break one. <strong>Pausing</strong> a rule leaves it in place
         but tells the solver to ignore it until you resume it.
       </p>

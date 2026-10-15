@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { AlertTriangle, ChevronDown, Plus, X } from "lucide-react";
 
 /**
- * Fixed & recurring shifts — week grid (handoff 1b).
+ * Fixed & recurring shifts - week grid (handoff 1b).
  *
  * The flat "Templates (4)" list became a weekly coverage grid: one row per
  * employee, seven day columns, a block per pinned shift, a headcount tally
@@ -16,7 +16,7 @@ import { AlertTriangle, ChevronDown, Plus, X } from "lucide-react";
  * while before you notice Sunday is missing; a column of dashes cannot.
  *
  * Styling lives in .fx-* under index.css and follows the handoff's own
- * palette rather than the Carbon tokens — see the comment on that block.
+ * palette rather than the Carbon tokens - see the comment on that block.
  *
  * The list view is kept, not replaced: below 900px the grid is unusable and
  * the page falls back to it automatically.
@@ -44,7 +44,7 @@ const edge = (time) => (typeof time === "string" && time.endsWith(":00") ? time.
 const fmtPinned = (hours) => `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h pinned`;
 const fmtCellHours = (hours) => `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
 
-/** "Saturday and Sunday", "Friday, Saturday and Sunday" — never "Saturday, Sunday". */
+/** "Saturday and Sunday", "Friday, Saturday and Sunday" - never "Saturday, Sunday". */
 function listDays(dayKeys) {
   const names = dayKeys.map((d) => DAY_LABELS[d]);
   if (names.length === 1) return names[0];
@@ -142,7 +142,7 @@ export default function FixedShifts() {
     };
   }, [items]);
 
-  const empName = (id) => emps.find((e) => e.employee_id === id)?.name || "—";
+  const empName = (id) => emps.find((e) => e.employee_id === id)?.name || "-";
   const selected = emps.find((e) => e.employee_id === empId);
   const canPin = Boolean(empId) && days.length > 0 && Boolean(start) && Boolean(end) && start !== end;
 
@@ -166,7 +166,7 @@ export default function FixedShifts() {
    * The API has POST and DELETE and no update, so a replacement is
    * composed: create the new template, rebuild any partly-overlapped one
    * from the days it keeps, then delete the original. Creating before
-   * deleting is deliberate — if a later call fails the person ends up with
+   * deleting is deliberate - if a later call fails the person ends up with
    * a duplicate, which is visible and fixable, rather than a hole in their
    * week that nobody notices.
    */
@@ -199,7 +199,7 @@ export default function FixedShifts() {
       );
       toast.success(
         replaced > 0
-          ? `Pinned ${empName(empId)} to ${listDays(days)} — replaced ${replaced} existing ${replaced === 1 ? "day" : "days"}`
+          ? `Pinned ${empName(empId)} to ${listDays(days)}, replaced ${replaced} existing ${replaced === 1 ? "day" : "days"}`
           : `Pinned ${empName(empId)} to ${listDays(days)}`,
       );
       resetDraft();
@@ -226,7 +226,7 @@ export default function FixedShifts() {
 
     if (kept.length === 0 && !confirmed) {
       setDeleting({ title: "Remove pinned shift?",
-        description: `${DAY_LABELS[day]} is the only day on this template — removing it clears the pinned shift entirely.`,
+        description: `${DAY_LABELS[day]} is the only day on this template - removing it clears the pinned shift entirely.`,
         confirm: () => removeDay(id, day, true) });
       return;
     }
@@ -256,7 +256,7 @@ export default function FixedShifts() {
 
   /**
    * Deleting removes the template, which means every day block belonging to
-   * it — so the confirm says how many, otherwise clicking one cell silently
+   * it - so the confirm says how many, otherwise clicking one cell silently
    * clears four.
    */
   const remove = async (id, confirmed = false) => {
@@ -370,11 +370,11 @@ export default function FixedShifts() {
         {loading ? (
           <div className="fx-empty">Loading…</div>
         ) : emps.length === 0 ? (
-          <div className="fx-empty">No employees yet — add staff before pinning shifts.</div>
+          <div className="fx-empty">No employees yet, add staff before pinning shifts.</div>
         ) : showList ? (
           <div className="fx-list">
             {items.length === 0 ? (
-              <div className="fx-empty">No fixed shifts yet — pin your first one above</div>
+              <div className="fx-empty">No fixed shifts yet, pin your first one above</div>
             ) : items.map((t) => (
               <div key={t.fixed_id} className="fx-listrow">
                 <div>
@@ -466,7 +466,7 @@ export default function FixedShifts() {
             })}
 
             {items.length === 0 && (
-              <div className="fx-empty">No fixed shifts yet — pin your first one above</div>
+              <div className="fx-empty">No fixed shifts yet, pin your first one above</div>
             )}
 
             <div className="fx-row fx-row-foot" role="row">
@@ -495,7 +495,7 @@ export default function FixedShifts() {
             <strong>
               {listDays(uncovered)} {uncovered.length === 1 ? "has" : "have"} no pinned cover.
             </strong>{" "}
-            The AI will fill {uncovered.length === 1 ? "it" : "them"} from availability — pin someone if it must be fixed.
+            The AI will fill {uncovered.length === 1 ? "it" : "them"} from availability, pin someone if it must be fixed.
           </span>
           <div className="fx-spacer" />
           <button type="button" onClick={() => prefill(null, uncovered[0])}>

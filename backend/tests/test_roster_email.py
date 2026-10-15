@@ -137,12 +137,12 @@ class TestLeaveIsShownNotDropped:
     def test_leave_beside_real_shifts_does_not_crash_the_send(self):
         """THE BUG THIS FOUND.
 
-        `shift["end"] <= shift["start"]` — the overnight test — compared None
+        `shift["end"] <= shift["start"]` - the overnight test - compared None
         with None and raised TypeError. The render happens while BUILDING the
         gather list rather than inside it, so it was not caught per recipient:
         one person on leave cost the ENTIRE TEAM their rota.
 
-        (My first explanation blamed the sort. It was wrong — two shifts only
+        (My first explanation blamed the sort. It was wrong - two shifts only
         reach the start-time tiebreak on the same day, so a holiday and a
         working shift on different days never compared. Checked before the
         comment went in.)

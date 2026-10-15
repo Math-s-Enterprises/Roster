@@ -6,8 +6,8 @@ the floor at 06:00 is already in the historical curve, so filling 06:00 "to
 target" with fresh morning starts and then letting the night shift arrive on
 top put a fourth body on an hour that has always had three.
 
-Learning the day's slot list instead — two open at 06:00, one starts at
-07:30, one covers the night — cannot double-count, because each shift the
+Learning the day's slot list instead - two open at 06:00, one starts at
+07:30, one covers the night - cannot double-count, because each shift the
 shop runs is placed exactly once.
 """
 from datetime import date, timedelta
@@ -173,7 +173,7 @@ class TestTheShapeIsReproduced:
 
     def test_the_changeover_hour_is_not_double_counted(self):
         """The reported bug. At 06:00 the outgoing night worker is still
-        there, which the learned curve already counts — so the roster must
+        there, which the learned curve already counts - so the roster must
         not add another body on top."""
         result, profile = generate()
         grid = coverage(result)
@@ -321,7 +321,7 @@ class TestClosingChangeoverGaps:
 
         The stretch used to move an edge 30 minutes and then ask
         `hours_covered` whether the hour was covered. It always said yes,
-        because that function floors a shift's start to the hour it falls in —
+        because that function floors a shift's start to the hour it falls in -
         so a finish moved to 17:30 "covered" 17:00 while the shop was still a
         body short until 17:30.
 
@@ -356,7 +356,7 @@ class TestClosingChangeoverGaps:
         """(before, after) for every shift THIS pass reshaped.
 
         Read from the advisories rather than from the final shifts, because
-        other passes lengthen shifts too — _fit_contract_hours had turned a
+        other passes lengthen shifts too - _fit_contract_hours had turned a
         09:00-15:00 into 09:00-19:00 and an earlier version of this test
         blamed the stretch for it.
         """
@@ -368,7 +368,7 @@ class TestClosingChangeoverGaps:
             was, _, rest = body.partition(" to ")
             now = rest.split(" to cover ")[0]
             out.append((tuple(was.split("-")), tuple(now.strip().split("-"))))
-        assert out, "no stretch was reported — this fixture must produce one"
+        assert out, "no stretch was reported - this fixture must produce one"
         return out
 
     def _two_hour_gap(self):
@@ -436,7 +436,7 @@ class TestClosingChangeoverGaps:
 
     def test_a_collapsed_advisory_names_the_shape_the_generator_drew(self):
         """The 'from' must be the ORIGINAL shape, not the intermediate one
-        produced by the first pass — that shape never existed on screen."""
+        produced by the first pass - that shape never existed on screen."""
         result = self._two_hour_gap()
         changes = [i for i in result["issues"] if "was changed from" in i]
         assert changes, "expected at least one stretch to be reported"
@@ -471,13 +471,13 @@ class TestContractTopUp:
 
     def test_a_contract_trim_leaves_the_finish_on_the_hour(self):
         """A 42.5h band is 8.5h a day, and the half-hour used to land on the
-        FINISH — 10:00-18:30. Measured across 8 solved weeks at the reference
+        FINISH - 10:00-18:30. Measured across 8 solved weeks at the reference
         shop that accounted for 42 of 42 manufactured half-hour finishes, all
         on salaried staff, against a manager who writes one in 555 shifts.
 
         The shop puts its half-hours on the START (07:30-16:00, 23:30-07:00)
-        and keeps finishes whole. Moving starts to match was rejected —
-        familiarity is keyed on start time — so the trim rounds down to a
+        and keeps finishes whole. Moving starts to match was rejected -
+        familiarity is keyed on start time - so the trim rounds down to a
         whole hour instead.
         """
         team = salaried_team()
@@ -493,8 +493,8 @@ class TestContractTopUp:
     def test_rounding_the_trim_down_does_not_starve_the_contract(self):
         """The risk the change above introduces, stated as its own test.
 
-        Rounding 8.5h down to 8h gives back half an hour per shift — 2.5h
-        across a five-day week — and if nothing made that up the salaried
+        Rounding 8.5h down to 8h gives back half an hour per shift - 2.5h
+        across a five-day week - and if nothing made that up the salaried
         employee would quietly finish under their band every week. That is
         what _top_up_contracts is for, and this is the test that would notice
         if it stopped being enough.
@@ -505,7 +505,7 @@ class TestContractTopUp:
         result, _ = generate(team=team)
         low, high = contract_span_band(team[0])
         assert low <= span_of(result, "e0") <= high, (
-            f"on {span_of(result, 'e0')}h against a {low}-{high}h band — "
+            f"on {span_of(result, 'e0')}h against a {low}-{high}h band - "
             f"the trim gave back hours nothing put back"
         )
         assert not result["under_contract"], result["under_contract"]
@@ -514,7 +514,7 @@ class TestContractTopUp:
         """The worst case for owner-first: somebody else owns EVERY slot.
 
         Owners now win their own slot ahead of contract need, so this is the
-        arrangement that could starve a salaried employee — and it must not.
+        arrangement that could starve a salaried employee - and it must not.
         The guarantee does not come from out-ranking the owner; it comes from
         there being more slots than one person can work (five days, twelve
         hours) and from _top_up_contracts running afterwards for anyone still
@@ -527,7 +527,7 @@ class TestContractTopUp:
         from app.services.availability import contract_span_band
 
         team = salaried_team()
-        # e1 works every slot, every week — as strong an ownership claim as
+        # e1 works every slot, every week - as strong an ownership claim as
         # the data can express.
         hist = []
         for w in range(24):
@@ -561,7 +561,7 @@ class TestContractTopUp:
         one day, including a 06:00 opening its owner had worked for 14 of the
         24 observed weeks.
 
-        The contract is not what was wrong — 41 hours can be reached from many
+        The contract is not what was wrong - 41 hours can be reached from many
         combinations of shifts, and _top_up_contracts fills any gap afterwards.
         Taking THAT slot bought the contract nothing and cost the manager an
         edit.
@@ -601,7 +601,7 @@ class TestContractTopUp:
         Slots fill earliest first, so somebody can be placed on an earlier
         slot before their own comes up. Martin owned 10:00-19:00; 06:00-14:00
         was offered first, its usual owner was on leave that week, and Martin
-        was the best of who was left — so he took it, and by the time his own
+        was the best of who was left - so he took it, and by the time his own
         slot came round he was already working that day.
 
         Reordering the slots would fix this and break something worse: the
@@ -645,7 +645,7 @@ class TestContractTopUp:
         assert slot_owners.owner_of(owners, "mon", *early) == "e1"
         assert slot_owners.owner_of(owners, "mon", *late) == "e2"
 
-        # e1, who owns the early slot, is away — the situation that sent the
+        # e1, who owns the early slot, is away - the situation that sent the
         # early slot looking for somebody else.
         team[1]["is_active"] = False
 
@@ -722,7 +722,7 @@ class TestContractTopUp:
         if span < low:
             assert any(u["employee_id"] == "e0" for u in result["under_contract"]), (
                 f"e0 left on {span}h against a {low}h minimum with no mention "
-                f"of it — an unpaid-for gap the manager cannot see"
+                f"of it - an unpaid-for gap the manager cannot see"
             )
 
     def test_an_occasional_coverer_does_not_outrank_contract_need(self):
@@ -734,7 +734,7 @@ class TestContractTopUp:
         """
         team = salaried_team()
         start, end = WEEKDAY[0]
-        # The slot must keep RUNNING every week — ownership is a share of the
+        # The slot must keep RUNNING every week - ownership is a share of the
         # weeks the slot ran, so removing it from the other weeks would shrink
         # the denominator and make an occasional coverer a 100% owner.
         # Instead it runs every week, shared five ways: nobody reaches 60%.
@@ -765,7 +765,7 @@ class TestContractTopUp:
 
         result, _ = generate(team=team, hist=hist)
         # Asserted on the START only. A salaried shift is resized to the
-        # contract — 42.5/5 = 8.5h — so e0 takes this slot as 06:00-14:30
+        # contract - 42.5/5 = 8.5h - so e0 takes this slot as 06:00-14:30
         # rather than the full 06:00-16:00. Winning the slot is the point
         # here; its length is a separate rule with its own tests.
         mine = [
@@ -774,7 +774,7 @@ class TestContractTopUp:
         ]
         assert mine and mine[0]["start"] == start, (
             f"mon {start} has no owner, so the full-timer's contract should "
-            f"decide it — e0 got "
+            f"decide it - e0 got "
             f"{mine[0]['start'] + '-' + mine[0]['end'] if mine else 'nothing'}"
         )
         # And the slot that DOES have an owner still went to them.
@@ -788,7 +788,7 @@ class TestContractTopUp:
 
     def test_an_unreachable_band_is_reported_rather_than_broken(self):
         """With five days as the ceiling and no shift under 7.5 hours, 41 is
-        arithmetically out of reach here — four tens is 40, and a fifth of
+        arithmetically out of reach here - four tens is 40, and a fifth of
         anything overshoots 42.5. The roster must say so rather than quietly
         break the maximum to satisfy the minimum."""
         result, _ = generate(team=salaried_team())
@@ -933,7 +933,7 @@ class TestTheShiftBelongsToWhoeverWorksIt:
     """A slot with a settled owner is not put out to role seniority.
 
     The reported behaviour: Emma opens Monday 06:00 every week, but the
-    roster kept handing it to a manager. Familiarity did not stop it —
+    roster kept handing it to a manager. Familiarity did not stop it -
     the manager HAS worked early starts, so he passed the check and then won
     on seniority. The question is not who can work the shift but who does.
     """
@@ -945,7 +945,7 @@ class TestTheShiftBelongsToWhoeverWorksIt:
 
         The manager (e0) therefore owns a Monday shape of his own. Without
         that the fixture would have six slots, six owners and a manager who
-        must also be on the day — seven people for six shifts — and senior
+        must also be on the day - seven people for six shifts - and senior
         cover would have to displace somebody no matter what the rules said.
         A real shop does not look like that.
         """
@@ -977,7 +977,7 @@ class TestTheShiftBelongsToWhoeverWorksIt:
             "is_active": True,
         })
         # A senior manager who would otherwise win the slot on rank. He is
-        # e0 in the history, so he has his OWN regular shape — which is what
+        # e0 in the history, so he has his OWN regular shape - which is what
         # a real shop looks like, and what gives senior cover somewhere to go
         # that is not somebody else's shift.
         team[0].update({"employee_id": "e0", "name": "Martin", "role": "Manager"})
@@ -1010,7 +1010,7 @@ class TestTheShiftBelongsToWhoeverWorksIt:
         assert self._opener(result) != "e0"
 
     def test_when_the_owner_is_on_leave_it_goes_to_the_usual_cover(self):
-        """Not back to seniority — to whoever actually covers for her."""
+        """Not back to seniority - to whoever actually covers for her."""
         history = self._history()
         # Kyle covers Monday's opening whenever Emma is off.
         for roster in history[:6]:
@@ -1060,7 +1060,7 @@ class TestRegenerateOffersAlternatives:
     """Regenerate has to visibly do something, without undoing settled work.
 
     Sixteen presses used to produce sixteen identical weeks, because the
-    solver is deterministic — so the button looked broken. But reshuffling
+    solver is deterministic - so the button looked broken. But reshuffling
     everything is worse than doing nothing: it hands back the 06:00 opening
     somebody has worked for months, and every one of those is an edit the
     manager has to undo.
@@ -1128,7 +1128,7 @@ class TestRegenerateOffersAlternatives:
         directly, because an owner does not always get their slot and should
         not: on the fifth day they are already working they are out on the
         five-day rule, exactly as they would be on leave or inside the rest
-        window. What must hold is that the seed changes nothing about it —
+        window. What must hold is that the seed changes nothing about it -
         whoever an owned slot goes to, it goes to the same person every time.
         """
         from app.services import slot_owners
@@ -1142,7 +1142,7 @@ class TestRegenerateOffersAlternatives:
             A slot whose owner was unavailable falls to somebody else, and who
             that somebody is can legitimately shift between seeds: varying an
             unowned slot changes who is already working that day, which changes
-            who is left. Nobody loses a shift they had — the owner was never
+            who is left. Nobody loses a shift they had - the owner was never
             getting this one. What must never move is a shift its owner did get.
             """
             out = {}
@@ -1163,7 +1163,7 @@ class TestRegenerateOffersAlternatives:
             missing = set(baseline) - set(settled)
             assert not missing, (
                 f"seed {seed} took {sorted(missing)} away from the person who "
-                f"owns it — every one of those is an edit the manager has to undo"
+                f"owns it - every one of those is an edit the manager has to undo"
             )
 
     def test_the_unowned_slot_actually_varies(self):
@@ -1174,7 +1174,7 @@ class TestRegenerateOffersAlternatives:
             result = self._solve(hist, seed)
             # Matched on the WHOLE shape. Monday runs 16:00-00:00 as well as
             # the unowned 16:00-23:00, so matching on the start alone collects
-            # two people whatever the seed does — and the test passes without
+            # two people whatever the seed does - and the test passes without
             # anything varying at all.
             who = [
                 s["employee_id"] for s in result["shifts"]
@@ -1183,7 +1183,7 @@ class TestRegenerateOffersAlternatives:
             seen.update(who)
 
         assert len(seen) > 1, (
-            f"25 regenerations all gave mon {spare[0]} to {seen} — Regenerate "
+            f"25 regenerations all gave mon {spare[0]} to {seen} - Regenerate "
             f"is still a button that does nothing"
         )
 
@@ -1221,7 +1221,7 @@ class TestExtraStaffAreOnTop:
         ]
         assert len(opening) == 2, (
             f"the pin should fill one of Monday's two 06:00 slots, leaving "
-            f"two people at 06:00 in total — got {len(opening)}"
+            f"two people at 06:00 in total - got {len(opening)}"
         )
 
     def test_an_extra_shift_is_on_top_of_them(self):
@@ -1240,7 +1240,7 @@ class TestExtraStaffAreOnTop:
             if s["day"] == "mon" and s.get("start") == "06:00"
         ]
         assert len(opening) == 3, (
-            f"an extra must not cancel a slot — both openings should still be "
+            f"an extra must not cancel a slot - both openings should still be "
             f"filled with the extra person on top, got {len(opening)}"
         )
         assert any(s.get("extra") for s in opening), (
@@ -1307,14 +1307,14 @@ class TestRebalanceOneDay:
             )
 
         assert other_days(again) == other_days(first), (
-            "a single-day rebalance changed another day — the one thing it "
+            "a single-day rebalance changed another day - the one thing it "
             "promises not to do"
         )
 
     def test_another_day_is_not_refilled(self):
         """The case that actually needs the freeze.
 
-        Locking the other days is not enough on its own — if the fill passes
+        Locking the other days is not enough on its own - if the fill passes
         still run over them, a day that is SHORT gets quietly restaffed. The
         manager asked about Wednesday; Thursday having two fewer people is
         either deliberate or something they are dealing with separately, and
@@ -1373,7 +1373,7 @@ class TestRebalanceOneDay:
             if shift.get("start"):
                 days.setdefault(shift["employee_id"], set()).add(shift["day"])
         assert max(len(d) for d in days.values()) <= 5, (
-            "somebody ended up on six days — the frozen days were not counted"
+            "somebody ended up on six days - the frozen days were not counted"
         )
 
 
@@ -1383,7 +1383,7 @@ class TestNobodyIsPlacedTwiceOnADay:
     Fixed shifts were applied without checking whether the person was already
     placed that day. Normally nothing else has placed them yet, so it never
     showed. Rebalance Day hands the other six days in as LOCKED shifts, which
-    are laid down first — so everyone with a fixed shift got a second one on
+    are laid down first - so everyone with a fixed shift got a second one on
     top, and their week was counted twice.
 
     It was invisible in the grid, which draws one cell per person per day: the
@@ -1396,12 +1396,12 @@ class TestNobodyIsPlacedTwiceOnADay:
         _apply_fixed_shifts also refuses a shift that would exceed the weekly
         cap, so on a 40h cap the duplicate was rejected by that check instead
         and the bug stayed hidden. It only appears for somebody whose cap
-        leaves room for the second copy — which is exactly why it showed up
+        leaves room for the second copy - which is exactly why it showed up
         for two people at the reference shop and nobody else.
         """
         # The reference shop's exact conditions, which is what it took to
         # reproduce: breaks paid, a salaried 40h contract, and a
-        # max_weekly_hours well above it. The cap is what limits the damage —
+        # max_weekly_hours well above it. The cap is what limits the damage -
         # Megan ended on 60h, six shifts of ten, because the seventh would
         # have exceeded 60 and was refused by the cap check instead.
         shop = make_shop(breaks_are_paid=True)
@@ -1471,7 +1471,7 @@ class TestNobodyIsPlacedTwiceOnADay:
         # What the grid can show: one shift per day.
         visible = len({s["day"] for s in mine})
         assert len(mine) == visible, (
-            f"e0 has {len(mine)} shifts across {visible} days — the extra ones "
+            f"e0 has {len(mine)} shifts across {visible} days - the extra ones "
             f"are invisible in the grid but counted in the total"
         )
 
@@ -1529,7 +1529,7 @@ class TestGapsAreReportedAsSpans:
         # Far fewer sentences than uncovered hours.
         hours = [g for g in result["gaps"] if g["severity"] == "uncovered"]
         assert len(criticals) < len(hours), (
-            f"{len(criticals)} sentences for {len(hours)} hours — not collapsed"
+            f"{len(criticals)} sentences for {len(hours)} hours - not collapsed"
         )
         assert any("hours)" in i for i in criticals), (
             "a multi-hour span should say how long it is"

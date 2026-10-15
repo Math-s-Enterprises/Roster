@@ -22,7 +22,7 @@ MATCHING IS THE DANGEROUS PART
 Getting this wrong sends one person's working pattern to another, which is a
 data-protection incident rather than a bug. So a row is applied only when it
 matches EXACTLY ONE active employee. Ambiguity is reported for a human to
-resolve — never guessed, never "closest match".
+resolve - never guessed, never "closest match".
 """
 from __future__ import annotations
 
@@ -140,7 +140,7 @@ def read_rows(data: bytes, filename: str) -> List[List[Any]]:
 def _name_and_email(cells: Sequence[Any]) -> Optional[tuple]:
     """The email in this row, and the likeliest name beside it.
 
-    Returns None for any row without an address — which silently disposes of
+    Returns None for any row without an address - which silently disposes of
     the title row, the header row, blank rows and separator rows without
     having to recognise any of them.
     """
@@ -196,7 +196,7 @@ def match(
 
         if not row.name:
             row.status = "unknown"
-            row.note = "No name in that row — cannot tell who it belongs to."
+            row.note = "No name in that row, cannot tell who it belongs to."
             continue
         if not candidates:
             row.status = "unknown"

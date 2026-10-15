@@ -9,7 +9,7 @@ the verified email/name/picture from it.
 
 Why this flow rather than the classic authorization-code exchange: no client
 secret is needed, there is no redirect round-trip to manage, and it suits a
-single-page app. The client ID is public by design — it ships in the
+single-page app. The client ID is public by design - it ships in the
 frontend bundle.
 
 Verification is not optional. An unverified ID token is just attacker-

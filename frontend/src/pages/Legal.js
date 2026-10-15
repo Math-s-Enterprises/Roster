@@ -11,7 +11,7 @@ import "@/styles/legal.css";
  *
  * The sign-up form opens the same text in a small dialog, so people never leave
  * the form. These pages are still here because a policy needs a stable address
- * — to link from an email, to print, or to hand to a regulator or a customer.
+ * - to link from an email, to print, or to hand to a regulator or a customer.
  *
  * The text is not written here. It lives in components/LegalText.js and is
  * shared with the dialog, so the two cannot drift apart.

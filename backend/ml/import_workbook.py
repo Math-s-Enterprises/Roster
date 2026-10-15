@@ -7,7 +7,7 @@ one approved historical roster per week. Those rosters are exactly what
 compute_weights() learns from, so the app has real history immediately instead
 of starting empty.
 
-This is the command-line half of Stage A in docs/ML_PLAN.md — the same logic
+This is the command-line half of Stage A in docs/ML_PLAN.md - the same logic
 the upload UI will eventually call, minus the review screen. Because there is
 no human review step here, it defaults to a dry run: you see what *would*
 happen and must pass --commit to actually write.
@@ -44,7 +44,7 @@ def map_role(raw: str | None, shop: dict | None = None) -> str:
     """A sheet's job title, as this shop spells it.
 
     Was a second copy of the API's ROLE_MAP, with the same fault and slightly
-    different contents — so the same workbook could produce different roles
+    different contents - so the same workbook could produce different roles
     depending on which route imported it. Both now defer to the shop's
     configured ladder.
     """
@@ -63,7 +63,7 @@ def placeholder_email(name: str, shop_id: str) -> str:
 
     The shop_id is stripped of punctuation: it contains an underscore, which
     is not legal in a domain, and the resulting address failed the validation
-    every employee save runs through — making imported staff uneditable.
+    every employee save runs through - making imported staff uneditable.
     """
     slug = "".join(ch.lower() for ch in name if ch.isalnum()) or "staff"
     tenant = "".join(ch for ch in shop_id.lower() if ch.isalnum())[:12] or "shop"
@@ -137,7 +137,7 @@ async def run(path: str, email: str, commit: bool, year: int) -> None:
 
     if not commit:
         print("\n" + "=" * 60)
-        print("DRY RUN — nothing written. Re-run with --commit to import.")
+        print("DRY RUN - nothing written. Re-run with --commit to import.")
         print("=" * 60)
         return
 
@@ -207,7 +207,7 @@ async def run(path: str, email: str, commit: bool, year: int) -> None:
     #
     # NOTE: bank_holiday is per-EMPLOYEE, not shop-wide. A 'b/hol' cell sits in
     # one person's row and means that person took the bank holiday as paid
-    # leave — the shop stayed open. Mapping it to scope='shop' closed the whole
+    # leave - the shop stayed open. Mapping it to scope='shop' closed the whole
     # business for everyone on those dates, which silently produced rosters
     # with entire days missing.
     absence_map = {"holiday": "employee", "sick": "sick", "bank_holiday": "employee"}
@@ -242,7 +242,7 @@ async def run(path: str, email: str, commit: bool, year: int) -> None:
           f"{absences_written} leave records.")
     if skipped:
         print(f"Skipped {skipped} shifts for unmatched employees.")
-    print("\nOpen the app — Past Rosters and AI Training should now show real data.")
+    print("\nOpen the app - Past Rosters and AI Training should now show real data.")
 
 
 def main() -> None:

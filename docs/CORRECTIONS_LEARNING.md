@@ -1,4 +1,4 @@
-# Learning from corrections — plan
+# Learning from corrections - plan
 
 > **Current implementation (4 October 2026):** the fixed three-repeat trigger
 > described below is historical. Suggestions now compare corrections with the
@@ -12,8 +12,8 @@ believe the roster it produces is better than one they would write themselves.
 
 **Measured as two numbers that must fall:**
 
-1. **Edits per approved roster** — how wrong the first draft was
-2. **Generations per approved week** — should trend to 1. One week recently
+1. **Edits per approved roster** - how wrong the first draft was
+2. **Generations per approved week** - should trend to 1. One week recently
    took 16.
 
 Everything below serves those two numbers. If a phase does not move them, it
@@ -23,7 +23,7 @@ does not belong.
 
 ## The idea in one paragraph
 
-The scheduler currently learns from **approved rosters** — weeks that worked.
+The scheduler currently learns from **approved rosters** - weeks that worked.
 But the highest-signal data is the **correction**: the manager looked at what
 the solver proposed and changed it. That is the manager saying "you got this
 wrong, here is right". Today that signal is destroyed, because editing
@@ -32,14 +32,14 @@ reads it; Phase 3 acts on it.
 
 ---
 
-## Phase 0 — Measure the baseline
+## Phase 0 - Measure the baseline
 
 **Why first:** we cannot claim an improvement without knowing where we
 started, and the measurement needs no code changes. Same discipline as the
 11-hour rest check, which was verified against 2009 real shift pairs before
 becoming a constraint.
 
-**Build:** `ml/measure_edit_burden.py` — reads existing rosters and reports:
+**Build:** `ml/measure_edit_burden.py` - reads existing rosters and reports:
 
 - generations per approved week, median and worst
 - how that trends over time
@@ -54,7 +54,7 @@ current solver, not its ancestors.
 
 ---
 
-## Phase 1 — Capture the signal
+## Phase 1 - Capture the signal
 
 **The problem:** `PUT /rosters/{id}` overwrites `shifts`. What the solver
 originally proposed is gone the moment you edit. Corrections are currently
@@ -62,8 +62,8 @@ unrecoverable.
 
 **Build:**
 
-- On generate, store `generated_shifts` — a frozen copy of the solver's
-  output — plus `generated_at`. Never touched by edits.
+- On generate, store `generated_shifts` - a frozen copy of the solver's
+  output - plus `generated_at`. Never touched by edits.
 - On approve, diff `generated_shifts` against the final `shifts` and store the
   result as `corrections` on the roster, along with `edit_count`.
 
@@ -79,7 +79,7 @@ unrecoverable.
 **Files:** `routes/rosters.py`, new `services/corrections.py` (diff only).
 
 **Existing rosters:** they have no snapshot, so they contribute nothing. They
-are excluded rather than guessed at — consistent with §9 of `CLAUDE.md`.
+are excluded rather than guessed at - consistent with §9 of `CLAUDE.md`.
 
 **Tests:** each correction kind detected correctly; the snapshot survives
 repeated edits unchanged; a roster approved with no edits records zero.
@@ -92,19 +92,19 @@ permanently lost.
 
 ---
 
-## Phase 2 — Read it and show it
+## Phase 2 - Read it and show it
 
 **Build:**
 
 - Aggregation in `corrections.py`: across approved rosters, tally corrections
   by kind, by person, by day and slot.
-- `GET /reports/corrections` — what the scheduler has learned so far.
+- `GET /reports/corrections` - what the scheduler has learned so far.
 - A panel showing **"Your last five rosters needed 6, 4, 3, 1, 1 edits."**
 - A list of learned preferences with their counts, each dismissible.
 
 **Why the panel is not decoration:** that falling number is the product
 proving its worth to the customer every week. It is the dependency the owner
-is aiming for, and a competitor cannot copy it — it is specific to this shop.
+is aiming for, and a competitor cannot copy it - it is specific to this shop.
 
 **Why dismissible matters:** if the scheduler has concluded something wrong,
 the manager must be able to find that out from a screen rather than from a bad
@@ -117,7 +117,7 @@ and disagree with any line of it.
 
 ---
 
-## Phase 3 — Turn repeated corrections into settings you can see
+## Phase 3 - Turn repeated corrections into settings you can see
 
 **The design decision that matters.** The obvious implementation is a hidden
 weight in the ranking. This is not that, and the difference is the whole
@@ -130,11 +130,11 @@ It is this:
 > **Kelvin's preferred day off should be Wednesday.**
 
 That field already exists, the solver already respects it, and the manager can
-see and change it. So the scheduler should not quietly nudge a score — it
+see and change it. So the scheduler should not quietly nudge a score - it
 should say what it noticed and offer to write it down:
 
 > *"You've taken Kelvin off Wednesday 3 times. Set Wednesday as his preferred
-> day off?"* — **Yes** / **No, it's coincidence**
+> day off?"* - **Yes** / **No, it's coincidence**
 
 **Every correction kind maps to an existing setting:**
 
@@ -153,7 +153,7 @@ should say what it noticed and offer to write it down:
   become policy without somebody agreeing to it.
 - The result lands in a field that can be read and reversed, not an opaque
   weight. Learning that cannot be inspected is learning that cannot be
-  trusted — and the product is trying to earn exactly that trust.
+  trusted - and the product is trying to earn exactly that trust.
 - The scheduler visibly gets better at *this* shop, which is the dependency
   the owner is aiming for.
 
@@ -189,11 +189,11 @@ score.
 
 ---
 
-## Phase 4 — Stop encouraging regeneration
+## Phase 4 - Stop encouraging regeneration
 
 > **Rewritten after the seed change.** This phase was written when Regenerate
 > was provably useless: deterministic solver, same inputs, sixteen identical
-> weeks. That is no longer true — Regenerate now varies the shifts nobody has
+> weeks. That is no longer true - Regenerate now varies the shifts nobody has
 > a settled claim on, so it genuinely offers a different arrangement.
 >
 > The nudge still stands, but the honest reason has changed. Regenerating is
@@ -204,7 +204,7 @@ score.
 
 
 **The behaviour to fix:** when a roster came out wrong, the instinct was to
-regenerate — 16 times in one week. But regenerating throws away both the
+regenerate - 16 times in one week. But regenerating throws away both the
 attempt and the reason it was wrong, then rolls the dice from the same inputs.
 Editing the 10% that is wrong keeps the 90% *and* teaches the system.
 
@@ -224,10 +224,10 @@ Rebalance as secondary. That is backwards for the outcome we want.
 
 ---
 
-## Phase 5 — Prove it
+## Phase 5 - Prove it
 
 Re-run Phase 0's measurement. Both numbers should have fallen. If they have
-not, Phase 3's weighting is wrong and we tune it — with evidence rather than
+not, Phase 3's weighting is wrong and we tune it - with evidence rather than
 opinion.
 
 ---
@@ -235,7 +235,7 @@ opinion.
 ## The risk, and why the Phase 3 design mostly removes it
 
 **The original worry:** this only works if corrections repeat. If the
-manager's edits are one-offs — fine-tuning for reasons that never recur —
+manager's edits are one-offs - fine-tuning for reasons that never recur -
 learning them would add noise, and the rosters would get worse.
 
 **Why suggesting settings rather than learning weights removes most of it:**
@@ -246,8 +246,8 @@ learning them would add noise, and the rosters would get worse.
   policy.
 - Anything accepted lands in a visible field that can be changed back.
 
-The bad outcome — the scheduler quietly concluding something wrong and the
-manager discovering it from a bad roster — is close to impossible under this
+The bad outcome - the scheduler quietly concluding something wrong and the
+manager discovering it from a bad roster - is close to impossible under this
 design. That was the risk actually worth eliminating.
 
 **What remains is not damage, it is a smaller benefit.** If corrections are
@@ -266,7 +266,7 @@ is not worth writing.
 | Phase | What | Rough size |
 |---|---|---|
 | 0 | Measure the baseline | small |
-| 1 | Capture the signal | small — **do first** |
+| 1 | Capture the signal | small - **do first** |
 | 2 | Read it, show it, allow disagreement | medium |
 | 3 | Suggest settings from repeated corrections | medium |
 | 4 | Nudge editing over regenerating | small |

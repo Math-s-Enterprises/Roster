@@ -1,4 +1,21 @@
-"""Deleting an account, and everything it owns.
+"""Deleting an account, and everything it owns - in two steps, thirty days apart.
+
+THE TWO STEPS
+
+  1. THE REQUEST (request_deletion). The person confirms, and from that moment the account
+     is closed: the subscription is cancelled, the paid-plan flag is switched off, every
+     sign-in stops working, and nobody can use or see the account. NOTHING IS DELETED YET.
+     A date GRACE_DAYS ahead is written on the user record.
+  2. THE ERASE (purge_due, run hourly by purge_loop). When that date has passed, everything
+     the account owns is permanently deleted by erase(), described below.
+
+  In between, signing in again with the right password (or Google) cancels the deletion and
+  brings the account back (restore_if_pending). That is what the thirty days are for: a
+  second chance. After the date it cannot be restored, even in the hour or so before the
+  next clean-up run gets to it (AccountExpired).
+
+  Billing is cancelled at the REQUEST, not at the erase. The erase never waits for Stripe,
+  so an outage there cannot hold up deleting somebody's data.
 
 WHAT "EVERYTHING" MEANS HERE
 
@@ -13,18 +30,14 @@ That is every collection in db.py, and a test fails if one is ever added without
 listed here (see ERASURE_PLAN). That test is the point of the list: personal data left
 behind in a table nobody remembered is the usual way erasure fails, and it fails silently.
 
-THE ORDER, AND WHY
+THE ORDER OF THE ERASE, AND WHY
 
-  1. Billing first. A subscription deleted from our records but not cancelled keeps
-     charging someone who no longer has an account, and we would no longer know its id to
-     cancel it. If billing cannot be cancelled, NOTHING is deleted and the person is told.
-  2. The shop's data, then the shop, then sessions, reset links and payment rows.
-  3. The user record LAST. Mongo cannot do this across collections in one transaction, so
-     a failure part-way leaves some of it deleted. Keeping the account until the end means
-     the person can still sign in and press the button again, and every step is safe to
-     repeat (deleting what is already gone is not an error, and cancelling an already
-     cancelled subscription is treated as done).
-  4. A second sweep. A request already in flight when we started can write after the first
+  1. The shop's data, then the shop, then sessions, reset links and payment rows.
+  2. The user record LAST. Mongo cannot do this across collections in one transaction, so
+     a failure part-way leaves some of it deleted. Keeping the user record until the end
+     means the next hourly run finds the account still due and finishes the job, and every
+     step is safe to repeat (deleting what is already gone is not an error).
+  3. A second sweep. A request already in flight when we started can write after the first
      pass, and the app creates a shop on first use, so one could even appear anew. Once the
      user record is gone nothing new can start; the second pass catches what was in the air.
 
@@ -35,8 +48,10 @@ WHAT THIS CANNOT REACH
   * Backups of the database taken by whoever hosts it, and email delivery logs at the email
     provider, are outside this code. They age out on their own schedule.
 """
+import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Set
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import stripe
 from pydantic import BaseModel
@@ -44,6 +59,18 @@ from pydantic import BaseModel
 from app import config, db
 
 log = logging.getLogger("roster.account_deletion")
+
+# How long a closed account is kept, in case the person changes their mind, before everything
+# in it is permanently deleted. The screen and the policies quote this number.
+GRACE_DAYS = 30
+
+# The clean-up job waits a minute after the server starts (so it never competes with start-up
+# or with tests), then runs every hour. An account is therefore gone within an hour of its date.
+PURGE_FIRST_RUN_SECONDS = 60
+PURGE_EVERY_SECONDS = 60 * 60
+
+# What the request writes on the user record, and what signing back in removes.
+PENDING_FIELDS = ("deletion_requested_at", "deletion_scheduled_for")
 
 SHOP_SCOPED = (
     "employees", "holidays", "fixed_shifts", "ai_rules", "rosters",
@@ -77,7 +104,11 @@ class DeleteAccountReq(BaseModel):
 
 
 class BillingCleanupFailed(Exception):
-    """The subscription could not be cancelled, so nothing was deleted."""
+    """The subscription could not be cancelled, so the account was not closed."""
+
+
+class AccountExpired(Exception):
+    """The thirty days are over: the account is waiting for the clean-up and cannot come back."""
 
 
 def _stripe_error():
@@ -93,7 +124,7 @@ async def cancel_billing(user_id: str) -> List[str]:
     """Cancel every live subscription and expire every unfinished checkout.
 
     Returns what was done, for the log. Raises BillingCleanupFailed if anything that needs
-    cancelling could not be, which stops the deletion before it starts.
+    cancelling could not be, which stops the account being closed at all.
 
     Three situations, per payment record:
       * it has a subscription id: cancel that subscription;
@@ -114,7 +145,7 @@ async def cancel_billing(user_id: str) -> List[str]:
         # We cannot cancel what we cannot reach. Deleting anyway would strand a live charge.
         raise BillingCleanupFailed(
             "Billing is not available right now, so your subscription cannot be cancelled "
-            "and nothing has been deleted. Please try again later."
+            "and your account has not been deleted. Please try again later."
         )
 
     error = _stripe_error()
@@ -158,8 +189,8 @@ async def cancel_billing(user_id: str) -> List[str]:
     except error as exc:
         log.error("Could not cancel billing while deleting account %s: %s", user_id, exc)
         raise BillingCleanupFailed(
-            "We could not cancel your subscription with our payment provider, so nothing "
-            "has been deleted. Please try again in a few minutes."
+            "We could not cancel your subscription with our payment provider, so your account "
+            "has not been deleted. Please try again in a few minutes."
         ) from exc
     return done
 
@@ -197,10 +228,111 @@ async def erase(user: Dict[str, Any]) -> Dict[str, int]:
     return counts
 
 
-async def delete_account(user: Dict[str, Any]) -> Dict[str, int]:
-    """Cancel billing, then erase. Raises BillingCleanupFailed before touching any data."""
-    await cancel_billing(user["user_id"])
-    counts = await erase(user)
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def parse_when(value: Any) -> Optional[datetime]:
+    """An ISO date as written on the user record, or None if there is none or it is unreadable."""
+    if not value:
+        return None
+    try:
+        when = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+def pending_message(user: Dict[str, Any]) -> str:
+    """Said to somebody who tries to sign up with an address whose account is waiting."""
+    when = parse_when(user.get("deletion_scheduled_for"))
+    on = f" on {when.day} {when:%B %Y}" if when else ""
+    return (
+        f"That email belongs to an account that is scheduled for deletion{on}. "
+        "Sign in to cancel the deletion, or sign up again after that date."
+    )
+
+
+async def request_deletion(user: Dict[str, Any]) -> datetime:
+    """Close the account now and schedule everything in it to be erased GRACE_DAYS from now.
+
+    Billing goes first, so that if it cannot be cancelled (BillingCleanupFailed) the account
+    is left exactly as it was. Then, in one update: the date is written, the paid-plan flag is
+    switched off (cancelling the subscription does not do that, and without it a person who
+    came back would keep the paid plan for nothing), and the token version is bumped so every
+    sign-in issued before now stops working. Cookie sessions are removed too.
+
+    Asking twice keeps the original date; it does not push it back.
+    """
+    user_id = user["user_id"]
+    await cancel_billing(user_id)
+    now = _now()
+    scheduled = parse_when(user.get("deletion_scheduled_for")) or now + timedelta(days=GRACE_DAYS)
+    await db.users.update_one(
+        {"user_id": user_id},
+        {
+            "$set": {
+                "deletion_requested_at": user.get("deletion_requested_at") or now.isoformat(),
+                "deletion_scheduled_for": scheduled.isoformat(),
+                "pro": False,
+            },
+            "$unset": {"pro_since": ""},
+            "$inc": {"token_version": 1},
+        },
+    )
+    await db.user_sessions.delete_many({"user_id": user_id})
     # The user id is a random token, not personal data. No email or name is logged.
-    log.info("Deleted account %s: %s", user["user_id"], counts)
-    return counts
+    log.info("Closed account %s; erasure scheduled for %s", user_id, scheduled.isoformat())
+    return scheduled
+
+
+async def restore_if_pending(user: Dict[str, Any], now: Optional[datetime] = None) -> Tuple[Dict[str, Any], bool]:
+    """Called once somebody has proved who they are by signing in.
+
+    An account that is not waiting is returned as it is. One that is waiting, and whose date
+    has not come, has the deletion cancelled and is returned as restored. One whose date has
+    passed raises AccountExpired: the clean-up is about to remove it, and the promise was
+    thirty days, so it is not given a second chance by being a little late.
+    """
+    if not user.get("deletion_scheduled_for"):
+        return user, False
+    due = parse_when(user["deletion_scheduled_for"])
+    if due is not None and due <= (now or _now()):
+        raise AccountExpired()
+    await db.users.update_one({"user_id": user["user_id"]}, {"$unset": {field: "" for field in PENDING_FIELDS}})
+    log.info("Account %s signed back in; deletion cancelled", user["user_id"])
+    return {k: v for k, v in user.items() if k not in PENDING_FIELDS}, True
+
+
+async def purge_due(now: Optional[datetime] = None) -> List[str]:
+    """Erase every account whose thirty days are over. Returns the ids it erased.
+
+    One account failing does not stop the others, and it is simply tried again on the next
+    run, because its user record is only removed at the very end of erase().
+    """
+    now = now or _now()
+    waiting = await db.users.find({"deletion_scheduled_for": {"$exists": True}}, {"_id": 0}).to_list(None)
+    erased: List[str] = []
+    for user in waiting:
+        due = parse_when(user.get("deletion_scheduled_for"))
+        if due is None or due > now:
+            continue
+        try:
+            counts = await erase(user)
+        except Exception:  # noqa: BLE001 - one bad account must not stop the rest
+            log.exception("Could not erase account %s; it will be tried again", user["user_id"])
+            continue
+        log.info("Erased account %s: %s", user["user_id"], counts)
+        erased.append(user["user_id"])
+    return erased
+
+
+async def purge_loop(first_run_after: float = PURGE_FIRST_RUN_SECONDS, every: float = PURGE_EVERY_SECONDS) -> None:
+    """Run purge_due for as long as the server is up. Cancelled on shutdown."""
+    await asyncio.sleep(first_run_after)
+    while True:
+        try:
+            await purge_due()
+        except Exception:  # noqa: BLE001 - the loop must survive anything a single run throws
+            log.exception("Account clean-up run failed; will try again")
+        await asyncio.sleep(every)

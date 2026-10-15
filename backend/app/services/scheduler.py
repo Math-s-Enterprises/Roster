@@ -1,4 +1,4 @@
-"""The roster solver — the core of the product.
+"""The roster solver - the core of the product.
 
 Deliberately pure: no database, no network, no framework imports. It takes
 plain dicts in and returns a plain dict out, which means it can be tested
@@ -7,13 +7,13 @@ backend is plumbing around this module.
 
 NON-NEGOTIABLE RULES (enforced here, not configurable by shop owners)
 --------------------------------------------------------------------
-1. Role priority   — higher-priority roles are always considered first, so
+1. Role priority   - higher-priority roles are always considered first, so
                      they get first claim on available hours.
-2. Continuous cover— at least one person is scheduled for every minute the
+2. Continuous cover- at least one person is scheduled for every minute the
                      shop is open. No gaps between opening and closing.
-3. 24h cover       — for 24-hour shops, the same guarantee applies around
+3. 24h cover       - for 24-hour shops, the same guarantee applies around
                      the clock, including overnight.
-4. Legal limits    — under-16 curfew and weekly hour caps are never relaxed,
+4. Legal limits    - under-16 curfew and weekly hour caps are never relaxed,
                      not even to satisfy rules 2 and 3.
 
 Where rules conflict, rule 4 wins: the solver will report a gap it could not
@@ -39,7 +39,7 @@ from app.services import slot_owners
 DAYS: Tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 # Fallback ordering for callers that pass no shop. The real ordering is the
-# shop's configured role_hierarchy — see services/hierarchy.py — so that a
+# shop's configured role_hierarchy - see services/hierarchy.py - so that a
 # business can rename or reorder its job titles without a code change.
 ROLE_PRIORITY: Dict[str, int] = {
     "Manager": 0,
@@ -62,7 +62,7 @@ MINOR_EARLIEST_START = "08:00"
 MINOR_LATEST_END = "19:00"
 
 # The longest single shift anyone may be given, whatever the shop's own
-# max_shift_hours says — every use is `min(shop setting, this)`.
+# max_shift_hours says - every use is `min(shop setting, this)`.
 #
 # Was 11, which looks like it came from the 11-hour daily REST entitlement in
 # the Organisation of Working Time Act 1997. That is a different quantity: 11
@@ -76,7 +76,7 @@ ABSOLUTE_MAX_SHIFT_HOURS = 12
 # shop's own health and safety rule.
 #
 # Checked against 30 weeks of the manager's real rosters before being made a
-# constraint: 2009 consecutive pairs, 8 under eleven hours — 99.6%. Practice
+# constraint: 2009 consecutive pairs, 8 under eleven hours - 99.6%. Practice
 # already followed it, so enforcing it cannot stop the solver reproducing the
 # history it learns from.
 MIN_REST_HOURS = 11.0
@@ -85,13 +85,13 @@ MIN_REST_HOURS = 11.0
 _UNSET = object()
 
 # Sorts after anybody who has actually worked a slot. Must not be derived
-# from how many people are ranked — with one ranked person that number is 1,
+# from how many people are ranked - with one ranked person that number is 1,
 # which ties them with everybody who has never worked it.
 _UNRANKED_FOR_SLOT = 9_999
 
 
 # ---------------------------------------------------------------------------
-# Time helpers — the solver works in integer minutes-since-midnight, which
+# Time helpers - the solver works in integer minutes-since-midnight, which
 # makes all arithmetic trivial compared with string or datetime juggling.
 # ---------------------------------------------------------------------------
 def to_minutes(hhmm: str) -> int:
@@ -145,7 +145,7 @@ def _crosses_midnight(start: str, end: str) -> bool:
 # match wins.
 #
 # Breaks are NOT working time, so a contracted 40-hour week is 40 hours of
-# *paid* time and the roster has to span longer than that to deliver it — a
+# *paid* time and the roster has to span longer than that to deliver it - a
 # 10-hour shift with an hour of breaks pays 9. Treating span as paid time
 # silently short-changes everyone by roughly 10%.
 BREAK_SCHEDULE: Tuple[Tuple[float, int], ...] = (
@@ -168,12 +168,12 @@ def inactive_rule_titles(ai_rules: List[Dict[str, Any]]) -> List[str]:
     """Enabled custom rules the solver cannot read, so they do nothing.
 
     Silently ignoring them is how somebody writes a rule, sees it listed as
-    Enabled, and gets a roster that breaks it — so they are named instead.
+    Enabled, and gets a roster that breaks it - so they are named instead.
 
     A module-level function because the ROSTER PAGE needs the same answer as
     the solver, and needs it recomputed: the manager edits a rule and comes
     straight back to the week they are working on. Deriving it twice is the
-    §11 trap, and this one would be visible — the page saying a rule is fine
+    §11 trap, and this one would be visible - the page saying a rule is fine
     while the generator says it was never applied.
 
     `locked` rules are the system ones, which are always readable and are not
@@ -224,7 +224,7 @@ def paid_hours(start: str, end: str, *, breaks_paid: bool = False) -> float:
     """Hours actually paid: the shift's span, less its break if unpaid.
 
     This is what drives labour cost. Coverage still uses the full span,
-    because somebody on a break is still on the premises — modelling exactly
+    because somebody on a break is still on the premises - modelling exactly
     when each break falls is more precision than a weekly roster can carry.
 
     `breaks_paid` is a per-shop choice: some shops pay through breaks and
@@ -242,7 +242,7 @@ def shop_breaks_paid(shop: Optional[Dict[str, Any]]) -> bool:
 
 
 def shift_span_hours(shift: Dict[str, Any]) -> float:
-    """Hours on the floor for a stored shift — clock in to clock out.
+    """Hours on the floor for a stored shift - clock in to clock out.
 
     What a full-time contract is measured against, and what a rota sheet
     shows. Leave entries have no span: somebody on holiday is not present.
@@ -273,7 +273,7 @@ def collapse_hour_runs(
 
     Grouped by the REASON as well as the day, so "nobody could work this
     because Emma is on leave" and "nobody could work this because everyone
-    is at their cap" stay separate sentences even when the hours touch —
+    is at their cap" stay separate sentences even when the hours touch -
     they are different problems with different fixes.
 
     Returns {day, from_hour, to_hour, window, hours, because}.
@@ -324,7 +324,7 @@ class Segment:
 
     @property
     def duration_hours(self) -> float:
-        """Paid hours — what counts against an employee's contract."""
+        """Paid hours - what counts against an employee's contract."""
         return paid_hours(self.start, self.end)
 
 
@@ -346,7 +346,7 @@ class SolveResult:
     # things to actively confirm rather than hunting through general advice.
     confirmations: List[Dict[str, str]] = field(default_factory=list)
     # Hours the solver could not staff without breaking a rule. Left empty
-    # and reported rather than filled with somebody unsuitable — a blank the
+    # and reported rather than filled with somebody unsuitable - a blank the
     # manager can see and decide about beats a shift that will not happen.
     gaps: List[Dict[str, Any]] = field(default_factory=list)
     # Days staffed by fewer people than the shop normally uses, even if the
@@ -390,7 +390,7 @@ def build_segments(shop: Dict[str, Any], open_m: int, close_m: int) -> List[Segm
     Naively cutting fixed max-length blocks leaves a short remainder, and
     the obvious fixes are both wrong: dropping it leaves the end of the day
     uncovered, while merging it into the previous block produces an
-    over-length shift. Dividing the day into equal parts satisfies both —
+    over-length shift. Dividing the day into equal parts satisfies both -
     e.g. a 12-hour day with a 9-hour cap becomes 2x6h, never 9h + 3h.
     """
     max_len = max(1, int(min(shop.get("max_shift_hours", 9), ABSOLUTE_MAX_SHIFT_HOURS) * 60))
@@ -503,7 +503,7 @@ class _RosterBuilder:
     # This is the single most consequential ordering decision in the solver
     # (CLAUDE.md §2b) and it was argued both ways before landing on True. It
     # is a class attribute rather than a bare `0 if ...` so the decision can
-    # be turned OFF and the same week re-solved — which is the only way to
+    # be turned OFF and the same week re-solved - which is the only way to
     # answer "is anybody short BECAUSE an owner kept their shift?" rather
     # than guessing. `ml/check_contract_cost.py` flips it.
     #
@@ -531,7 +531,7 @@ class _RosterBuilder:
         # Re-solve ONE day and leave the rest of the week exactly as it is.
         #
         # "Two people called in sick on Wednesday" does not want the whole
-        # week rearranged — every other day that moves is a change the manager
+        # week rearranged - every other day that moves is a change the manager
         # has to read, understand and mostly undo. The other days are handed
         # in as locked shifts, so their hours still count against everybody's
         # weekly cap and five-day limit; this flag additionally stops the fill
@@ -543,14 +543,14 @@ class _RosterBuilder:
         #
         # Regenerate used to be a button that provably did nothing: same
         # inputs, same roster, so pressing it sixteen times saved sixteen
-        # identical weeks. But the fix is not to shuffle everything — a
+        # identical weeks. But the fix is not to shuffle everything - a
         # reshuffled roster hands back the 06:00 opening somebody has worked
         # for months, and every one of those is an edit the manager has to
         # undo. Only genuinely arbitrary choices are varied. See _pick_for_slot.
         self.rng = random.Random(seed) if seed is not None else None
 
         # Shifts the manager placed by hand. Laid down before anything else
-        # and never moved, lengthened or trimmed — the whole point of
+        # and never moved, lengthened or trimmed - the whole point of
         # rebalancing is that your decisions survive and everybody else
         # rearranges around them.
         self.locked_by_day: Dict[str, List[Dict[str, Any]]] = {}
@@ -588,9 +588,9 @@ class _RosterBuilder:
         self.role_ranks = hierarchy.rank_map(shop)
 
         # Shift history, for spotting assignments unlike anything a person
-        # has worked before. Built once — the check runs thousands of times.
+        # has worked before. Built once - the check runs thousands of times.
         self.shift_history = avail.build_shift_history(history_rosters or [])
-        # Who normally works each shift. Built once per solve — it is asked
+        # Who normally works each shift. Built once per solve - it is asked
         # for every slot on every day.
         # Leavers keep their history but lose their claim: see build_owners.
         #
@@ -599,7 +599,7 @@ class _RosterBuilder:
         # shift the manager adds week after week eventually earns its place
         # in `day_slots` on its own frequency, and from then on the app can
         # learn whose it is. A one-off extra never creates an owner of a slot
-        # that does not exist — which would turn "as well as" into "instead
+        # that does not exist - which would turn "as well as" into "instead
         # of" (§2d).
         _active = {e["employee_id"] for e in employees if avail.is_active(e)}
         self.slot_owners = slot_owners.build_owners(
@@ -663,7 +663,7 @@ class _RosterBuilder:
         # stretching a neighbour. Same principle as `exclusions`, for hours
         # instead of people: "one short for 7 hours" tells the manager what
         # happened and not one thing about what to do next, and the two
-        # answers call for completely different actions — an hour nobody
+        # answers call for completely different actions - an hour nobody
         # could be stretched into needs a rota change, a run too long to
         # stretch needs another person.
         self._short_hour_reasons: Dict[Tuple[str, int], str] = {}
@@ -676,7 +676,7 @@ class _RosterBuilder:
         ) = self._index_holidays(holidays)
         # Kept as given so `_report_under_contract` can hand them to
         # `compliance.under_contract`, which takes the same raw list the
-        # roster page does — one input shape, one answer.
+        # roster page does - one input shape, one answer.
         self.holidays = holidays
         self.fixed_by_employee_day = self._index_fixed_shifts(fixed_shifts)
         self.custom_constraints = rule_parser.compiled_constraints(ai_rules)
@@ -766,14 +766,14 @@ class _RosterBuilder:
 
         # Coverage carried in from the week before. Somebody working
         # 22:00-06:00 last Sunday is standing in the shop until 06:00 this
-        # Monday, so those hours are already covered — reporting them as a
+        # Monday, so those hours are already covered - reporting them as a
         # gap is a false alarm, and trying to fill them wastes staff on a
         # slot that is not empty.
         self.carried_in = self._seed_carry_in(history_rosters or [])
 
         # With a real previous week there is nothing to assume: this week's
         # own Sunday night belongs to NEXT Monday and is not counted here.
-        # Without one — a brand-new shop, or a week generated out of order —
+        # Without one - a brand-new shop, or a week generated out of order -
         # fall back to treating the rota as repeating, so the first week does
         # not report a phantom gap before opening on Monday.
         self.wrap_week = previous_week_roster(self.week_start, history_rosters) is None
@@ -783,7 +783,7 @@ class _RosterBuilder:
 
         Reads the approved roster for the week immediately before this one.
         Only Sunday shifts can spill past the week boundary, and only paid
-        working shifts count — somebody on holiday covers nothing.
+        working shifts count - somebody on holiday covers nothing.
         """
         previous = previous_week_roster(self.week_start, history)
         if previous is None:
@@ -868,7 +868,7 @@ class _RosterBuilder:
     def _rank(self, employee: Dict[str, Any], segment_key: str, day: str) -> Tuple[int, float]:
         """Sort key: role priority first (RULE 1), learned affinity second.
 
-        Used when there is no demand profile — seniority strictly first.
+        Used when there is no demand profile - seniority strictly first.
         """
         role_rank = hierarchy.rank_of(employee.get("role"), self.role_ranks)
         template_affinity = (
@@ -893,7 +893,7 @@ class _RosterBuilder:
         RULE 1 still holds, but at the right scope. Seniority decides who gets
         hours across the week; role deficit decides which role fills a given
         hour. Once managers have met their target for 13:00, another manager
-        scores below a floor assistant *for that hour* — while a manager still
+        scores below a floor assistant *for that hour* - while a manager still
         beats a floor assistant whenever both roles are equally short.
 
         Familiarity sits second because it was previously nowhere: the solver
@@ -901,7 +901,7 @@ class _RosterBuilder:
         anything they had worked, which is too late to act on. A night worker
         would be handed a 06:00 start while somebody who works mornings every
         week sat available. Ranking on it means an unfamiliar assignment
-        happens only when nobody familiar is left — which is exactly when the
+        happens only when nobody familiar is left - which is exactly when the
         warning is worth reading.
 
         It ranks BELOW role deficit deliberately. Covering the hour with the
@@ -947,7 +947,7 @@ class _RosterBuilder:
 
         Ranking on this spreads work the way a manager does instinctively.
         Without it the greedy loop keeps returning to whoever it ranked first
-        until they hit their cap, then moves down the list — which produced
+        until they hit their cap, then moves down the list - which produced
         rosters with three people pinned at 40h while four got nothing at all.
 
         Banded rather than continuous: comparing raw ratios would make a
@@ -958,7 +958,7 @@ class _RosterBuilder:
         """
         capacity = employee.get("max_weekly_hours") or 0
         if capacity <= 0:
-            return 1.0  # no capacity recorded — treat as fully loaded
+            return 1.0  # no capacity recorded - treat as fully loaded
         ratio = self.hours_used.get(employee["employee_id"], 0.0) / capacity
         return round(ratio * 8) / 8
 
@@ -999,7 +999,7 @@ class _RosterBuilder:
         # Raw counts hand every slot to whichever role has the most people.
         # A shop needing eight floor assistants and one supervisor gives the
         # assistants a shortfall of 0.8 and the supervisor 0.1, so the
-        # supervisor loses every comparison and is never rostered at all —
+        # supervisor loses every comparison and is never rostered at all -
         # which is why days kept coming out with nobody senior on them.
         #
         # As a fraction, both start 100% short, the tie falls to seniority,
@@ -1098,13 +1098,13 @@ class _RosterBuilder:
             return False  # no double-booking within a day
 
         # 2b. Two days off a week, minimum. A hard rule everywhere, and one
-        # the solver had no notion of — it would happily give somebody all
+        # the solver had no notion of - it would happily give somebody all
         # seven days if their hours allowed it.
         worked = self.days_worked.get(employee_id, set())
         if day not in worked and len(worked) >= self.max_working_days:
             self._note_exclusion(
                 employee_id,
-                f"Already working {len(worked)} days — the limit is "
+                f"Already working {len(worked)} days, the limit is "
                 f"{self.max_working_days}, so they keep "
                 f"{7 - self.max_working_days} days off.",
             )
@@ -1114,7 +1114,7 @@ class _RosterBuilder:
         if date_iso in self.employee_off_dates.get(employee_id, set()):
             return False  # never relaxed
 
-        # 4/5. Availability and advanced availability — hard limits. Someone
+        # 4/5. Availability and advanced availability - hard limits. Someone
         # who cannot start before 10:00 genuinely cannot open the shop.
         verdict = avail.check_availability(employee, day, segment.start, segment.end)
         if not verdict.allowed:
@@ -1122,7 +1122,7 @@ class _RosterBuilder:
             return False
 
         # 6/7. Weekly limit. For a salaried full-timer that is a span ceiling
-        # — 42.5 hours on the floor — because their contract is written that
+        # - 42.5 hours on the floor - because their contract is written that
         # way and their pay does not move with it. For everybody else it is a
         # paid-hours cap, which for a student varies with term and break.
         band = self.span_bands.get(employee_id)
@@ -1150,12 +1150,12 @@ class _RosterBuilder:
         # Measured in real time, not clock time: a 23:30-07:00 night finishes
         # on the FOLLOWING day, so a 17:00 start that day is a ten-hour
         # turnaround. Comparing bare clock values would read it as thirty-four
-        # and wave it through — which is exactly the case the rule exists for.
+        # and wave it through - which is exactly the case the rule exists for.
         short_rest = self._rest_breach(employee_id, day, segment.start, segment.end)
         if short_rest is not None:
             self._note_exclusion(
                 employee_id,
-                f"Only {short_rest:.1f}h rest since their last shift — "
+                f"Only {short_rest:.1f}h rest since their last shift, "
                 f"{self.min_rest_hours:g}h is required.",
             )
             return False
@@ -1164,7 +1164,7 @@ class _RosterBuilder:
         # is not offered it, no matter how short the day is.
         #
         # `relax_preferences` deliberately does NOT lift this. It relaxes a
-        # preferred DAY OFF, which is a different thing entirely — asking a
+        # preferred DAY OFF, which is a different thing entirely - asking a
         # 06:00 person to come in on their Sunday off is what a manager
         # actually does, whereas putting a night worker on a 06:00 start is
         # not. Sharing one flag between the two meant the coverage floor did
@@ -1182,14 +1182,14 @@ class _RosterBuilder:
             )
             return False
 
-        # Statutory curfew — never relaxed.
+        # Statutory curfew - never relaxed.
         if violates_minor_curfew(employee, segment.start, segment.end):
             self._note_exclusion(
                 employee_id, f"Under {MINOR_AGE}: outside permitted hours."
             )
             return False
 
-        # 9. Preferred days off — a preference, relaxable unless strict mode.
+        # 9. Preferred days off - a preference, relaxable unless strict mode.
         if day in (employee.get("preferred_days_off") or []):
             if self.strict_days_off or not relax_preferences:
                 return False
@@ -1198,8 +1198,8 @@ class _RosterBuilder:
         #
         # ALWAYS SOFT, deliberately, and unlike `preferred_days_off` this one
         # does not consult `strict_days_off`. The shop's own history shows
-        # the manager pausing the rotation on busy weeks — 4 of 11 weekends
-        # at the reference shop had nobody off — so a hard rule would force a
+        # the manager pausing the rotation on busy weeks - 4 of 11 weekends
+        # at the reference shop had nobody off - so a hard rule would force a
         # day off he would not have given and leave the floor short. The
         # relaxed pass gives the shift back when the week needs it, and
         # `_report_rotation` says so.
@@ -1229,7 +1229,7 @@ class _RosterBuilder:
         """Custom rules that depend on who else is already on the day.
 
         `max_staff` and `not_together` cannot be judged from one assignment
-        in isolation — they are about the shape of the day — so they live
+        in isolation - they are about the shape of the day - so they live
         here rather than in the per-shift check.
         """
         on_day = {
@@ -1317,7 +1317,7 @@ class _RosterBuilder:
         """Hours of rest, if giving this shift would leave too few.
 
         Checks both directions. Somebody already down for a 06:00 start
-        tomorrow cannot be given a shift finishing at 23:00 tonight either —
+        tomorrow cannot be given a shift finishing at 23:00 tonight either -
         the breach is the same whichever order the solver happens to place
         them in.
         """
@@ -1362,7 +1362,7 @@ class _RosterBuilder:
         23:30-07:00 yields [23, 0, 1, 2, 3, 4, 5, 6]. Paid-holiday entries
         have no times and cover nothing.
 
-        Clock hours only — it does not say which DAY each hour falls on. Use
+        Clock hours only - it does not say which DAY each hour falls on. Use
         `hours_covered` for anything that counts coverage, or an overnight
         shift's small hours get credited to the day it started.
         """
@@ -1380,8 +1380,8 @@ class _RosterBuilder:
         """(day, hour) pairs a shift actually covers.
 
         Saturday 22:00-06:00 covers Saturday 22:00 and 23:00, then SUNDAY
-        00:00 through 05:00. Crediting all eight hours to Saturday — which is
-        what counting clock hours alone does — tells the solver that Saturday
+        00:00 through 05:00. Crediting all eight hours to Saturday - which is
+        what counting clock hours alone does - tells the solver that Saturday
         morning is staffed by the shift that ends it, and that Sunday morning
         is empty when somebody is standing in the shop.
 
@@ -1403,7 +1403,7 @@ class _RosterBuilder:
         for minute in range(start_m, end_m, 60):
             offset = index + minute // (24 * 60)
             if offset > 6 and not wrap_week:
-                continue  # spills into next week — not this roster's to count
+                continue  # spills into next week - not this roster's to count
             covered.add((DAYS[offset % 7], (minute // 60) % 24))
         return sorted(covered, key=lambda pair: (DAYS.index(pair[0]), pair[1]))
 
@@ -1450,7 +1450,7 @@ class _RosterBuilder:
                 self.role_on_duty[covered_day][role][hour] += 1
 
     def _build_rotation_turns(self, history_rosters) -> Dict[str, List[str]]:
-        """Whose turn it is for a rotating day off — day -> employee_ids.
+        """Whose turn it is for a rotating day off - day -> employee_ids.
 
         The manager, asked how he rosters: "If Martin is off for the weekend,
         then Corey and Jithin will be working. If Corey is off, then Martin
@@ -1459,7 +1459,7 @@ class _RosterBuilder:
 
         Whoever in the group has gone LONGEST without a turn gets the next
         one. That needs no cycle length, so it works for a group of two or
-        seven, and for any set of days — no number here is calibrated on one
+        seven, and for any set of days - no number here is calibrated on one
         shop (§10b).
 
         Derived every solve, never stored (§5): if the manager overrides a
@@ -1467,7 +1467,7 @@ class _RosterBuilder:
 
         SOMEBODY WHO WAS NOT THERE HAS NOT HAD A TURN. A person who has not
         joined yet, or was away all week, appears "off" every one of those
-        weekends — and counting that as their turn hands the rota to whoever
+        weekends - and counting that as their turn hands the rota to whoever
         was hired first. Measured on the reference shop, a colleague hired in
         June showed 13 weekends off against another's 3 for exactly this
         reason, and the pattern read as no rotation at all when it was a
@@ -1519,8 +1519,8 @@ class _RosterBuilder:
             # ONE AT A TIME, AND ONLY IF NOBODY IS ALREADY OFF.
             #
             # The whole point is "if Martin is off, then Corey and Jithin
-            # will be working". Somebody in the group already away — booked
-            # leave, a standing day off, not employed that week — IS the
+            # will be working". Somebody in the group already away - booked
+            # leave, a standing day off, not employed that week - IS the
             # week's absence. Giving somebody else a turn on top takes two of
             # the group off at once, which is the arrangement the rule exists
             # to prevent. Reported from the reference shop: "Jithin and Corey
@@ -1531,7 +1531,7 @@ class _RosterBuilder:
             due = min(group, key=lambda e: (last_turn[e], e))
             for day in days:
                 # PER DAY, not per weekend. Somebody on leave for one day of
-                # it is that day's absence even though they work the other —
+                # it is that day's absence even though they work the other -
                 # which is the reported case exactly: one of them was on
                 # leave for the Sunday and another was given the whole
                 # weekend, so two of the three were off on Sunday.
@@ -1550,14 +1550,14 @@ class _RosterBuilder:
     # matches against 702, on 2175 shifts he wrote.
     #
     # The damning number is not that one. It is that the ARRIVALS DISTANCE
-    # DID NOT FALL — 870 to 877, slightly worse. That distance is the single
+    # DID NOT FALL - 870 to 877, slightly worse. That distance is the single
     # quantity this model exists to fit, and it is fitted by construction:
     # the day is built by asking how many people start each hour and placing
     # that many. A model that cannot move its own objective on real data is
     # not a model that is merely unready, it is a model whose fill is not
     # doing what its profile says. Something between "learn 2 openers" and
     # "place 2 openers" is losing them, and it is not visible in synthetic
-    # shops — 200 randomised ones agree exactly on the day's total.
+    # shops - 200 randomised ones agree exactly on the day's total.
     #
     # Do not turn this on again without `--explain` from that script showing
     # placed arrivals matching learned arrivals hour by hour. The model is
@@ -1577,7 +1577,7 @@ class _RosterBuilder:
         picking one shape and hunting for somebody to fit it.
 
         Falls back to what the SHOP does at that start when this person has
-        never worked it, and to nothing at all when neither is known — a
+        never worked it, and to nothing at all when neither is known - a
         start nobody has ever worked is not one to invent a finish for (§9).
         """
         counts = self._finish_counts.get((employee_id, day, start))
@@ -1591,7 +1591,7 @@ class _RosterBuilder:
         """Is this person available to work this day at all?
 
         Used to decide whether the group already has its absence for the day.
-        Only reasons that rule somebody out for the WHOLE day are checked —
+        Only reasons that rule somebody out for the WHOLE day are checked -
         leave, a standing day off, having left. Hours and the five-day limit
         are not: those depend on how the week is filled, and this runs before
         it is.
@@ -1614,13 +1614,13 @@ class _RosterBuilder:
 
         The smallest of four, because any one alone is wrong:
 
-          * what they have been working lately — the median of the last
+          * what they have been working lately - the median of the last
             `TREND_WEEKS` weeks they appear in (`hours_target`)
-          * what their availability can physically hold — somebody who has
+          * what their availability can physically hold - somebody who has
             dropped to weekends cannot be given a full week, and their
             availability says so the moment it is entered, without waiting
             eight weeks for the trend to catch up
-          * leave booked in THIS week — three days off cannot be worked, and
+          * leave booked in THIS week - three days off cannot be worked, and
             aiming at a full week would push their hours onto days they are
             not there
           * their weekly cap, which for a student differs between term time
@@ -1673,7 +1673,7 @@ class _RosterBuilder:
         """Say so when a settled shift changed hands for no reason.
 
         Every ownership fault found at the reference shop was found by the
-        MANAGER reading a roster and asking about it — a Monday 06:00 given
+        MANAGER reading a roster and asking about it - a Monday 06:00 given
         away because the code asked `owner_of` (one person) about a shape
         that runs twice and has two regulars. The check that would have
         caught it existed only in a diagnostic nobody runs unless something
@@ -1684,8 +1684,8 @@ class _RosterBuilder:
         nothing was stopping them. On a healthy week it adds NOTHING, so it
         costs the manager no attention until it has something to say.
 
-        §2b lists when an owner may lawfully lose a slot — leave, the curfew,
-        their cap, the rest gap, a fifth day — and senior cover (Pass 0b) is
+        §2b lists when an owner may lawfully lose a slot - leave, the curfew,
+        their cap, the rest gap, a fifth day - and senior cover (Pass 0b) is
         allowed to displace them by design. All of those stay silent. What is
         left is a bug, and it should announce itself the week it happens.
         """
@@ -1710,8 +1710,8 @@ class _RosterBuilder:
                 # SOMEBODY ELSE MUST ACTUALLY HAVE IT.
                 #
                 # "Displaced" means the shift changed hands. If nobody got
-                # the shape at all, that is an unfilled slot — a different
-                # thing, already reported by the gap machinery — and saying
+                # the shape at all, that is an unfilled slot - a different
+                # thing, already reported by the gap machinery - and saying
                 # it twice in different words would bury the one that
                 # matters. It also stops a day the solver could not staff
                 # from producing one of these for every regular on it.
@@ -1794,7 +1794,7 @@ class _RosterBuilder:
         else entirely.
 
         `test_recording_then_unrecording_a_shift_leaves_no_trace` keeps the
-        two in step — it fails the moment `_record_shift` starts tracking
+        two in step - it fails the moment `_record_shift` starts tracking
         something this does not give back.
         """
         employee_id = shift["employee_id"]
@@ -1844,7 +1844,7 @@ class _RosterBuilder:
         WHAT IT WILL NOT DO
         -------------------
         Move an OWNED shift (§2b), a pin, an extra, a fixed shift or a locked
-        one. Break any rule — both people go back through `_is_eligible` and
+        one. Break any rule - both people go back through `_is_eligible` and
         the whole move is rolled back on any failure, so coverage, rest,
         curfew, caps and the five-day limit are all exactly as before.
         Change anything at all unless it makes the week measurably fairer.
@@ -1939,7 +1939,7 @@ class _RosterBuilder:
             #
             # `regulars_of`, NOT `owner_of`. `owner_of` returns the single
             # top claimant, so on a shape that runs twice the SECOND regular
-            # reads as unowned and their shift could be given away — which is
+            # reads as unowned and their shift could be given away - which is
             # what happened to a Monday 06:00 somebody had worked every week,
             # because a colleague on the other instance ranked first.
             and employee_id not in slot_owners.regulars_of(
@@ -2026,7 +2026,7 @@ class _RosterBuilder:
 
         Eligibility is judged against the week as it stands, and the move
         changes that week, so the receiver is checked AFTER the donor's shift
-        is lifted — otherwise their own hours count against them and a
+        is lifted - otherwise their own hours count against them and a
         straight swap of one shift for another looks impossible.
         """
         day = shift["day"]
@@ -2054,7 +2054,7 @@ class _RosterBuilder:
         self.result.issues.append(
             f"{day} {shift['start']}-{shift['end']} moved from "
             f"{self.employees_by_id.get(donor_id, {}).get('name', donor_id)} "
-            f"to {receiver.get('name', receiver['employee_id'])} — {reason}"
+            f"to {receiver.get('name', receiver['employee_id'])}, {reason}"
         )
         return True
 
@@ -2075,7 +2075,7 @@ class _RosterBuilder:
         already looks wrong is not a check.
 
         So the same question is asked every generation, and the answer is one
-        advisory — only when something is genuinely unexplained. A settled
+        advisory - only when something is genuinely unexplained. A settled
         shift changing hands for no stated reason is the single most
         expensive thing this solver can do, because the manager has to notice
         it, and then undo it, every week until somebody fixes the cause.
@@ -2105,7 +2105,7 @@ class _RosterBuilder:
                         employee_id, {}).get("name", employee_id)
                     self.result.issues.append(
                         f"{name} usually works {day} {start}-{end} and did "
-                        f"not get it this week, and nothing explains why — "
+                        f"not get it this week, and nothing explains why, "
                         f"no leave, no cap, no clash. Worth checking before "
                         f"you approve."
                     )
@@ -2116,7 +2116,7 @@ class _RosterBuilder:
         """A lawful reason this regular did not get their slot, or None.
 
         None is the only interesting answer, and it means a bug rather than a
-        judgement — so every branch here has to be a rule somebody could
+        judgement - so every branch here has to be a rule somebody could
         point at.
         """
         employee = self.employees_by_id.get(employee_id)
@@ -2216,8 +2216,8 @@ class _RosterBuilder:
         """Lay down the manager's pinned shifts before anything is decided.
 
         Deliberately unchecked against the ordinary rules. A pin is a
-        decision already made — usually with a reason the app cannot see,
-        like somebody swapping with a colleague — and refusing it here would
+        decision already made - usually with a reason the app cannot see,
+        like somebody swapping with a colleague - and refusing it here would
         make the rebalance argue with the person using it. Anything a pin
         breaks is reported afterwards, so it is visible without being
         overruled.
@@ -2230,7 +2230,7 @@ class _RosterBuilder:
                 continue
             # `extra` has to survive the round trip. An extra shift comes back
             # in as a locked one, and if it were laid down as an ordinary pin
-            # it would start cancelling a demand slot — turning "this person
+            # it would start cancelling a demand slot - turning "this person
             # AS WELL AS the usual cover" into "this person INSTEAD OF it",
             # which is the opposite of what the manager asked for.
             self._record_shift(
@@ -2281,7 +2281,7 @@ class _RosterBuilder:
             if not fixed:
                 continue
 
-            # Already placed today — by booked leave, a pin, or a locked day.
+            # Already placed today - by booked leave, a pin, or a locked day.
             #
             # Defensive, not a fix for a reproduced bug. Every other pass
             # checks this and this one did not; a second shift for the same
@@ -2296,7 +2296,7 @@ class _RosterBuilder:
 
             if date_iso in self.employee_off_dates.get(employee_id, set()):
                 self.result.issues.append(
-                    f"{employee['name']} has a fixed shift on {day} but is on leave — skipped."
+                    f"{employee['name']} has a fixed shift on {day} but is on leave, skipped."
                 )
                 continue
 
@@ -2306,14 +2306,14 @@ class _RosterBuilder:
             duration = paid_hours(start, end)
             if self.hours_used[employee_id] + duration > employee["max_weekly_hours"]:
                 self.result.issues.append(
-                    f"{employee['name']}'s fixed shift on {day} would exceed their weekly hour cap — skipped."
+                    f"{employee['name']}'s fixed shift on {day} would exceed their weekly hour cap, skipped."
                 )
                 continue
 
             if violates_minor_curfew(employee, start, end):
                 self.result.critical_issues.append(
                     f"{employee['name']} is under {MINOR_AGE} and their fixed shift on {day} "
-                    f"({start}-{end}) breaks the curfew — skipped."
+                    f"({start}-{end}) breaks the curfew, skipped."
                 )
                 continue
 
@@ -2372,7 +2372,7 @@ class _RosterBuilder:
     def _count_existing_cover(self, segment: Segment, day: str) -> int:
         """How many already-placed shifts fully span this segment.
 
-        Fixed shifts count toward a segment's staffing floor — without this,
+        Fixed shifts count toward a segment's staffing floor - without this,
         someone rostered 09:00-17:00 by a fixed shift would not satisfy a
         09:00-15:00 segment and the solver would over-staff it.
 
@@ -2415,11 +2415,11 @@ class _RosterBuilder:
             # Rules 2/3 breached: nobody in the roster can legally cover this.
             self.result.critical_issues.append(
                 f"CRITICAL: {segment.name} on {day} ({segment.start}-{segment.end}) has NO "
-                f"coverage — the shop would be left unattended. No employee is legally "
+                f"coverage, the shop would be left unattended. No employee is legally "
                 f"available (all are on leave, at their hour cap, or curfew-restricted)."
             )
         elif assigned < segment.min_staff:
-            # Floor met, target missed — a planning note, not a rule breach.
+            # Floor met, target missed - a planning note, not a rule breach.
             self.result.issues.append(
                 f"{segment.name} on {day} ({segment.start}-{segment.end}): "
                 f"{assigned}/{segment.min_staff} staffed."
@@ -2442,7 +2442,7 @@ class _RosterBuilder:
 
         Checks EVERY hour the shift lands on, including the ones after
         midnight. Checking only today's hours let a 23:30-07:00 night shift
-        through — its overnight half is tomorrow's, and it was quietly adding
+        through - its overnight half is tomorrow's, and it was quietly adding
         a fourth body to a 06:00 that has always had two.
         """
         if not self.demand:
@@ -2465,7 +2465,7 @@ class _RosterBuilder:
             return []
         open_m, close_m = to_minutes(hours["open"]), to_minutes(hours["close"])
         if close_m <= open_m:
-            # Open across midnight (or 00:00-23:59) — treat as the whole day.
+            # Open across midnight (or 00:00-23:59) - treat as the whole day.
             return list(range(24))
         return sorted({(m // 60) % 24 for m in range(open_m, close_m, 60)})
 
@@ -2481,8 +2481,8 @@ class _RosterBuilder:
         ceiling a fifth shift of any legal length overshoots 42.5. Forty-one
         is then unreachable no matter how the finish times are nudged.
 
-        Spreading the contract over the fewest days that can hold it — five
-        eight-and-a-half hour days for 42.5 — is what a manager writes, and
+        Spreading the contract over the fewest days that can hold it - five
+        eight-and-a-half hour days for 42.5 - is what a manager writes, and
         it leaves room to fine-tune the finish times afterwards.
         """
         band = self.span_bands.get(employee["employee_id"])
@@ -2507,7 +2507,7 @@ class _RosterBuilder:
 
         Lower sorts first, so a full-timer who is behind gets the longer
         shifts. Without this the top-up could only add DAYS, and with five
-        days as the ceiling somebody on 8-hour shifts tops out at 40 — short
+        days as the ceiling somebody on 8-hour shifts tops out at 40 - short
         of a 41-hour minimum they are already being paid for. Giving them the
         10-hour slot in the first place is how a manager solves it.
 
@@ -2537,7 +2537,7 @@ class _RosterBuilder:
 
         Two tiers, matching what a manager does:
 
-          0        the owner — works this slot most of the time
+          0        the owner - works this slot most of the time
           1, 2…    whoever else actually covers it, most often first
 
         Anybody with no history for the slot is absent from the map and sorts
@@ -2555,18 +2555,18 @@ class _RosterBuilder:
         if owner and owner in available:
             ranks[owner] = 0
         else:
-            # NOBODY OWNS THIS EXACT SHAPE — SO ASK WHO OWNS THE START.
+            # NOBODY OWNS THIS EXACT SHAPE - SO ASK WHO OWNS THE START.
             #
             # Ownership keyed on `(day, start, end)` misses the commonest
             # real pattern: opening at the same time every week while the
-            # finish moves. Emma's Monday at the reference shop —
+            # finish moves. Emma's Monday at the reference shop -
             #
             #     06:00-16:00   10 of 29   34%   no claim
             #     06:00-14:00    2 of 26    8%   no claim
             #     06:00-12:00   13 of 14   93%   HERS
             #     06:00 (any)   25 of 31   81%   HERS
             #
-            # — and `day_slots` drops the 06:00-12:00 for being rarer than
+            # - and `day_slots` drops the 06:00-12:00 for being rarer than
             # its neighbours, so the shift she owns is never offered. She
             # competed for the 06:00-16:00 she works a third of the time and
             # lost it on the tie-break, three rosters running, while every
@@ -2579,7 +2579,7 @@ class _RosterBuilder:
             #
             # The finish is not settled here. They start where they always
             # start, on the shape the shop is running, and the contract and
-            # hour-fitting passes deal with the length — the same division of
+            # hour-fitting passes deal with the length - the same division of
             # labour familiarity has always used (§2).
             # Within an hour, the tolerance familiarity already uses
             # (§2). Jane's Saturday needed it: 06:00 39%, 10:00 39%, 11:00
@@ -2628,18 +2628,18 @@ class _RosterBuilder:
         return best
 
     def _slots_for_day(self, day: str) -> List[Tuple[str, str]]:
-        """The shifts to fill today — from ARRIVALS when the shop has them.
+        """The shifts to fill today - from ARRIVALS when the shop has them.
 
         `day_slots` picks SHAPES by frequency, scoring each independently, so
         it does not know that three shapes all starting at 06:00 compete for
         the same job. Measured on the reference shop: the manager starts
         between 2.05 and 2.85 people at 06:00 and the shape list started 3,
-        on every day of the week — the reported "usually two people at 6am,
+        on every day of the week - the reported "usually two people at 6am,
         the new roster has three". Where a band is fragmented the reverse
         happens, and 16:00 on a Friday started 1 against his 2.11.
 
         Arrivals answer the question directly: how many people begin a shift
-        at this hour. The FINISH here is only a placeholder — whoever wins
+        at this hour. The FINISH here is only a placeholder - whoever wins
         the slot brings their own, see `_usual_finish` at the point of
         placement. It has to be something, because eligibility, familiarity
         and the rest gap are all judged on a concrete pair.
@@ -2670,7 +2670,7 @@ class _RosterBuilder:
         thing is to hand every slot the hour's commonest shift. That collapses
         a genuinely mixed hour: the reference shop runs `16:00-00:00` and
         `16:00-23:00`, and giving both slots the first erases the second
-        along with the four people who share it — the same "pick one shape
+        along with the four people who share it - the same "pick one shape
         and hunt for somebody to fit it" fault arrivals exist to remove,
         moved one layer down.
 
@@ -2678,12 +2678,12 @@ class _RosterBuilder:
         each is worked, largest remainder, exactly as `demand.py` apportions
         the day. Starts stay as the shop writes them (07:30, not 07:00)
         because familiarity is keyed on the start (§2), and the finish is
-        still only a placeholder — see `_their_finish`.
+        still only a placeholder - see `_their_finish`.
 
         Deleting this in favour of the commonest shape was measured over 120
         randomised shops and appeared to change nothing, so it nearly went.
-        That measurement was wrong: every shop in it had the same structure —
-        a band of people who all work all of the hour's shapes — which is
+        That measurement was wrong: every shop in it had the same structure -
+        a band of people who all work all of the hour's shapes - which is
         exactly the case where `_usual_finish` falls back to the shop's
         commonest finish and the placeholder cannot matter. A slot SHARED by
         four people who each work only that one shape is a different shape of
@@ -2758,7 +2758,7 @@ class _RosterBuilder:
 
         Written first as `on_duty >= required`, which is the literal reading
         and was wrong. Measured on one real week, the cap fired 8 times and
-        five of those cost a shift the manager actually rosters — Monday
+        five of those cost a shift the manager actually rosters - Monday
         07:00, Tuesday 10:00, Thursday 14:00, Friday 13:00, Saturday 18:00.
         Monday is the clearest: three people open at 06:00, `required` at
         07:00 rounds to three, so the floor reads "full" and the 07:00
@@ -2766,14 +2766,14 @@ class _RosterBuilder:
 
         The mistake was comparing two different quantities. `required` is a
         rounded 24-week average of BODIES PRESENT, and `on_duty` at 07:00
-        counts everybody who started at 06:00 and has not gone home — which
+        counts everybody who started at 06:00 and has not gone home - which
         is the changeover double-count that killed the presence model in the
         first place (§7a). Arrivals were learned from the same history and
         already encode the answer: if this shop historically starts somebody
         at 07:00, the curve rounding to three at 07:00 is not evidence that
         it does not.
 
-        So the cap now fires only on a floor STRICTLY ABOVE the curve — real
+        So the cap now fires only on a floor STRICTLY ABOVE the curve - real
         over-staffing, which is what the rule was defending against. Holding
         exactly what the curve wants is not a reason to refuse somebody the
         shop brings in every week.
@@ -2782,7 +2782,7 @@ class _RosterBuilder:
         rule guards against largely cannot happen, because the day is built
         from starts rather than filled to an hourly target. A guard against
         an impossible fault, phrased in a coarser number than the thing it
-        overrides, is the §11 trap — two switches that can disagree. Deleting
+        overrides, is the §11 trap - two switches that can disagree. Deleting
         it entirely is one line, and the A/B should decide, not this comment.
         """
         if not (self.USE_ARRIVALS and self.demand is not None
@@ -2800,8 +2800,8 @@ class _RosterBuilder:
     ) -> None:
         """Fill the shifts this day actually runs, one at a time.
 
-        The shop's own rota is a list of shifts — two people open at 06:00,
-        one starts at 07:30, one covers the night — so this reproduces that
+        The shop's own rota is a list of shifts - two people open at 06:00,
+        one starts at 07:30, one covers the night - so this reproduces that
         list rather than inferring it from an hourly headcount.
 
         Inferring was the problem. A night shift still on the floor at 06:00
@@ -2823,7 +2823,7 @@ class _RosterBuilder:
         #
         # Matched on START time, not on the exact pair. Exact matching meant a
         # pinned 06:00-14:00 did not cancel a 06:00-16:00 slot, so the solver
-        # sent a third person to a morning that runs two — and the manager
+        # sent a third person to a morning that runs two - and the manager
         # deleted the person the solver had added because of their own pin.
         # What matters for coverage is that somebody opens, not that they
         # leave at the minute the learned shape says.
@@ -2841,7 +2841,7 @@ class _RosterBuilder:
         #
         # Monday runs 06:00-16:00 and 06:00-14:00. If the manager is already
         # standing on his own 06:00-14:00, matching purely by proximity lets
-        # him cancel the 06:00-16:00 slot instead — and the person who owns
+        # him cancel the 06:00-16:00 slot instead - and the person who owns
         # THAT one loses her shift to a slot she does not work.
         #
         # So: anybody standing on a slot they own claims it first. Whatever
@@ -2855,7 +2855,7 @@ class _RosterBuilder:
                 continue
             # They must actually be standing there. Owning Monday's opening
             # does not cancel it when the manager has pinned you to the
-            # afternoon — that would leave the shop unopened.
+            # afternoon - that would leave the shop unopened.
             theirs = next(
                 (
                     s for s in placed
@@ -2886,7 +2886,7 @@ class _RosterBuilder:
         # Slots are filled earliest first, so an owner can be spent on an
         # earlier slot before their own comes up: Martin owns 10:00-19:00, but
         # 06:00-14:00 is offered first, its owner was on leave, and Martin was
-        # the best of who was left — so he took it and his own shift went to
+        # the best of who was left - so he took it and his own shift went to
         # somebody else. Reordering the slots would fix it and break something
         # worse, because the opener is the hardest slot to fill and must keep
         # first refusal. Reserving the person instead leaves the order alone.
@@ -2907,7 +2907,7 @@ class _RosterBuilder:
             # at 06:00 are still on the floor and the shop only wants three
             # bodies, an eighth-hour arrival makes four. Arrivals say how
             # many normally come in; presence says whether the shop needs
-            # them yet. The coverage floor is exempt and runs separately —
+            # them yet. The coverage floor is exempt and runs separately -
             # somebody is on the floor open to close whatever the curve says
             # (§1 rule 1).
             if self._already_covered(day, start):
@@ -2932,7 +2932,7 @@ class _RosterBuilder:
                 ]
                 # A reservation is a preference between candidates, never a
                 # reason to leave a shift empty. If holding people back empties
-                # the list, the slot in front of us wins — cover first.
+                # the list, the slot in front of us wins - cover first.
                 if held:
                     kept = [e for e in eligible if e["employee_id"] not in held]
                     if kept:
@@ -2943,24 +2943,24 @@ class _RosterBuilder:
                     #
                     # Contract need used to come first, and it swept the week.
                     # _contract_need returns a negative number for any salaried
-                    # employee below their band, and zero for everybody else —
+                    # employee below their band, and zero for everybody else -
                     # so while a full-timer is short they outrank the owner on
                     # every slot they are eligible for. Monday is built first,
                     # when every shortfall is still the whole contract, so
                     # Monday took the worst of it: measured against the
                     # reference shop, four settled shifts changed hands on one
-                    # day — the 06:00 opening its owner had worked for 14 of 24
+                    # day - the 06:00 opening its owner had worked for 14 of 24
                     # weeks, and three others.
                     #
                     # The contract still gets filled, because 41 hours can be
                     # reached from many combinations of shifts. It does not
-                    # need THAT slot, only enough slots — and _top_up_contracts
+                    # need THAT slot, only enough slots - and _top_up_contracts
                     # runs afterwards for anyone left short, with under_contract
                     # reporting whoever it cannot reach. Taking the shift
                     # somebody has opened every week for months buys nothing the
                     # contract needs and costs the manager an edit.
                     #
-                    # Only rank 0 — the owner — jumps contract need. Someone who
+                    # Only rank 0 - the owner - jumps contract need. Someone who
                     # merely covers the slot sometimes does not: below, the
                     # order is exactly as it was.
                     history_rank = self._history_rank(eligible, day, start, end)
@@ -2996,7 +2996,7 @@ class _RosterBuilder:
 
             # Whoever won the slot brings their own finish.
             #
-            # Under arrivals the slot's end is a placeholder — the day says
+            # Under arrivals the slot's end is a placeholder - the day says
             # how many come in at 06:00, not how long each of them stays.
             # Emma finishes her Monday 06:00 at 12:00 in 13 of the 14 weeks
             # that shape ran and Megan finishes hers at 16:00; picking one
@@ -3019,7 +3019,7 @@ class _RosterBuilder:
             assigned_today.add(best["employee_id"])
 
     # How far down the ranking a seeded regeneration may reach. Two means
-    # the usual pick and the next one or two behind them — people the manager
+    # the usual pick and the next one or two behind them - people the manager
     # would regard as equally reasonable for a shift nobody owns. Wider than
     # that and Regenerate starts proposing the person who has covered the
     # slot once against the person who covers it most weeks, which is not
@@ -3027,7 +3027,7 @@ class _RosterBuilder:
     VARIATION_DEPTH = 2
 
     def _pick_for_slot(self, eligible, rank_of, day: str, start: str, end: str):
-        """The best candidate — or, when regenerating, a near-equal one.
+        """The best candidate - or, when regenerating, a near-equal one.
 
         Without a seed this is exactly `min`, and the solver stays the
         deterministic thing it has always been.
@@ -3044,7 +3044,7 @@ class _RosterBuilder:
             covers it most weeks.
 
         Choice is weighted by standing, so the usual person stays the most
-        likely outcome — Regenerate offers a plausible alternative, not a
+        likely outcome - Regenerate offers a plausible alternative, not a
         random one.
         """
         ordered = sorted(eligible, key=rank_of)
@@ -3055,7 +3055,7 @@ class _RosterBuilder:
             return ordered[0]
 
         top = rank_of(ordered[0])
-        # Same owner tier, supervisory need and contract need — anything else
+        # Same owner tier, supervisory need and contract need - anything else
         # is not an equal alternative, whatever its preference rank.
         pool = [
             e for e in ordered
@@ -3075,7 +3075,7 @@ class _RosterBuilder:
         """Nobody appears twice on one day. Enforced at the boundary.
 
         Every pass is supposed to guarantee this and they each check it their
-        own way, so the invariant was never stated in one place — and when it
+        own way, so the invariant was never stated in one place - and when it
         broke at the reference shop I could not reproduce which pass had done
         it. Two people came out on 60h with six shifts of ten, four of them
         real and two duplicated. Invisible in the grid, which draws one cell
@@ -3113,7 +3113,7 @@ class _RosterBuilder:
         for shift in removed:
             self.result.shifts.remove(shift)
             # Undo the accounting, or the hours stay wrong even though the
-            # row is gone — which is the same bug wearing a different hat.
+            # row is gone - which is the same bug wearing a different hat.
             span = shift_duration_minutes(shift["start"], shift["end"]) / 60
             employee_id = shift["employee_id"]
             self.span_used[employee_id] = max(
@@ -3142,7 +3142,7 @@ class _RosterBuilder:
             for s in removed
         }))
         self.result.issues.append(
-            f"Removed {len(removed)} duplicate shift(s) — somebody was placed "
+            f"Removed {len(removed)} duplicate shift(s), somebody was placed "
             f"twice on the same day: {names}. Please report this."
         )
 
@@ -3165,23 +3165,23 @@ class _RosterBuilder:
         # on salaried staff, against a manager who ends a shift on a half
         # hour once in 555 shifts.
         #
-        # The shop's own convention is the half-hour on the START — 07:30-16:00,
-        # 23:30-07:00 — and a whole-hour finish. Matching that by moving the
+        # The shop's own convention is the half-hour on the START - 07:30-16:00,
+        # 23:30-07:00 - and a whole-hour finish. Matching that by moving the
         # start instead was considered and rejected: familiarity is keyed on
         # start time (§2), so nudging a start to tidy a finish risks offering
         # somebody a shift they have never worked, which is a far worse
         # trade than half an hour.
         #
         # DOWN rather than nearest, so a trim can never push somebody OVER
-        # their band. It leaves them slightly short of the per-shift share —
-        # 8h where 8.5 was wanted — and _top_up_contracts is what makes that
+        # their band. It leaves them slightly short of the per-shift share -
+        # 8h where 8.5 was wanted - and _top_up_contracts is what makes that
         # up elsewhere in the week. §2b already says the contract needs
         # ENOUGH slots, not any particular one. `under_contract` reports
         # anybody it cannot reach, so this cannot fail silently.
         #
         # THE STEP IS THE SHOP'S, NOT TOP OIL'S. Rounding to a whole hour is
         # right for a shop that ends shifts on the hour 99.8% of the time, and
-        # wrong for one that genuinely runs 10:30 and 12:30 finishes — there,
+        # wrong for one that genuinely runs 10:30 and 12:30 finishes - there,
         # every trim would drag the rota toward a convention it does not use.
         # `demand.finish_granularity` reads it off the shop's own rosters.
         # Sixty when there is no profile yet, which is also what a shop with
@@ -3204,7 +3204,7 @@ class _RosterBuilder:
 
         Repeatedly finds the worst-covered hour, picks the shift pattern that
         closes the most unmet demand, and gives it to the best eligible
-        person. This is what produces overlapping, staggered shifts — the
+        person. This is what produces overlapping, staggered shifts - the
         previous model tiled the day into fixed blocks and could not.
 
         Only hours a shift STARTING today can reach are considered. Today's
@@ -3212,7 +3212,7 @@ class _RosterBuilder:
         judged on the hours it actually lands on: matching by clock hour
         instead made a Monday 22:00-06:00 pattern look like the fix for
         Monday 00:00, so the solver placed one, saw hour zero still empty
-        (those hours had landed on Tuesday), and placed another — eight in a
+        (those hours had landed on Tuesday), and placed another - eight in a
         row, until it ran out of staff.
         """
         open_hours = set(self._open_hours(day))
@@ -3274,7 +3274,7 @@ class _RosterBuilder:
         """Choose the (employee, pattern) pair that best closes the gap.
 
         Patterns are ranked by how much *total* unmet demand they absorb, not
-        just whether they cover the target hour — a 06:00-16:00 shift that
+        just whether they cover the target hour - a 06:00-16:00 shift that
         fills six short hours beats a 4-hour one that fills the same single
         hour. Historical usage breaks ties, so common shapes win over rare
         ones.
@@ -3296,7 +3296,7 @@ class _RosterBuilder:
 
         # The learned curve is a ceiling as well as a floor. A ten-hour
         # pattern picked to plug a 13:00 shortfall also adds a body to every
-        # hour from 06:00 — which is how 06:00 ended up with four people when
+        # hour from 06:00 - which is how 06:00 ended up with four people when
         # the shop has always run two. Patterns that would push an hour more
         # than the tolerance above its historical level are dropped.
         within_target = [
@@ -3304,7 +3304,7 @@ class _RosterBuilder:
         ]
         if within_target:
             candidates = within_target
-        # If every option overstaffs somewhere, coverage still wins — an hour
+        # If every option overstaffs somewhere, coverage still wins - an hour
         # with nobody in it is worse than an hour with one too many.
 
         if not candidates:
@@ -3313,7 +3313,7 @@ class _RosterBuilder:
         def pattern_value(pattern) -> Tuple[float, int]:
             """Unmet demand a pattern absorbs, less the hours it wastes.
 
-            Shift shapes are chunky — a 10-hour pattern used to plug a
+            Shift shapes are chunky - a 10-hour pattern used to plug a
             2-hour gap staffs eight hours nobody asked for, and that is real
             wage cost. Penalising the overshoot at half weight keeps the
             solver biased toward filling gaps while still preferring genuine
@@ -3331,7 +3331,7 @@ class _RosterBuilder:
         # previous ordering relaxed somebody's preferred day off on the
         # *first* pattern it looked at, even when a later pattern had a
         # perfectly willing employee. Legal limits are never relaxed in
-        # either pass — see _is_eligible.
+        # either pass - see _is_eligible.
         for relax in (False, True):
             for pattern in ordered:
                 segment = Segment(start=pattern.start, end=pattern.end, min_staff=1)
@@ -3360,11 +3360,11 @@ class _RosterBuilder:
         """Surface an overridden preference instead of silently applying it.
 
         A manager needs to know the roster broke somebody's requested day off,
-        and why — otherwise they hand it to the team and find out the hard
+        and why - otherwise they hand it to the team and find out the hard
         way.
         """
         message = (
-            f"{employee['name']} was rostered on {day} despite requesting it off — "
+            f"{employee['name']} was rostered on {day} despite requesting it off, "
             f"too few staff were available to cover the day otherwise."
         )
         if message not in self.result.issues:
@@ -3375,7 +3375,7 @@ class _RosterBuilder:
 
         Only meaningful in strict mode, where that exclusion is absolute.
         Naming them turns an opaque "nobody is available" into a gap the
-        manager can act on — they know exactly whose day off to renegotiate.
+        manager can act on - they know exactly whose day off to renegotiate.
 
         Anyone who could not have worked anyway is left out. Listing someone
         who is on leave, or has too few hours left to take a shift, points
@@ -3400,7 +3400,7 @@ class _RosterBuilder:
             if day not in (employee.get("preferred_days_off") or []):
                 continue
             if date_iso in self.employee_off_dates.get(employee_id, set()):
-                continue  # on leave — the day off is not what is stopping them
+                continue  # on leave - the day off is not what is stopping them
             if not avail.is_active(employee):
                 continue
             # Too few hours left to work a shift at all is a harder limit
@@ -3417,8 +3417,8 @@ class _RosterBuilder:
     def _capacity_shortfall(self) -> Optional[Dict[str, float]]:
         """Is the week impossible before it starts?
 
-        Compares the bare coverage floor — one person for every hour the shop
-        is open — against the hours the team is allowed to work. Deliberately
+        Compares the bare coverage floor - one person for every hour the shop
+        is open - against the hours the team is allowed to work. Deliberately
         the most generous reading of both: no allowance for the 5-day limit,
         for two people being needed at once, or for anybody's availability.
         If even THAT does not add up, no amount of clever scheduling will
@@ -3515,7 +3515,7 @@ class _RosterBuilder:
 
         # The REASON is stored on the gap rather than written into a sentence
         # here. Consecutive uncovered hours are one hole in the day, and
-        # _describe_gaps turns each run into a single line at the end —
+        # _describe_gaps turns each run into a single line at the end -
         # six lines from 17:00 to 23:00 read as six problems needing six
         # decisions, when the manager needs one person for one stretch.
         gap["because"] = because
@@ -3528,7 +3528,7 @@ class _RosterBuilder:
         """Flag days where requested time off outstrips who is left.
 
         Preferred days off are a soft preference, so the solver will override
-        them rather than leave the shop short — but a day where most of the
+        them rather than leave the shop short - but a day where most of the
         team has asked to be off is a rota problem the manager needs to know
         about in advance, not something to discover from a silently
         overridden roster.
@@ -3578,7 +3578,7 @@ class _RosterBuilder:
             open_m, close_m = to_minutes(hours["open"]), to_minutes(hours["close"])
             if close_m <= open_m:
                 # Closing at or before opening means the day runs past
-                # midnight — 22:00-06:00, or 00:00-00:00 for round-the-clock.
+                # midnight - 22:00-06:00, or 00:00-00:00 for round-the-clock.
                 # Treating that as a zero-length day skipped it entirely, so
                 # a 24-hour shop configured the obvious way got no roster at
                 # all and no explanation for it.
@@ -3591,7 +3591,7 @@ class _RosterBuilder:
         """Three passes over the week, in this order for a reason.
 
         Coverage wraps: Sunday's night shift is what covers Monday's small
-        hours. So no hour can be judged short until every day is placed —
+        hours. So no hour can be judged short until every day is placed -
         doing it day by day made Monday look unattended at 02:00 while the
         shift covering it had not been created yet, and then double-staffed
         it once that shift appeared.
@@ -3603,7 +3603,7 @@ class _RosterBuilder:
         self._warn_on_oversubscribed_days()
         self._seed_external_hours()
         trading = self._trading_days()
-        # Every day is still SET UP — leave, pins and fixed shifts are applied
+        # Every day is still SET UP - leave, pins and fixed shifts are applied
         # across the week, so hours and rest gaps are counted against the real
         # week rather than against one day in isolation. Only the filling is
         # narrowed.
@@ -3612,7 +3612,7 @@ class _RosterBuilder:
         # previous day, still respects one shift per person per day.
         assigned_by_day = self.assigned_by_day
 
-        # Pass 0 — what is already fixed: booked leave and recurring shifts.
+        # Pass 0 - what is already fixed: booked leave and recurring shifts.
         # Separated from the fill so the passes that follow all see the same
         # starting state, whichever day they are looking at.
         for day, date_iso, open_m, close_m in trading:
@@ -3629,7 +3629,7 @@ class _RosterBuilder:
             self._apply_locked_shifts(day, assigned_today)
             self._apply_fixed_shifts(day, date_iso, assigned_today)
 
-        # Pass 0b — senior cover for every day, before anything else spends
+        # Pass 0b - senior cover for every day, before anything else spends
         # their hours.
         #
         # Managers are the scarcest thing on the roster and the five-day
@@ -3639,7 +3639,7 @@ class _RosterBuilder:
         # a manager does before filling anything else in.
         self._ensure_supervisory_cover(fill)
 
-        # Pass 1 — demand.
+        # Pass 1 - demand.
         for day, date_iso, open_m, close_m in fill:
             assigned_today = assigned_by_day[day]
 
@@ -3647,15 +3647,15 @@ class _RosterBuilder:
                 # Slot-driven: rebuild the shifts this shop actually runs.
                 self._staff_by_slots(day, date_iso, assigned_today, open_m, close_m)
             elif self.demand is not None:
-                # Enough history for a curve but not for a day's shape —
+                # Enough history for a curve but not for a day's shape -
                 # fill until the learned curve is satisfied.
                 self._staff_by_demand(day, date_iso, assigned_today)
             else:
-                # No profile available — the original block behaviour.
+                # No profile available - the original block behaviour.
                 for segment in segments_for_day(self.shop, open_m, close_m):
                     self._staff_segment(segment, day, date_iso, assigned_today, open_m, close_m)
 
-        # Pass 2 — the coverage floor is a separate, non-negotiable
+        # Pass 2 - the coverage floor is a separate, non-negotiable
         # guarantee: the curve says "how many", this says "never zero".
         if self.demand is not None:
             for day, date_iso, open_m, close_m in fill:
@@ -3663,7 +3663,7 @@ class _RosterBuilder:
                     day, date_iso, assigned_by_day[day], open_m, close_m
                 )
 
-        # Pass 2b — salaried staff are owed their hours.
+        # Pass 2b - salaried staff are owed their hours.
         #
         # Reproducing the historical shape can leave a full-timer short, and
         # their payslip is the same either way, so a short week is hours the
@@ -3677,11 +3677,11 @@ class _RosterBuilder:
             # lands exactly.
             self._fit_contract_hours()
             # Finally, stretch a neighbouring shift over any hour still one
-            # body short — cheaper and closer to the real rota than adding a
+            # body short - cheaper and closer to the real rota than adding a
             # whole extra person for a single hour at changeover.
             self._close_short_hours()
 
-        # Pass 2c — share the hours out against what people actually work.
+        # Pass 2c - share the hours out against what people actually work.
         #
         # Last of the building passes, and deliberately so: coverage,
         # contracts and the demand shape are all settled by here, so what is
@@ -3702,7 +3702,7 @@ class _RosterBuilder:
         # app. Reported last, when nothing further will move.
         self._report_displaced_owners()
 
-        # Pass 3 — report against final coverage.
+        # Pass 3 - report against final coverage.
         if self.demand is not None:
             for day, _, _, _ in trading:
                 for hour in self._open_hours(day):
@@ -3733,7 +3733,7 @@ class _RosterBuilder:
         separately: any open hour still showing nobody gets one more pass,
         with soft preferences relaxed.
 
-        A gap in the small hours is filled by a shift on the PREVIOUS day —
+        A gap in the small hours is filled by a shift on the PREVIOUS day -
         nobody covers Sunday 02:00 by starting work on Sunday. So each hour
         is offered to patterns starting today and, failing that, to patterns
         starting yesterday.
@@ -3744,8 +3744,8 @@ class _RosterBuilder:
             if self._fill_one_hour(day, date_iso, hour, assigned_today, open_m, close_m):
                 continue
             # Nothing else to do here. Pass 3 judges the finished week, once
-            # every day's shifts — including the overnight ones that wrap
-            # into the following morning — are in place.
+            # every day's shifts - including the overnight ones that wrap
+            # into the following morning - are in place.
 
     def _fill_one_hour(
         self, day: str, date_iso: str, hour: int,
@@ -3789,7 +3789,7 @@ class _RosterBuilder:
                 p for p in reachable
                 if not self._would_overstaff(start_day, p.start, p.end)
             ]
-            # Coverage still wins if nothing fits cleanly — an empty hour is
+            # Coverage still wins if nothing fits cleanly - an empty hour is
             # worse than an overlapping one.
             reachable = tidy or reachable
 
@@ -4030,7 +4030,7 @@ class _RosterBuilder:
         """Account for every active employee who got no shifts.
 
         Requirement: nobody is silently omitted. A new starter with no
-        history is the case that matters most — without this they simply
+        history is the case that matters most - without this they simply
         never appear, and there is no way to tell that from a bug.
         """
         rostered = {s["employee_id"] for s in self.result.shifts}
@@ -4044,7 +4044,7 @@ class _RosterBuilder:
                 # Passed every check and still got nothing: the week was
                 # already covered before their turn came round.
                 reason = (
-                    "Not needed — staffing levels were met before they were "
+                    "Not needed, staffing levels were met before they were "
                     "reached in the ordering."
                 )
             self.result.unrostered.append({
@@ -4073,7 +4073,7 @@ class _RosterBuilder:
         arrangement. Who was considered first for hours is a separate
         question and stays on the job ladder.
 
-        Done once here so every consumer — grid, print view, export, email —
+        Done once here so every consumer - grid, print view, export, email -
         gets the same order without each having to re-sort.
         """
         order = {
@@ -4102,7 +4102,7 @@ class _RosterBuilder:
             self.result.critical_issues.append(
                 f"CRITICAL: {run['day']} {run['window']} has NO coverage"
                 + (f" ({hours} hours)" if hours > 1 else "")
-                + f" — the shop would be left unattended.{run['because']}"
+                + f", the shop would be left unattended.{run['because']}"
             )
 
     def _report_under_contract(self) -> None:
@@ -4126,7 +4126,7 @@ class _RosterBuilder:
         # One implementation, called from both sides.
         #
         # This used to be computed here from `span_used` and `span_bands`,
-        # solver state that only exists mid-generation — which meant the
+        # solver state that only exists mid-generation - which meant the
         # roster page could only ever show the answer from whenever the week
         # was last generated. Raise somebody's contract afterwards and the
         # page kept saying they were fine.
@@ -4165,8 +4165,8 @@ class _RosterBuilder:
         floor, so somebody under their maximum is not owed anything.
 
         Uses the shapes the shop already runs, on days they are free, and
-        stops the moment the band is reached. Everything else still applies —
-        familiarity, curfew, days off, two days off a week — so a top-up
+        stops the moment the band is reached. Everything else still applies -
+        familiarity, curfew, days off, two days off a week - so a top-up
         cannot buy a rule breach.
         """
         patterns = [p for p in (self.demand.patterns if self.demand else []) if p.covers()]
@@ -4275,7 +4275,7 @@ class _RosterBuilder:
 
         One implementation, two questions. `_close_short_hours` needs the
         yes/no; the advisory needs the because. Answering them from separate
-        code is the §11 trap — two switches that can disagree — and here it
+        code is the §11 trap - two switches that can disagree - and here it
         would disagree in the worst way, telling the manager a reason the
         solver did not actually act on.
 
@@ -4308,7 +4308,7 @@ class _RosterBuilder:
         # `_close_short_hours` says in its own comments that a snap is
         # refused for "the 12-hour cap, the rest gap, a curfew". Two of those
         # three were true. Nothing here looked at rest, so a finish pushed an
-        # hour later — or a start pulled an hour earlier — could eat into the
+        # hour later - or a start pulled an hour earlier - could eat into the
         # gap either side of it.
         #
         # Reported from the reference shop: "Kyle's fri shift was changed
@@ -4321,7 +4321,7 @@ class _RosterBuilder:
         # keeping it costs an hour of cover: leave the hour empty and say so.
         #
         # `_rest_breach` skips shifts on the same day, so a shift is never
-        # compared against itself, and it checks BOTH directions — a start
+        # compared against itself, and it checks BOTH directions - a start
         # moved earlier eats the gap from the previous day rather than the
         # next.
         short_rest = self._rest_breach(
@@ -4365,8 +4365,8 @@ class _RosterBuilder:
 
     # How many consecutive short hours still count as a changeover rather
     # than a missing shift. Two, because that is what the stretch can
-    # actually reach — a shift may grow by at most `_FIT_STEP_MINUTES * 2`
-    # measured against the shape it started with — and because §7d already
+    # actually reach - a shift may grow by at most `_FIT_STEP_MINUTES * 2`
+    # measured against the shape it started with - and because §7d already
     # calls four consecutive short hours a missing shift.
     #
     # Untested judgement, like the rest of §10b's table. A shop whose rota
@@ -4403,7 +4403,7 @@ class _RosterBuilder:
         """Stretch a neighbouring shift over an hour that is one body short.
 
         A gap of an hour or two at a shift changeover does not need another
-        person — it needs somebody finishing at 16:00 instead of 15:00, or
+        person - it needs somebody finishing at 16:00 instead of 15:00, or
         starting at 15:00 instead of 16:00. That is what a manager does with
         a pen, and adding a whole extra shift for it would overstaff the rest
         of the day.
@@ -4414,8 +4414,8 @@ class _RosterBuilder:
 
         ONE ADVISORY PER SHIFT, NOT PER HOUR
         ------------------------------------
-        A shift that is short by two consecutive hours gets stretched twice —
-        once reaching 12:00, again reaching 13:00 — and reporting each pass
+        A shift that is short by two consecutive hours gets stretched twice -
+        once reaching 12:00, again reaching 13:00 - and reporting each pass
         separately read as two unrelated events:
 
             Emma's mon shift was changed from 06:00-12:00 to 06:00-12:30 ...
@@ -4460,7 +4460,7 @@ class _RosterBuilder:
                 # and run 25 hours OVER it. Same total, different shape.
                 #
                 # Correcting only the short side then inflated every week and
-                # produced one advisory per patched hour — eighteen in a
+                # produced one advisory per patched hour - eighteen in a
                 # single week, each one a shift the manager had to read and
                 # would not have written. He does not sit there eighteen
                 # times thinking "not covered, let him finish an hour late".
@@ -4483,7 +4483,7 @@ class _RosterBuilder:
                 # does with a pen, and it was right to do it.
                 #
                 # What it must NOT do is paper over a real hole. Wednesday
-                # 16:00-23:00 one short is seven hours — a whole missing
+                # 16:00-23:00 one short is seven hours - a whole missing
                 # evening shift, which no stretch can reach anyway (the
                 # cumulative cap is two hours) and which the manager needs to
                 # see rather than have smeared across three people's finish
@@ -4501,7 +4501,7 @@ class _RosterBuilder:
                     # is a missing shift; stretching three people's finishes
                     # to cover it would hide the one thing they need to see.
                     self._short_hour_reasons[(day, hour)] = (
-                        "no stretch was tried — a run this long is a missing "
+                        "no stretch was tried, a run this long is a missing "
                         "shift, not a changeover"
                     )
                     continue
@@ -4543,7 +4543,7 @@ class _RosterBuilder:
                         # This used to move the edge by 30 minutes and
                         # then ask hours_covered whether the hour was
                         # covered. It always said yes, because it floors a
-                        # shift's start to the hour it falls in — so a
+                        # shift's start to the hour it falls in - so a
                         # finish moved to 17:30 "covered" 17:00 while the
                         # required headcount was still one short until
                         # 17:30. Measured on this shop: the solver was
@@ -4574,13 +4574,13 @@ class _RosterBuilder:
                         # an empty shift. Stepping could not do this because
                         # it always moved outwards.
                         #
-                        # TOO FAR. This pass exists for a CHANGEOVER hour —
+                        # TOO FAR. This pass exists for a CHANGEOVER hour -
                         # "somebody finishing at 16:00 instead of 15:00".
                         # Stepping was bounded to 30 or 60 minutes by
                         # construction. An unbounded snap is not: a shift
                         # ending 14:00 asked to cover hour 15 snaps to 16:00,
                         # a TWO HOUR extension. That is not a changeover
-                        # adjustment, it is a missing shift — and covering it
+                        # adjustment, it is a missing shift - and covering it
                         # by quietly making somebody's day two hours longer
                         # is precisely the edit the manager then has to undo.
                         #
@@ -4590,7 +4590,7 @@ class _RosterBuilder:
                         # Measured against the shape the shift STARTED with,
                         # not its current one. A shift short at 15:00, then
                         # 16:00, then 17:00 was being stretched an hour at a
-                        # time — each step a legitimate changeover
+                        # time - each step a legitimate changeover
                         # adjustment, the total a four-hour extension that
                         # nobody agreed to. (Pre-existing: the old 30-minute
                         # stepping accumulated the same way. It only became
@@ -4648,7 +4648,7 @@ class _RosterBuilder:
 
                 # Still short after trying everybody nearby. Say who could
                 # not be moved and why, deduplicated and in the order they
-                # were tried — the first two are the ones worth reading.
+                # were tried - the first two are the ones worth reading.
                 if self.on_duty[day][hour] < required and refusals:
                     seen: List[str] = []
                     for reason in refusals:
@@ -4708,8 +4708,8 @@ class _RosterBuilder:
         roster reported them short every week.
 
         A manager solves that by finishing them at 15:30 instead of 16:00, or
-        stretching a shift to 9 hours. The start time is left alone — that is
-        what the day's shape needs and what the person is used to — and only
+        stretching a shift to 9 hours. The start time is left alone - that is
+        what the day's shape needs and what the person is used to - and only
         the finish moves.
 
         Limits are never traded away for hours: the absolute ceiling, the
@@ -4797,7 +4797,7 @@ class _RosterBuilder:
                     # This pass pushes a finish later to land a salaried
                     # employee inside their band, and checked only the
                     # curfew. Measured on the reference shop it left eight
-                    # hours before the next morning's shift — worse than the
+                    # hours before the next morning's shift - worse than the
                     # ten `_close_short_hours` produced, because a band can
                     # ask for a bigger extension than a changeover hour can.
                     #
@@ -4863,7 +4863,7 @@ class _RosterBuilder:
         """Flag a day staffed by fewer people than the shop normally uses.
 
         The hourly curve can be satisfied by a handful of long shifts while
-        the day still feels wrong on the floor — cover at 13:00 says nothing
+        the day still feels wrong on the floor - cover at 13:00 says nothing
         about how many bodies a Sunday actually takes. This compares against
         the average headcount per day over the learned window, which is the
         number a manager recognises.
@@ -4900,7 +4900,7 @@ class _RosterBuilder:
 
         Somebody on leave for four days produced four identical sentences,
         and an hour short across a whole day produced one per hour. Sixty
-        lines of near-identical text is not a report a manager reads — the
+        lines of near-identical text is not a report a manager reads - the
         important ones drown.
         """
         skipped: Dict[str, List[str]] = {}
@@ -4920,7 +4920,7 @@ class _RosterBuilder:
 
         for name, days in skipped.items():
             kept.append(
-                f"{name}'s fixed shift was skipped on {', '.join(days)} — on leave."
+                f"{name}'s fixed shift was skipped on {', '.join(days)}, on leave."
             )
         for day, windows in short_hours.items():
             # WHY, not just what. "one short for 7 hours" is a statement of
@@ -4952,7 +4952,7 @@ class _RosterBuilder:
 
         A cross-week rule is the hardest kind to trust, because the reason
         lives in previous rosters rather than on the page. A manager seeing
-        Martin off with no explanation is back to asking why — so both
+        Martin off with no explanation is back to asking why - so both
         outcomes are stated.
         """
         for day, employee_ids in sorted(self.rotation_turns.items()):
@@ -4968,7 +4968,7 @@ class _RosterBuilder:
                     continue        # placed by a pin or a fixed shift
                 else:
                     self.result.issues.append(
-                        f"{name} has {day} off — their turn under your "
+                        f"{name} has {day} off, their turn under your "
                         f"rotation rule."
                     )
 
@@ -4977,8 +4977,8 @@ class _RosterBuilder:
 
         Compiling tells a manager the rule was READ, not that it did
         anything. A rule can be enabled, compiled, approved and completely
-        inert — worded for a case that never arises, or naming somebody who
-        has left — and nothing said so. "Did my rule work?" was a debugging
+        inert - worded for a case that never arises, or naming somebody who
+        has left - and nothing said so. "Did my rule work?" was a debugging
         session; it should be a line in the advisories.
         """
         unused = [
@@ -4993,7 +4993,7 @@ class _RosterBuilder:
         for rule in unused[:4]:
             self.result.issues.append(
                 f"Your rule \"{rule_parser.describe(rule)}\" had no effect on "
-                f"this roster — nothing it covers came up."
+                f"this roster, nothing it covers came up."
             )
 
     def _report_inactive_rules(self) -> None:
@@ -5015,7 +5015,7 @@ class _RosterBuilder:
 
         The per-hour lines already say so, but sixty-six of them scroll the
         cause off the screen. This puts the arithmetic first, and states the
-        remedy in the manager's terms — more people, or longer hours for the
+        remedy in the manager's terms - more people, or longer hours for the
         ones they have.
         """
         shortfall = self._capacity_shortfall()
@@ -5027,7 +5027,7 @@ class _RosterBuilder:
         self.result.critical_issues.insert(0, (
             f"NOT ENOUGH STAFF: this week needs {shortfall['needed']:.0f}h of cover "
             f"and your {len(team)} available staff can work at most "
-            f"{shortfall['available']:.0f}h — short by {gap:.0f}h. "
+            f"{shortfall['available']:.0f}h, short by {gap:.0f}h. "
             f"No roster can cover the shop until you add people or raise "
             f"weekly hour limits."
         ))
@@ -5073,7 +5073,7 @@ class _RosterBuilder:
         """How well the week is covered, 0-100.
 
         Measured against the size of the week rather than by counting
-        messages. A flat penalty per issue saturates almost immediately —
+        messages. A flat penalty per issue saturates almost immediately -
         at 25 points each, four uncovered hours and four hundred scored the
         same zero, so the number could not tell "one bad night" from "no
         roster at all", which is the only thing it is for.
@@ -5098,8 +5098,8 @@ class _RosterBuilder:
         # a rule, the second misses a target.
         penalty = 100 * (uncovered * 1.0 + understaffed * 0.15) / open_hours
 
-        # Problems that are not about coverage at all — a fixed shift that
-        # had to be skipped, a day with no supervisor — still matter, but
+        # Problems that are not about coverage at all - a fixed shift that
+        # had to be skipped, a day with no supervisor - still matter, but
         # cannot on their own drive a well-covered week to zero.
         other = len(self.result.critical_issues) - uncovered
         penalty += max(0, other) * 3
@@ -5122,7 +5122,7 @@ def solve_roster(
     only_day: Optional[str] = None,
     external_shifts: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Build a week's roster. Pure function — same inputs, same output.
+    """Build a week's roster. Pure function - same inputs, same output.
 
     `seed` varies the choices that are genuinely arbitrary: who takes a slot
     nobody owns, when several people are equally entitled to it. The same seed

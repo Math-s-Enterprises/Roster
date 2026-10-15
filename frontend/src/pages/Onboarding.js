@@ -29,7 +29,7 @@ export default function Onboarding() {
   const [open24h, setOpen24h] = useState(false);
   const [paidSickDays, setPaidSickDays] = useState(5);
   const [minRest, setMinRest] = useState(11);
-  // People who are SENT the roster without appearing on it — an area
+  // People who are SENT the roster without appearing on it - an area
   // manager, a franchise owner. Not employees on purpose: an employee record
   // would put them in the seniority ladder, in the solver's candidate list
   // and on the printed rota, and sooner or later somebody would be rostered
@@ -65,8 +65,8 @@ export default function Onboarding() {
    * Fill the form from the server's answer.
    *
    * Used on load and again after saving. Re-reading matters because the
-   * backend normalises what it stores — switching on 24h fills in the
-   * round-the-clock hours, and departments come back canonicalised — so
+   * backend normalises what it stores - switching on 24h fills in the
+   * round-the-clock hours, and departments come back canonicalised - so
    * the form would otherwise keep comparing itself against pre-save data
    * and report unsaved changes that had already been saved.
    */
@@ -161,7 +161,7 @@ export default function Onboarding() {
 
   const finish = async () => {
     await save({ onboarded: true });
-    toast.success("Setup complete — you're ready to roster.");
+    toast.success("Setup complete, you're ready to roster.");
     nav("/");
   };
 
@@ -192,7 +192,7 @@ export default function Onboarding() {
   /**
    * Which fields differ from what the server last sent. Drives the green
    * border on edited inputs, the list in the unsaved panel, and whether
-   * Save is enabled — so all three can never disagree.
+   * Save is enabled - so all three can never disagree.
    */
   const dirty = {};
   if (shop) {
@@ -227,7 +227,7 @@ export default function Onboarding() {
   // Validated here and re-validated server-side; 12 hours is the legal
   // ceiling, so a max above it is blocked rather than warned about.
   const invalid = {};
-  // The min/max attributes only bound the steppers — a negative can still be
+  // The min/max attributes only bound the steppers - a negative can still be
   // typed, and this page saves from a button rather than a form, so nothing
   // else would catch it.
   if (Number(minShift) < 1) {
@@ -239,15 +239,15 @@ export default function Onboarding() {
     invalid.paidSick = "Paid sick days cannot be negative.";
   }
   if (Number(maxShift) > 12) {
-    invalid.maxShift = "12 hours is the legal ceiling — this cannot be saved.";
+    invalid.maxShift = "12 hours is the legal ceiling, this cannot be saved.";
   }
   // Eleven is the statutory floor, so anything under it is refused rather
   // than warned about. Twenty is the practical ceiling: past that the gap
   // stops being rest and starts making the week impossible to cover.
   if (Number(minRest) < 11) {
-    invalid.minRest = "Eleven hours is the legal minimum between shifts — this cannot be saved.";
+    invalid.minRest = "Eleven hours is the legal minimum between shifts, this cannot be saved.";
   } else if (Number(minRest) > 20) {
-    invalid.minRest = "Twenty hours is the most that is useful — a longer gap leaves too little of the day to roster.";
+    invalid.minRest = "Twenty hours is the most that is useful, a longer gap leaves too little of the day to roster.";
   }
   const blocked = Object.keys(invalid).length > 0;
 
@@ -288,7 +288,7 @@ export default function Onboarding() {
    * Rename a roster group.
    *
    * The server has no rename. It compares the list you send against the one
-   * it holds, so a rename reads as "remove the old name, add a new one" —
+   * it holds, so a rename reads as "remove the old name, add a new one" -
    * and it refuses to remove a group any employee or roster still uses.
    * So this succeeds for a group nothing has been assigned to yet, and Save
    * reports the server's own refusal otherwise. The hint under the list
@@ -320,7 +320,7 @@ export default function Onboarding() {
   const removeRole = (role) => {
     setRemoval({
       title: `Remove ${role} from the ladder?`,
-      description: "Nobody loses the title — staff with a role that is not listed simply rank last. Save changes to apply the removal.",
+      description: "Nobody loses the title - staff with a role that is not listed simply rank last. Save changes to apply the removal.",
       confirm: () => {
         setRoles(roles.filter((r) => r !== role));
         setCoverRoles(cover.filter((r) => r !== role));
@@ -366,7 +366,7 @@ export default function Onboarding() {
           </h1>
           <p className="ss-sub">
             Change anything you got wrong first time. Saving applies to the next roster you
-            generate — weeks already approved are untouched.
+            generate, weeks already approved are untouched.
           </p>
         </header>
 
@@ -398,7 +398,7 @@ export default function Onboarding() {
               {isDirty ? (
                 <>
                   <strong>{dirtyNames.length} edit{dirtyNames.length === 1 ? "" : "s"}</strong>
-                  {" — "}{dirtyNames.join(", ")}. Regenerate a week afterwards to see the effect.
+                  {", "}{dirtyNames.join(", ")}. Regenerate a week afterwards to see the effect.
                 </>
               ) : "No unsaved changes."}
             </p>
@@ -427,7 +427,7 @@ export default function Onboarding() {
             </label>
             <p className="ss-helper">
               The shop is treated as open every hour of every day, and at least one person is
-              rostered at all times — including overnight. Individual day times are not used.
+              rostered at all times, including overnight. Individual day times are not used.
             </p>
 
             {/* Day times are kept, not cleared, so unticking restores them. */}
@@ -535,7 +535,7 @@ export default function Onboarding() {
         <div className="ss-section">
           <h2 className="ss-h2">Roster groups <span>({departments.length})</span></h2>
           <p className="ss-section-sub">
-            Create a separate roster and learning history for each part of the business — for
+            Create a separate roster and learning history for each part of the business, for
             example Shop Floor, Deli or Forecourt. Employees may belong to more than one group.
           </p>
         </div>
@@ -575,8 +575,8 @@ export default function Onboarding() {
               <span className="ss-role">{department}</span>
               {index === 0 && <span className="ss-dept-tag">Main</span>}
               <span className="ss-roleacts">
-                {/* The main group cannot be removed — it is where the app
-                    opens and where new employees land — but it can be
+                {/* The main group cannot be removed - it is where the app
+                    opens and where new employees land - but it can be
                     renamed, so a restaurant is not stuck calling itself a
                     shop floor. */}
                 {index === 0 && (
@@ -595,7 +595,7 @@ export default function Onboarding() {
                   onClick={() => removeDepartment(department)}
                   disabled={index === 0}
                   title={index === 0
-                    ? "The main group cannot be removed — rename it instead"
+                    ? "The main group cannot be removed, rename it instead"
                     : undefined}
                   aria-label={`Remove ${department}`}
                 >
@@ -622,11 +622,11 @@ export default function Onboarding() {
           </div>
 
           <p className="ss-note">
-            Each group gets its own roster, its own staff and its own opening hours — a shop floor and
+            Each group gets its own roster, its own staff and its own opening hours, a shop floor and
             a deli are scheduled separately rather than as one week. The{" "}
             <strong>first group is the main one</strong>: it is where the app opens, and new employees
             join it unless you say otherwise.{" "}
-            It can be <strong>renamed</strong> — call it Restaurant, Shopfloor whatever fits — but
+            It can be <strong>renamed</strong>, call it Restaurant, Shopfloor whatever fits, but
             not removed.{" "}
             <strong className="ss-warn">
               Renaming only works while nothing uses the group.
@@ -687,7 +687,7 @@ export default function Onboarding() {
               <span className="ss-check-label">Breaks are paid</span>
             </label>
             <p className="ss-helper">
-              With this off, an 8-hour shift pays 7.5 — the half hour of break is unpaid and comes out
+              With this off, an 8-hour shift pays 7.5, the half hour of break is unpaid and comes out
               of the hours you are billed for. It does not change a full-time contract: the contracted
               week stays the same, and the difference shows in the Hours and Wages report.
             </p>
@@ -721,7 +721,7 @@ export default function Onboarding() {
               {invalid.minRest || (
                 <>
                   The Organisation of Working Time Act sets eleven consecutive hours between shifts,
-                  so eleven is the lowest this accepts — a shorter gap is not lawful and the roster
+                  so eleven is the lowest this accepts, a shorter gap is not lawful and the roster
                   would be building one. Raise it if your own agreements are stricter; twenty is the
                   most that is useful.
                 </>
@@ -751,7 +751,7 @@ export default function Onboarding() {
               data-invalid={Boolean(invalid.paidSick)}
             >
               {invalid.paidSick ? `${invalid.paidSick} ` : dirty.paidSick ? "Edited · " : ""}
-              Irish statutory sick pay is the floor, not a target — you may pay more than the
+              Irish statutory sick pay is the floor, not a target, you may pay more than the
               statutory minimum but not less. Days past the allowance are still recorded, as unpaid.
             </p>
           </div>
@@ -760,7 +760,7 @@ export default function Onboarding() {
         <div className="ss-section">
           <h2 className="ss-h2">Also send the roster to <span>({observers.length})</span></h2>
           <p className="ss-section-sub">
-            People who receive the roster without appearing on it — an area manager, a franchise
+            People who receive the roster without appearing on it, an area manager, a franchise
             owner. They are never rostered and never counted as staff.
           </p>
         </div>
@@ -858,7 +858,7 @@ export default function Onboarding() {
           <h1 className="display">Shop settings</h1>
           <p className="mt-2 text-sm" style={{ color: "var(--ink-mute)" }}>
             Change anything you got wrong first time. Saving applies to the
-            next roster you generate — weeks already approved are untouched.
+            next roster you generate, weeks already approved are untouched.
           </p>
         </div>
       ) : (
@@ -911,7 +911,7 @@ export default function Onboarding() {
             {open24h ? (
               <p className="text-xs ui-muted">
                 The shop is treated as open every hour of every day, and at
-                least one person is rostered at all times — including
+                least one person is rostered at all times, including
                 overnight. Individual day times are not used.
               </p>
             ) : (
@@ -981,7 +981,7 @@ export default function Onboarding() {
                 <span className="text-sm block">Preferred days off are never overridden</span>
                 <span className="text-xs ui-muted block mt-1">
                   On: a requested day off is honoured even when that leaves an
-                  hour uncovered — the gap is reported instead of quietly
+                  hour uncovered, the gap is reported instead of quietly
                   filled. Off: preferences yield to keeping the shop attended.
                 </span>
               </span>
@@ -1037,12 +1037,12 @@ export default function Onboarding() {
                 is worked out from the shifts they actually do, so somebody on
                 four-hour Saturdays is not charged the same as somebody on
                 ten-hour Mondays. Illness beyond the allowance is still
-                recorded — it is simply unpaid.
+                recorded, it is simply unpaid.
               </p>
             </div>
 
             {/* Roster recipients. A shop setting rather than an employee,
-                because these people do not work here — see the note on the
+                because these people do not work here - see the note on the
                 state above. */}
             <div>
               <label className="text-xs ui-body">
@@ -1050,7 +1050,7 @@ export default function Onboarding() {
               </label>
               <p className="text-xs ui-muted mt-1 mb-3 max-w-lg">
                 Anyone who should get the whole week's rota without being on
-                it — an area manager, the owner. They receive every person and
+                it, an area manager, the owner. They receive every person and
                 every shift, not their own. Name and email is all that is
                 needed; they are not staff and are never rostered.
               </p>
