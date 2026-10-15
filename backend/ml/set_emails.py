@@ -52,6 +52,22 @@ from app.services import availability as avail              # noqa: E402
 
 # Same shape check the readiness report uses. Loose on purpose: rejecting a
 # real address is worse than passing a bad one, which dispatch reports anyway.
+
+
+def _mask_email(email: str) -> str:
+    value = (email or "").strip()
+    if not value:
+        return ""
+    if "@" not in value:
+        return "***"
+    local, domain = value.split("@", 1)
+    masked_local = (local[0] + "***") if local else "***"
+    if "." in domain:
+        first, rest = domain.split(".", 1)
+        masked_domain = (first[0] + "***." + rest) if first else "***." + rest
+    else:
+        masked_domain = (domain[0] + "***") if domain else "***"
+    return f"{masked_local}@{masked_domain}"
 LOOKS_LIKE_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -135,13 +151,13 @@ async def run(account: str, csv_path: str, commit: bool, replace: bool) -> None:
         # copy-paste slip in the CSV than a real arrangement.
         if address.lower() in seen_emails:
             skipped.append((line, name, address,
-                            f"already used for {seen_emails[address.lower()]}"))
+                            f"already used for {_mask_email(seen_emails[address.lower()])}"))
             continue
         seen_emails[address.lower()] = employee.get("name", "?")
 
         current = (employee.get("email") or "").strip()
         if current and not replace:
-            note = "same" if current.lower() == address.lower() else f"has {current}"
+            note = "same" if current.lower() == address.lower() else f"has {_mask_email(current)}"
             skipped.append((line, name, address, f"{note} - pass --replace to change"))
             continue
 
@@ -154,15 +170,15 @@ async def run(account: str, csv_path: str, commit: bool, replace: bool) -> None:
         print(f"WOULD SET {len(planned)} address(es):" if not commit
               else f"SETTING {len(planned)} address(es):")
         for employee, current, address in planned:
-            arrow = f"{current} -> " if current else ""
-            print(f"    {employee.get('name', '?'):22} {arrow}{address}")
+            arrow = f"{_mask_email(current)} -> " if current else ""
+            print(f"    {employee.get('name', '?'):22} {arrow}{_mask_email(address)}")
     else:
         print("Nothing to change.")
 
     if skipped:
         print(f"\nSKIPPED {len(skipped)}:")
         for line, name, address, why in skipped:
-            print(f"    line {line}: {name or '(no name)'} <{address}> - {why}")
+            print(f"    line {line}: {name or '(no name)'} <{_mask_email(address)}> - {why}")
 
     # Anyone the CSV never mentioned is still unreachable, and saying so here
     # avoids a second round trip to the readiness report.
