@@ -208,7 +208,8 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
     problems = 0
     for f in fixed:
         for day in f["days"]:
-            name = by_id.get(f["employee_id"], {}).get("name", f["employee_id"])
+            raw_name = by_id.get(f["employee_id"], {}).get("name", f["employee_id"])
+            name = f"{str(raw_name)[:1]}***" if raw_name else "employee"
             actual = placed.get((f["employee_id"], day))
             on_leave = any(
                 h.get("employee_id") == f["employee_id"] and dates[day] in _expand(h)
