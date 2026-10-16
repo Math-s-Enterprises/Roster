@@ -14,11 +14,11 @@ people a fair share-out is for:
     she was given:      13.0h
 
 She has climbed steadily for months. A number that says 28.5 describes a person
-she stopped being in the spring. Aneesh is the same in reverse — he dropped to
+she stopped being in the spring. Aneesh is the same in reverse - he dropped to
 weekends, and the decayed figure kept insisting on his old full weeks.
 
 So: the LAST N WEEKS THEY ACTUALLY APPEAR IN, and nothing older. The shop owner
-chose 8, which is also RECENCY_HALF_LIFE_WEEKS in `demand.py` — one idea about
+chose 8, which is also RECENCY_HALF_LIFE_WEEKS in `demand.py` - one idea about
 how fast a shop changes rather than two competing ones.
 
 WHY THE MEDIAN
@@ -26,13 +26,13 @@ WHY THE MEDIAN
 One odd week must not reset somebody's normal. Cover a colleague's holiday and
 work 40 hours once, and a mean would quietly promote that to your new baseline
 for the next two months. The median ignores it. It also ignores an unusually
-quiet week in the other direction, which matters just as much — a light week
+quiet week in the other direction, which matters just as much - a light week
 after somebody returns from leave is not them asking for fewer hours.
 
 WHAT THIS NUMBER IS NOT
 -----------------------
 It is not a target on its own. Somebody who has dropped to weekends cannot be
-given a full week however recently they worked one, so the caller bounds it —
+given a full week however recently they worked one, so the caller bounds it -
 see `scheduler._build_hours_aim`, which takes the smallest of this, what their
 availability can physically hold, leave booked in the target week, and their
 weekly cap. The window tracks a trend; availability catches a sharp change the
@@ -48,7 +48,7 @@ from app.services.learning import latest_per_week
 # How many recent weeks describe what somebody is working now. Chosen by the
 # shop owner, and equal to demand.RECENCY_HALF_LIFE_WEEKS on purpose.
 #
-# Not calibrated — a judgement, like the half-life it matches (§7b). Shorter
+# Not calibrated - a judgement, like the half-life it matches (§7b). Shorter
 # tracks a change faster and lets a single odd fortnight move somebody's
 # baseline; longer is steadier and keeps describing who they used to be. If a
 # shop complains that the roster is chasing an old pattern, this is the number
@@ -80,7 +80,7 @@ def usual_hours(
     if target is None:
         return {}
 
-    # Keyed by week so somebody absent has no entry rather than a zero — a
+    # Keyed by week so somebody absent has no entry rather than a zero - a
     # fortnight's leave is not evidence they want fewer hours. Deduplicated,
     # because a week with two approved rosters would otherwise count twice.
     per_week: Dict[str, Dict[str, float]] = {}

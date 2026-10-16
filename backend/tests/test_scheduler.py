@@ -1,7 +1,7 @@
 """Tests for the roster solver.
 
 The solver is a pure function, so these run with no database, no network
-and no server — fast enough to run on every save.
+and no server - fast enough to run on every save.
 
 The first four classes each pin one of the four non-negotiable rules. If a
 future change breaks one of those guarantees, one of these fails.
@@ -69,7 +69,7 @@ def coverage_gaps(shifts, day, open_time, close_time):
     gaps, cursor = [], to_minutes(open_time)
     close_m = to_minutes(close_time)
     for start, end in intervals:
-        if end <= start:      # overnight shift — covers to end of day
+        if end <= start:      # overnight shift - covers to end of day
             end = 24 * 60
         if start > cursor:
             gaps.append((cursor, start))
@@ -109,7 +109,7 @@ class TestBreaks:
         assert paid_hours(start, end) == pytest.approx(expected)
 
     def test_contract_is_paid_hours_so_span_runs_longer(self):
-        """Five 10-hour shifts span 50h but pay 45h — a 40h contract can
+        """Five 10-hour shifts span 50h but pay 45h - a 40h contract can
         legitimately be rostered for more than 40 hours of clock time."""
         employees = [make_employee("e1", max_hours=40)]
         shop = make_shop("06:00", "16:00", max_h=10)
@@ -146,7 +146,7 @@ class TestTimeHelpers:
 
 
 # ---------------------------------------------------------------------------
-# RULE 1 — role priority
+# RULE 1 - role priority
 # ---------------------------------------------------------------------------
 class TestRuleOneRolePriority:
     def test_manager_scheduled_before_stocker(self):
@@ -216,7 +216,7 @@ class TestCompiledClosingRoleRule:
         )
 
 # ---------------------------------------------------------------------------
-# RULE 2 — continuous coverage
+# RULE 2 - continuous coverage
 # ---------------------------------------------------------------------------
 class TestRuleTwoContinuousCoverage:
     def test_no_gaps_when_day_exceeds_max_shift(self):
@@ -253,7 +253,7 @@ class TestRuleTwoContinuousCoverage:
 
 
 # ---------------------------------------------------------------------------
-# RULE 3 — 24-hour staffing
+# RULE 3 - 24-hour staffing
 # ---------------------------------------------------------------------------
 TEMPLATES_24H = [
     {"template_id": "tpl_morning", "name": "Morning", "start": "07:00", "end": "15:00", "min_staff": 2},
@@ -277,7 +277,7 @@ class TestRuleThreeTwentyFourHour:
         assert any("Night" in i for i in criticals)
 
     def test_understaffed_but_covered_is_not_critical(self):
-        """1 of 2 wanted still means the shop is attended — advisory, not critical.
+        """1 of 2 wanted still means the shop is attended - advisory, not critical.
 
         Scoped to Monday deliberately: by Saturday the single employee has
         exhausted their weekly hours, so Morning really is uncovered then and
@@ -290,7 +290,7 @@ class TestRuleThreeTwentyFourHour:
 
 
 # ---------------------------------------------------------------------------
-# RULE 4 — legal limits are never relaxed
+# RULE 4 - legal limits are never relaxed
 # ---------------------------------------------------------------------------
 class TestRuleFourLegalLimits:
     def test_minor_curfew_boundaries(self):
@@ -363,8 +363,8 @@ class TestPreferenceHandling:
     def test_leave_is_never_relaxed(self):
         """Unlike preferences, actual leave holds even if cover is lost.
 
-        The person still appears on the roster — as paid holiday, not as a
-        shift — so the manager can see why the day is short.
+        The person still appears on the roster - as paid holiday, not as a
+        shift - so the manager can see why the day is short.
         """
         employees = [make_employee("away")]
         holidays = [{"date": WEEK, "end_date": WEEK, "label": "Holiday",
@@ -448,7 +448,7 @@ class TestHolidaysAndMetrics:
 # Determinism
 # ---------------------------------------------------------------------------
 def test_solver_is_deterministic():
-    """Same inputs, same assignments — only shift_ids differ (they're random)."""
+    """Same inputs, same assignments - only shift_ids differ (they're random)."""
     shop, team = make_shop(), big_team()
     first = solve_roster(shop, team, [], [], [], WEEK)
     second = solve_roster(shop, team, [], [], [], WEEK)

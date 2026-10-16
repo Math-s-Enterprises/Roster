@@ -6,11 +6,11 @@ here, so the answer is computed one way and the reason is always available.
 Handled:
 
   * active / inactive employment
-  * advanced availability — earliest start, latest finish, working days,
+  * advanced availability - earliest start, latest finish, working days,
     preferred shift band
   * student status and term-time hour limits
   * summer-break periods, when a student's cap lifts
-  * unfamiliar shift detection — flagging a pattern somebody has never worked
+  * unfamiliar shift detection - flagging a pattern somebody has never worked
 
 Every check returns a reason string rather than a bare False. A roster that
 says "Andi is not available" is useful; one that silently omits Andi is not,
@@ -130,7 +130,7 @@ def check_availability(
     if preferred and preferred != "any":
         band = SHIFT_BANDS.get(preferred)
         if band and not (band[0] <= start_m < band[1]):
-            # A band mismatch is a preference, not an impossibility — it
+            # A band mismatch is a preference, not an impossibility - it
             # warns rather than blocks, so cover is never lost over it.
             return Eligibility(
                 True,
@@ -158,7 +158,7 @@ def on_summer_break(employee: Dict[str, Any], on: date) -> bool:
     Asks `employment_type`, not the raw `is_student` flag. The flag is the
     older field; the Employees screen now writes employment_type, so a
     student set up through the current interface was never recognised as
-    being on a break and kept their term-time cap all year — invisibly,
+    being on a break and kept their term-time cap all year - invisibly,
     because nothing reports a cap that failed to lift.
 
     employment_type() falls back to is_student, so records written before
@@ -175,7 +175,7 @@ def on_summer_break(employee: Dict[str, Any], on: date) -> bool:
 
 
 # A salaried full-timer is contracted to be ON THE FLOOR for this long each
-# week — clock in to clock out, breaks included. Deliberately a span figure
+# week - clock in to clock out, breaks included. Deliberately a span figure
 # rather than a paid one, because that is how a rota is read and how the
 # contract is written. Their payslip is the same whether they land on 41 or
 # 42.5, so the band is about honouring the contract, not about pay.
@@ -224,8 +224,8 @@ def weekly_hour_cap(employee: Dict[str, Any], week_start: str) -> float:
     during the break. Using one flat number would either under-use them all
     summer or over-schedule them during term.
 
-    A salaried full-timer is not governed by this at all — their limit is a
-    span band, see contract_span_band — so they get a ceiling high enough
+    A salaried full-timer is not governed by this at all - their limit is a
+    span band, see contract_span_band - so they get a ceiling high enough
     never to be the binding constraint.
     """
     return weekly_hour_cap_explained(employee, week_start)[0]
@@ -236,13 +236,13 @@ def weekly_hour_cap_explained(
 ) -> Tuple[float, str]:
     """The cap, and WHICH FIELD it came from, in the manager's words.
 
-    One implementation, two questions — `weekly_hour_cap` is this without the
+    One implementation, two questions - `weekly_hour_cap` is this without the
     explanation. Answering them separately is the §11 trap.
 
     The explanation exists because four different fields can set this number
     and the Employees screen shows them all as "hours". A manager raised a
     student's `max_weekly_hours` from 20 to 25, came back to the roster, and
-    the caution had not moved — correctly, because that week fell inside
+    the caution had not moved - correctly, because that week fell inside
     their summer break and the break's own figure was the binding one.
     Nothing on the page said so, so the only available conclusion was that
     the app was stale. It was not; it was silent.
@@ -319,7 +319,7 @@ def check_familiarity(
     """
     entry = history.get(employee["employee_id"])
     if not entry:
-        # No history is not evidence of unsuitability — it is a new starter.
+        # No history is not evidence of unsuitability - it is a new starter.
         return ALLOWED
 
     total = len(entry["patterns"])

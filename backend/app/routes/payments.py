@@ -2,9 +2,9 @@
 
 Two independent paths confirm a payment:
 
-  * the webhook — Stripe calls us server-to-server; authoritative, and
+  * the webhook - Stripe calls us server-to-server; authoritative, and
     arrives even if the customer closes the tab;
-  * status polling — the browser asks us after redirect, and we re-check
+  * status polling - the browser asks us after redirect, and we re-check
     with Stripe directly if our record still looks unpaid.
 
 Both are idempotent and guarded so that whichever lands first wins and the
@@ -100,7 +100,7 @@ async def payment_status(session_id: str, user=CurrentUser):
     if not record:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Payment session not found")
 
-    # Only the payer may read a session's status — otherwise anyone holding
+    # Only the payer may read a session's status - otherwise anyone holding
     # a session ID could probe another customer's payment state.
     if record.get("user_id") != user["user_id"]:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your payment session")
@@ -138,7 +138,7 @@ async def payment_status(session_id: str, user=CurrentUser):
 async def stripe_webhook(request: Request):
     """Stripe's server-to-server payment notifications.
 
-    Unauthenticated by necessity — Stripe cannot present a user's token — so
+    Unauthenticated by necessity - Stripe cannot present a user's token - so
     the signature check IS the authentication. Without a configured
     STRIPE_WEBHOOK_SECRET this endpoint is refused outright rather than
     trusting unsigned input.

@@ -12,8 +12,8 @@ Confirmed in his own rosters once weeks before the third man was hired were
 excluded: 7 of 11 weekends had exactly one of them off, turns spread within
 one weekend of each other, in a clean three-week cycle.
 
-This is the FIRST cross-week constraint. Every other custom rule —
-`max_staff`, `not_together`, `no_open` — is answerable from the week being
+This is the FIRST cross-week constraint. Every other custom rule -
+`max_staff`, `not_together`, `no_open` - is answerable from the week being
 built. Whose turn it is can only come from previous weeks.
 
 NOTHING HERE IS SPECIFIC TO THAT SHOP. The group and the days come from the
@@ -153,7 +153,7 @@ class TestWhoseTurnItIs:
         """The measurement error that hid the pattern for twenty weeks.
 
         Somebody not yet hired appears "off" every weekend. Counting that as
-        their turn hands the rota to whoever was hired first — at the
+        their turn hands the rota to whoever was hired first - at the
         reference shop a colleague hired in June showed 13 weekends off
         against another's 3, purely from absence.
         """
@@ -161,7 +161,7 @@ class TestWhoseTurnItIs:
         # ann and ben had their turns LONG ago; `cal` was hired recently and
         # has never had one. The old turns must be deliberately older than
         # cal's absence, or counting absence gives the same answer by luck
-        # and this test proves nothing — which is how it first passed under
+        # and this test proves nothing - which is how it first passed under
         # sabotage.
         hist = history({0: "ann", 1: "ben"}, group)
         for roster in hist[:7]:
@@ -225,7 +225,7 @@ class TestItIsSoftNotHard:
         )
 
     def test_a_turn_never_leaves_the_shop_short(self):
-        """The manager pauses his own rotation on busy weeks — 4 of 11
+        """The manager pauses his own rotation on busy weeks - 4 of 11
         weekends at the reference shop had nobody off. A hard rule would
         force a day off he would not have given."""
         group = ["ann", "ben"]
@@ -254,7 +254,7 @@ class TestItIsSoftNotHard:
 
 class TestOnlyOneOfThemIsOffAtATime:
     """"If Martin is off for the weekend, then Corey and Jithin will be
-    working." Somebody already away IS the week's absence — giving another a
+    working." Somebody already away IS the week's absence - giving another a
     turn on top takes two of the group off at once, which is the arrangement
     the rule exists to prevent.
 
@@ -278,7 +278,7 @@ class TestOnlyOneOfThemIsOffAtATime:
         turns = self._turns(hist, group, holidays=holidays)
         assert "sat" not in turns, (
             "cal is already off on leave that Saturday and somebody else was "
-            f"given a turn as well — two of the three off at once: {turns}"
+            f"given a turn as well - two of the three off at once: {turns}"
         )
         # Sunday is untouched: they are all available, so the rotation runs.
         assert turns.get("sun") == ["cal"] or "sun" not in turns

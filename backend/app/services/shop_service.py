@@ -38,7 +38,7 @@ SYSTEM_RULES: List[Dict[str, Any]] = [
     {
         "title": "Maximum shift length",
         # Built from the constant the solver enforces. Written out by hand it
-        # said "11 hours" long after the limit had changed — a locked rule
+        # said "11 hours" long after the limit had changed - a locked rule
         # that misstates what the product actually does is worse than none.
         "description": f"No single shift may exceed {ABSOLUTE_MAX_SHIFT_HOURS} hours.",
         "category": "legal", "enabled": True, "locked": True,
@@ -53,7 +53,7 @@ SYSTEM_RULES: List[Dict[str, Any]] = [
     },
     {
         "title": "Continuous shop coverage",
-        "description": "At least one employee is scheduled for every minute the shop is open — no gaps between opening and closing.",
+        "description": "At least one employee is scheduled for every minute the shop is open, no gaps between opening and closing.",
         "category": "safety", "enabled": True, "locked": True,
     },
     {
@@ -82,7 +82,7 @@ async def seed_system_rules(shop_id: str) -> None:
     browser fires several API calls in parallel on page load, so an earlier
     read-then-insert version raced itself. Two requests both found a new rule
     missing, both inserted it, and the shop ended up with the rule listed
-    twice — which happened the first time anybody loaded the page after a
+    twice - which happened the first time anybody loaded the page after a
     rule was added.
 
     One upsert per rule instead. Concurrent callers converge on the same
@@ -155,7 +155,7 @@ def apply_24h_defaults(update: Dict[str, Any], current_shop: Dict[str, Any]) -> 
                  a shop that has none.
 
     Both used to sit behind "has no templates". So a shop that already had
-    templates could be switched to 24h and keep 09:00-21:00 opening hours —
+    templates could be switched to 24h and keep 09:00-21:00 opening hours -
     which is exactly the state the docstring warned about. Worse, the
     coverage floor then only checked 09:00-21:00, so the small hours were
     unstaffed AND unreported.
@@ -165,7 +165,7 @@ def apply_24h_defaults(update: Dict[str, Any], current_shop: Dict[str, Any]) -> 
     # Updates are partial (exclude_unset), so a save that changes anything
     # else carries no `open_24h` at all. Reading only the payload meant a
     # 24-hour shop reverted to whatever `hours` the settings form happened to
-    # be holding — usually 09:00-21:00 — every time something unrelated was
+    # be holding - usually 09:00-21:00 - every time something unrelated was
     # saved. It appeared to work when the switch itself was toggled and to
     # undo itself at random afterwards, which is the worst way for a setting
     # to fail: the manager cannot tell what they did to cause it.

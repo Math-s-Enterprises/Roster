@@ -9,7 +9,7 @@ import jsPDF from "jspdf";
 import { Calendar, Wand2, Send, Check, Printer, AlertTriangle, RefreshCw, X, UserX, UserPlus, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pin, Unlock } from "lucide-react";
 import "@/styles/roster-weeknav.css";
 
-/** "Mon 7 – Sun 13 Sept" — the week itself, which is the page's title. */
+/** "Mon 7 – Sun 13 Sept" - the week itself, which is the page's title. */
 function weekRangeLabel(weekStart) {
   const from = new Date(`${weekStart}T00:00:00`);
   const to = new Date(from);
@@ -34,7 +34,7 @@ function fmtApproved(iso) {
 /**
  * Unsocial hours get their own fill. Derived rather than stored: no shift
  * carries a flag for this, and the threshold is the same one a manager
- * would use reading the grid — starts before 07:00 or finishes after 22:00,
+ * would use reading the grid - starts before 07:00 or finishes after 22:00,
  * including anything that runs past midnight.
  */
 function isUnsocial(shift) {
@@ -61,9 +61,9 @@ const shiftWeek = (monday, weeks) => {
  *     Aneesh's sun shift was changed from 09:00-17:00 to 08:00-17:00 to cover sun 08:00.
  *
  * The hour IS covered, so listing it only makes a manager read about work the
- * generator already did. Matched on the fixed shape of that sentence — two
- * times, then "to cover" — so the genuine gap warnings stay: "one short of the
- * usual cover…" and "moved from X to Y — closer to the hours…" do not match.
+ * generator already did. Matched on the fixed shape of that sentence - two
+ * times, then "to cover" - so the genuine gap warnings stay: "one short of the
+ * usual cover…" and "moved from X to Y - closer to the hours…" do not match.
  */
 const COVER_STRETCH = /shift was changed from \d{2}:\d{2}-\d{2}:\d{2} to \d{2}:\d{2}-\d{2}:\d{2} to cover /;
 
@@ -89,7 +89,7 @@ export default function RosterView() {
   const chooseWeek = (value) => {
     const monday = mondayOf(value);
     setWeek(monday);
-    // Drop any pinned version — it belongs to the week being left.
+    // Drop any pinned version - it belongs to the week being left.
     setSearchParams({ week: monday }, { replace: true });
   };
 
@@ -136,7 +136,7 @@ export default function RosterView() {
   // How many sheets of paper the printed rota may use, and whether the
   // chooser is open. Two separate things: closing the dialog must not reset
   // the choice, or the sheet re-renders at one page in the moment between
-  // dismissing the dialog and the print job reading the DOM — silently
+  // dismissing the dialog and the print job reading the DOM - silently
   // printing something other than what was asked for.
   const [printPages, setPrintPages] = useState(1);
   const [printOpen, setPrintOpen] = useState(false);
@@ -155,7 +155,7 @@ export default function RosterView() {
     }
   }, [approved]);
   // Which rules this week breaks, per person. Refetched after every save,
-  // because the manager is editing while they read it — a cached answer is
+  // because the manager is editing while they read it - a cached answer is
   // wrong the moment they move a shift.
   const [audit, setAudit] = useState(null);
   const [breachFor, setBreachFor] = useState(null);
@@ -216,7 +216,7 @@ export default function RosterView() {
   /**
    * Move a row up or down and remember it.
    *
-   * Presentation only — it changes how the sheet reads, never who is
+   * Presentation only - it changes how the sheet reads, never who is
    * considered first for hours. That stays on the job ladder.
    *
    * Applied locally before the request so the row moves on the click rather
@@ -253,7 +253,7 @@ export default function RosterView() {
   const customOrder = (shop?.employee_order || []).length > 0;
 
   // Mirrors the backend rule: a finished week is the record of what people
-  // actually worked, so it stays closed. A week still running does not — that
+  // actually worked, so it stays closed. A week still running does not - that
   // is exactly when somebody calls in sick and the rest has to move.
   const weekHasEnded = useMemo(() => {
     const end = new Date(`${week}T00:00:00`);
@@ -282,7 +282,7 @@ export default function RosterView() {
    * rest of your edits.
    *
    * `onlyDay` narrows it to one day. "Two people are off on Wednesday" does
-   * not want the whole week rearranged — every other day that moves is
+   * not want the whole week rearranged - every other day that moves is
    * something you have to read and mostly undo. The other six days are held
    * exactly as they are, though their hours still count, so a change on
    * Wednesday cannot push somebody over their week.
@@ -302,7 +302,7 @@ export default function RosterView() {
       const held = (r.data.shifts || []).filter((s) => s.pinned).length;
       toast.success(
         onlyDay
-          ? `${DAY_LABELS[onlyDay]} re-solved — the rest of the week is untouched`
+          ? `${DAY_LABELS[onlyDay]} re-solved, the rest of the week is untouched`
           : keepPinned
             ? `Rebalanced around ${held} pinned shift${held === 1 ? "" : "s"}`
             : `Generated ${r.data.version} · coverage ${r.data.compliance_score}`,
@@ -310,7 +310,7 @@ export default function RosterView() {
       load();
     } catch (err) {
       // An approved week is refused outright, and the manager has to unapprove
-      // it first — that needs a dialog they act on, not a toast that fades.
+      // it first - that needs a dialog they act on, not a toast that fades.
       const detail = err.response?.data?.detail;
       if (err.response?.status === 409 && detail?.reasons) {
         setRefused(detail);
@@ -323,7 +323,7 @@ export default function RosterView() {
   /**
    * Reopen an approved roster.
    *
-   * Approving does two things — it makes the roster the schedule people work,
+   * Approving does two things - it makes the roster the schedule people work,
    * and it adds the week to what the scheduler learns this shop's habits
    * from. Reopening undoes both, so it is one deliberate action rather than
    * an "edit anyway" override.
@@ -331,7 +331,7 @@ export default function RosterView() {
   const unapprove = async () => {
     try {
       await api.post(`/rosters/${roster.roster_id}/unapprove`);
-      toast.success("Reopened — this week no longer counts towards learning");
+      toast.success("Reopened, this week no longer counts towards learning");
       setConfirmUnapprove(false);
       load();
     } catch (err) {
@@ -361,7 +361,7 @@ export default function RosterView() {
     try {
       const r = await api.put(`/rosters/${roster.roster_id}`, { shifts: clean });
       setRoster(r.data);
-      toast.success("Unpinned — the solver can move this again");
+      toast.success("Unpinned, the solver can move this again");
       setEditShift(null);
     } catch (err) {
       toast.error(errorMessage(err, "Could not unpin that shift"));
@@ -372,7 +372,7 @@ export default function RosterView() {
    * Approve, refusing while the shop would be left unattended.
    *
    * The backend returns 409 when hours are uncovered. Rather than dead-end,
-   * we ask — approving a week with known gaps is sometimes the right call,
+   * we ask - approving a week with known gaps is sometimes the right call,
    * but it should be a decision rather than a click that looked clean.
    */
   useEffect(() => {
@@ -401,7 +401,7 @@ export default function RosterView() {
    * they stand right now.
    *
    * `load()` is included because the shop and the employee list feed the
-   * grid itself — changing somebody's name or hours has to show there too.
+   * grid itself - changing somebody's name or hours has to show there too.
    */
   const [rechecking, setRechecking] = useState(false);
   const recheck = async () => {
@@ -459,7 +459,7 @@ export default function RosterView() {
       }
       // A week that breaks rules can still be approved, by somebody who
       // proves who they are. A week that breaks the HARD floor cannot, and
-      // that refusal must not offer a password box — implying the right
+      // that refusal must not offer a password box - implying the right
       // credentials would help would be a lie.
       if (err.response?.status === 409 && detail?.needs_force) {
         setForceOpen(true);
@@ -476,7 +476,7 @@ export default function RosterView() {
   /** Behind the disabled buttons, in case one of these is ever reached another way. */
   const requireApproved = () => {
     if (approved) return true;
-    toast.error("Approve the roster first — then it can be emailed, downloaded or printed.");
+    toast.error("Approve the roster first - then it can be emailed, downloaded or printed.");
     return false;
   };
 
@@ -527,7 +527,7 @@ export default function RosterView() {
    * the 12h absolute maximum the server enforces.
    *
    * This was hardcoded to 11, which refused anything longer no matter what
-   * the shop had set — a manager who set 12 in Shop Settings watched an
+   * the shop had set - a manager who set 12 in Shop Settings watched an
    * 11.5h shift bounce with a message naming a limit they had already
    * changed. 11 also looks like it came from the 11-hour rest entitlement,
    * which is a different quantity: 11 hours off implies up to 13 worked.
@@ -540,7 +540,7 @@ export default function RosterView() {
     if (payload && shiftHours(payload.start, payload.end) > maxShiftHours + 0.01) {
       const length = shiftHours(payload.start, payload.end);
       toast.error(
-        `That shift is ${length.toFixed(1)}h — over this shop's ${maxShiftHours}h maximum. `
+        `That shift is ${length.toFixed(1)}h, over this shop's ${maxShiftHours}h maximum. `
         + "Change it in Shop Settings if it should be longer.",
       );
       return;
@@ -558,7 +558,7 @@ export default function RosterView() {
       setEditShift(null);
       toast.success(payload ? "Shift saved" : "Shift removed");
       // Things the edit is allowed to do but you probably want to know about
-      // — over contract, outside someone's availability, an unusual shift.
+      // - over contract, outside someone's availability, an unusual shift.
       (r.data.edit_warnings || []).slice(0, 3).forEach((w) => toast.warning(w));
     } catch (err) {
       // errorMessage flattens a validation response into a sentence. Passing
@@ -576,12 +576,12 @@ export default function RosterView() {
    * It used to refuse with "that slot already has a shift", which was the
    * wrong answer to the commonest reason for dragging in the first place:
    * two people trading shifts. The manager then had to move one out to an
-   * empty cell, move the other across, and move the first back — three drags
+   * empty cell, move the other across, and move the first back - three drags
    * and an intermediate roster that broke the rules, to express one decision.
    *
    * A shift is identified here by (employee, day) rather than by shift_id.
-   * Both work today — the server stamps a shift_id on every path that creates
-   * one — so this is not fixing a bug. It is the pairing the rest of the
+   * Both work today - the server stamps a shift_id on every path that creates
+   * one - so this is not fixing a bug. It is the pairing the rest of the
    * codebase already treats as a shift's identity: the validator refuses two
    * rows sharing one, and corrections.diff_roster keys on it. Using the same
    * identity here means the swap cannot produce a roster those two would
@@ -627,7 +627,7 @@ export default function RosterView() {
           ? `Swapped ${empMap[shift.employee_id]?.name || "them"} and ${empMap[toEmpId]?.name || "them"}`
           : "Shift moved"
       );
-      // Warnings, not refusals — a swap can leave somebody short of their
+      // Warnings, not refusals - a swap can leave somebody short of their
       // rest gap, and the manager may know something the app does not. It is
       // approval that refuses (compliance.py), not the edit.
       (r.data.edit_warnings || []).slice(0, 3).forEach((w) => toast.warning(w));
@@ -727,7 +727,7 @@ export default function RosterView() {
   //
   // Every one of these comes from something already computed on this page:
   // the roster document, or the live audit. Nothing here is invented, and
-  // nothing that used to be shown has been dropped — the panels below are
+  // nothing that used to be shown has been dropped - the panels below are
   // the same lists the stacked version had, reached by tab instead of by
   // scrolling past all of them.
   const critical = roster?.critical_issues || [];
@@ -765,7 +765,7 @@ export default function RosterView() {
       severity: "warn",
       title: u.name,
       delta: `${u.short_hours}h short`,
-      body: `${u.rostered_hours}h against a ${u.contracted_hours}h contract — they are owed the difference.`,
+      body: `${u.rostered_hours}h against a ${u.contracted_hours}h contract, they are owed the difference.`,
       employeeId: u.employee_id,
     })),
     ...confirmations.map((c, i) => ({
@@ -773,7 +773,7 @@ export default function RosterView() {
       severity: "warn",
       title: `${empMap[c.employee_id]?.name || "Someone"} · ${DAY_SHORT[c.day]}`,
       delta: "please confirm",
-      body: `${c.start}–${c.end} — ${c.message}`,
+      body: `${c.start}–${c.end}, ${c.message}`,
       employeeId: c.employee_id,
     })),
     ...inactiveRules.map((title, i) => ({
@@ -794,7 +794,7 @@ export default function RosterView() {
     { key: "usual", label: "Against the usual", count: staffing.length },
   ];
 
-  /** Which fill a shift gets. Colour never carries this alone — the meta
+  /** Which fill a shift gets. Colour never carries this alone - the meta
    *  line under the time says "fixed", "pinned", "extra" or "night" too. */
   const cellKind = (s) => {
     if (!s) return "empty";
@@ -817,7 +817,7 @@ export default function RosterView() {
   const leaveLabel = (s) =>
     s.paid_holiday ? "Holiday" : s.unpaid_holiday ? "Unpaid" : "Sick";
 
-  /** The click behaviour is unchanged from the previous layout — an
+  /** The click behaviour is unchanged from the previous layout - an
    *  approved week only accepts a sick report, everything else asks you
    *  to reopen it first. */
   const onCell = (s, employee, day, isLeaveCell) => {
@@ -852,15 +852,15 @@ export default function RosterView() {
 
   const cellTitle = (s, isLeaveCell, confirm) =>
     roster.approved
-      ? (s?.sick ? "Marked sick — click to undo"
-        : s && !isLeaveCell && s.start ? "Approved — click to report sick and arrange cover"
-          : "Approved — unapprove the week to edit it")
-      : isLeaveCell ? "Booked leave — change it on the Holidays page"
-        : s?.pinned ? "Pinned — kept when you rebalance"
-          : confirm ? "Unfamiliar shift — please confirm" : undefined;
+      ? (s?.sick ? "Marked sick, click to undo"
+        : s && !isLeaveCell && s.start ? "Approved, click to report sick and arrange cover"
+          : "Approved, unapprove the week to edit it")
+      : isLeaveCell ? "Booked leave, change it on the Holidays page"
+        : s?.pinned ? "Pinned, kept when you rebalance"
+          : confirm ? "Unfamiliar shift, please confirm" : undefined;
 
   // "Pinned only" narrows to the people who actually have a fixed or
-  // pinned shift this week — the ones whose week is already decided.
+  // pinned shift this week - the ones whose week is already decided.
   const gridPeople = pinnedOnly
     ? gridEmployees.filter((e) =>
         (roster?.shifts || []).some((s) => s.employee_id === e.employee_id && (s.pinned || s.fixed)))
@@ -883,7 +883,7 @@ export default function RosterView() {
             <div className="wr-panel-label">AGAINST THE USUAL</div>
           </div>
           {staffing.length === 0 ? (
-            <div className="wr-panel-empty">Nothing to look at here — this week runs like the shop usually does.</div>
+            <div className="wr-panel-empty">Nothing to look at here, this week runs like the shop usually does.</div>
           ) : (
             <div className="wr-items">
               {staffing.map((note, i) => (
@@ -899,7 +899,7 @@ export default function RosterView() {
             {audit?.seasonal_weeks > 0
               ? " The same week last year is included."
               : " There is under a year of history, so nothing here knows about Christmas yet."}
-            {" "}Nothing here blocks approval — if you have decided to run leaner, keep rostering
+            {" "}Nothing here blocks approval, if you have decided to run leaner, keep rostering
             it this way and the shop's usual will follow within a few months.
           </p>
         </div>
@@ -937,7 +937,7 @@ export default function RosterView() {
           )}
           <p className="wr-panel-say">
             What the generator did while building the week, and anyone it could not use.
-            Background information — none of it blocks approval.
+            Background information, none of it blocks approval.
           </p>
         </div>
       );
@@ -950,7 +950,7 @@ export default function RosterView() {
             <div className="wr-panel-label">FROM YOUR EDITS</div>
           </div>
           {editWarnings.length === 0 ? (
-            <div className="wr-panel-empty">Nothing to look at here — you have not edited this week.</div>
+            <div className="wr-panel-empty">Nothing to look at here, you have not edited this week.</div>
           ) : (
             <div className="wr-items">
               {editWarnings.map((w, i) => (
@@ -1024,10 +1024,10 @@ export default function RosterView() {
             : approvalBreaches.length > 0
               ? "These rules must be resolved before normal approval. Only overridable breaches can be approved with a recorded password confirmation."
             : attention.length === 0
-            ? "Nothing needs a decision — this week is ready to approve."
+            ? "Nothing needs a decision, this week is ready to approve."
             : blocking
               ? `${critical.length} of these leave nobody in the shop. Add staff, extend someone's hours, or adjust leave before approving.`
-              : `Nothing here blocks approval — ${underContract.length} ${underContract.length === 1 ? "person is" : "people are"} owed hours${inactiveRules.length ? `, ${inactiveRules.length} ${inactiveRules.length === 1 ? "rule" : "rules"} could not be read` : ""}.`}
+              : `Nothing here blocks approval, ${underContract.length} ${underContract.length === 1 ? "person is" : "people are"} owed hours${inactiveRules.length ? `, ${inactiveRules.length} ${inactiveRules.length === 1 ? "rule" : "rules"} could not be read` : ""}.`}
         </p>
       </div>
     );
@@ -1048,7 +1048,7 @@ export default function RosterView() {
                 {roster.approved
                   ? `Signed off ${fmtApproved(roster.approved_at)}`
                   : attempts >= 3 && pinnedCount === 0
-                    ? `Draft ${attempts} of this week — edit a shift and rebalance rather than regenerating`
+                    ? `Draft ${attempts} of this week, edit a shift and rebalance rather than regenerating`
                     : "Not approved yet"}
               </span>
             </div>
@@ -1087,7 +1087,7 @@ export default function RosterView() {
                   data-testid="btn-extra"
                   onClick={() => setExtraOpen(true)}
                   className="wr-btn wr-btn-2"
-                  title="Roster somebody on top of the normal cover — a delivery, a renovation, an unusually busy day"
+                  title="Roster somebody on top of the normal cover, a delivery, a renovation, an unusually busy day"
                 >
                   <UserPlus size={14} /> Add extra
                 </button>
@@ -1166,7 +1166,7 @@ export default function RosterView() {
 
       {!roster ? (
         <div className="wr-empty no-print">
-          No roster for this week yet — press {pinnedCount > 0 ? "Rebalance" : "Generate"} to build one.
+          No roster for this week yet, press {pinnedCount > 0 ? "Rebalance" : "Generate"} to build one.
         </div>
       ) : (
         <>
@@ -1272,7 +1272,7 @@ export default function RosterView() {
                           disabled={generating}
                           className="wr-daylink wr-daylink-mute"
                           onClick={() => generate(true, d)}
-                          title={`Re-solve ${DAY_LABELS[d]} only — every other day stays exactly as it is`}
+                          title={`Re-solve ${DAY_LABELS[d]} only, every other day stays exactly as it is`}
                         >
                           rebalance day
                         </button>
@@ -1365,7 +1365,7 @@ export default function RosterView() {
                           data-confirm={Boolean(confirm)}
                           aria-label={name}
                           title={external && !s
-                            ? `Already working in ${external.department} — cannot be rostered here`
+                            ? `Already working in ${external.department}, cannot be rostered here`
                             : cellTitle(s, isLeaveCell, confirm)}
                           draggable={!!s && !isLeaveCell}
                           onDragStart={() => s && !isLeaveCell && setDragging(s)}
@@ -1571,11 +1571,11 @@ export default function RosterView() {
           )}
 
           <p className="wr-note no-print">
-            <strong>An approved week is read-only</strong> — reopening it starts a new draft and stops
+            <strong>An approved week is read-only</strong>, reopening it starts a new draft and stops
             the week counting towards what the scheduler has learned. The one exception is somebody
             calling in sick, which an approved week accepts directly. The three shades of the
-            accent mark where a shift came from — <strong>the brightest is a fixed template</strong>,
-            the mid tone was placed by the solver, the darkest is unsocial hours — and a bordered cell
+            accent mark where a shift came from, <strong>the brightest is a fixed template</strong>,
+            the mid tone was placed by the solver, the darkest is unsocial hours, and a bordered cell
             is booked leave. The label under each time says which, so the colour is never doing the
             work alone. <strong>Dashed cells are open slots</strong>: click one to fill it.
           </p>
@@ -1611,7 +1611,7 @@ export default function RosterView() {
         />
       )}
 
-      {/* Always rendered, never visible on screen — the print stylesheet
+      {/* Always rendered, never visible on screen - the print stylesheet
           hides the interactive grid and shows this instead. Rendering it
           only on demand would mean the browser printing before React had
           laid it out. */}
@@ -1787,7 +1787,7 @@ function RefusedModal({ message, reasons, onClose }) {
  *
  * The solver leaves a slot blank rather than give it to somebody unsuitable.
  * This shows the ranked alternatives and states plainly what is wrong with
- * each — the manager still decides, but without holding two dozen people's
+ * each - the manager still decides, but without holding two dozen people's
  * constraints in their head.
  */
 function SuggestionModal({ rosterId, day, gaps, onClose }) {
@@ -1860,7 +1860,7 @@ function SuggestionModal({ rosterId, day, gaps, onClose }) {
  * The list is never empty while anybody could physically do it. People who
  * can cover cleanly come first; below them, people who can only cover by
  * breaking something, each labelled with what it costs. That is the choice a
- * manager actually faces at 6am — not "covered or uncovered" but "which rule
+ * manager actually faces at 6am - not "covered or uncovered" but "which rule
  * do I bend, and who do I ask".
  */
 function SickCoverModal({ rosterId, shift, onClose, onDone }) {
@@ -1894,8 +1894,8 @@ function SickCoverModal({ rosterId, shift, onClose, onDone }) {
       });
       toast.success(
         data.covered_by
-          ? `Marked sick — ${data.covered_by} is covering`
-          : "Marked sick — the shift is now uncovered",
+          ? `Marked sick, ${data.covered_by} is covering`
+          : "Marked sick, the shift is now uncovered",
       );
       onDone();
     } catch (err) {
@@ -1911,13 +1911,13 @@ function SickCoverModal({ rosterId, shift, onClose, onDone }) {
       </div>
       <p className="text-[13px] mb-4" style={{ color: "var(--ink-secondary)" }}>
         {DAY_LABELS[shift.day]} <span className="font-mono">{shift.start}–{shift.end}</span>.
-        The week stays approved — only this shift changes.
+        The week stays approved, only this shift changes.
       </p>
 
       <input
         value={reason}
         onChange={(e) => setReason(e.target.value)}
-        placeholder="Reason (optional) — e.g. Flu"
+        placeholder="Reason (optional), e.g. Flu"
         className="w-full px-3 py-2 rounded-lg text-sm mb-4"
       />
 
@@ -1974,7 +1974,7 @@ function SickCoverModal({ rosterId, shift, onClose, onDone }) {
 
           {options.candidates.length === 0 && (
             <p className="text-[13px] py-3" style={{ color: "var(--ink-mute)" }}>
-              Nobody can take this shift — everyone is either on leave, already
+              Nobody can take this shift, everyone is either on leave, already
               working those hours, or under 16 and curfew-bound.
             </p>
           )}
@@ -2022,7 +2022,7 @@ function UndoSickModal({ rosterId, shift, onClose, onDone }) {
       });
       toast.success(
         data.cover_removed
-          ? "Sick call removed — the cover shift has been taken off too"
+          ? "Sick call removed, the cover shift has been taken off too"
           : "Sick call removed",
       );
       onDone();
@@ -2087,7 +2087,7 @@ const LEAVE_LABELS = {
  * Deliberately only edits WORK shifts. Leave is booked on the Holidays page,
  * which checks the balance before allowing it, prices the day correctly and
  * writes a holiday record. The same three tick-boxes used to live here too
- * and wrote the flag straight onto the shift — bypassing all of that, so
+ * and wrote the flag straight onto the shift - bypassing all of that, so
  * somebody could be marked down for paid holiday they had not earned.
  *
  * Two ways to record the same fact is one way too many when one of them
@@ -2117,7 +2117,7 @@ function ShiftModal({ shift, employee, onClose, onSave, onDelete, onUnpin, isNew
 
         {leaveKind ? (
           /* Booked leave. Read-only here so the roster and the holiday
-             record cannot disagree — changing it means changing the
+             record cannot disagree - changing it means changing the
              booking, which lives on the Holidays page. */
           <>
             <div className="card-soft p-4 text-[13px]" style={{ color: "var(--ink-secondary)" }}>
@@ -2167,7 +2167,7 @@ function ShiftModal({ shift, employee, onClose, onSave, onDelete, onUnpin, isNew
             ) : (
               <p className="text-[11px] mt-3" style={{ color: "var(--ink-mute-2)" }}>
                 Saving a change pins this shift, so a rebalance keeps it.
-                Booking time off? Use the Holidays page — it checks the
+                Booking time off? Use the Holidays page, it checks the
                 balance and records whether the day is paid.
               </p>
             )}
@@ -2204,7 +2204,7 @@ function ShiftModal({ shift, employee, onClose, onSave, onDelete, onUnpin, isNew
 function DispatchModal({ roster, emps, observers = [], onClose, onSend, sending, result }) {
   // Everyone who will actually receive something. The modal used to count
   // only the STAFF, so a shop with a recipient configured was told "Send 2
-  // emails" and then sent three — and with nobody configured there was no
+  // emails" and then sent three - and with nobody configured there was no
   // way to tell from this screen whether the feature existed at all. That is
   // what made an absent attachment look like a broken feature.
   const total = emps.length + observers.length;
@@ -2332,8 +2332,8 @@ function DispatchModal({ roster, emps, observers = [], onClose, onSend, sending,
  * pins. Choosing "Add extra" means something genuinely different, and the two
  * should not look like the same gesture.
  *
- * The hours are real — they count against the weekly cap, the contract and
- * the five-day limit — and the legal limits still apply. The server refuses
+ * The hours are real - they count against the weekly cap, the contract and
+ * the five-day limit - and the legal limits still apply. The server refuses
  * with named reasons rather than this form guessing at them, because it is
  * the only place that can see the whole week.
  */
@@ -2359,7 +2359,7 @@ function ExtraStaffModal({ rosterId, employees, week, onClose, onDone }) {
         employee_id: employeeId, day, start, end, reason,
       });
       toast.success(
-        `${person?.name} added on ${DAY_LABELS[day]} — on top of the usual cover`,
+        `${person?.name} added on ${DAY_LABELS[day]}, on top of the usual cover`,
       );
       onDone();
     } catch (err) {
@@ -2469,7 +2469,7 @@ function ExtraStaffModal({ rosterId, employees, week, onClose, onDone }) {
 
         <div className="card-soft p-3 mt-4 text-[11px]" style={{ color: "var(--ink-mute)" }}>
           {hours > 0
-            ? `${hours.toFixed(1)}h — counts towards their weekly hours, their contract and the five-day limit.`
+            ? `${hours.toFixed(1)}h, counts towards their weekly hours, their contract and the five-day limit.`
             : "Finish must be after the start."}
           {" "}Kept when you rebalance.
         </div>
@@ -2499,7 +2499,7 @@ function ExtraStaffModal({ rosterId, employees, week, onClose, onDone }) {
  * other.
  *
  * It replaces a browser prompt() that took a number and then scaled by
- * 1/pages — which meant "1 page" applied no compression at all and printed
+ * 1/pages - which meant "1 page" applied no compression at all and printed
  * exactly as many sheets as it always had.
  */
 function PrintDialog({ value, onChange, people, onClose }) {
@@ -2512,7 +2512,7 @@ function PrintDialog({ value, onChange, people, onClose }) {
   const options = [
     { pages: 1, label: "One sheet", hint: "Everything on a single page" },
     { pages: 2, label: "Two sheets", hint: "Larger type, easier to read" },
-    { pages: 3, label: "Three sheets", hint: "Largest — for a noticeboard" },
+    { pages: 3, label: "Three sheets", hint: "Largest, for a noticeboard" },
   ];
 
   return (
@@ -2581,7 +2581,7 @@ function PrintDialog({ value, onChange, people, onClose }) {
 /**
  * Why this person's name is highlighted.
  *
- * Named numbers, not rule names. "Rostered 48h against a 44h limit — 4h over"
+ * Named numbers, not rule names. "Rostered 48h against a 44h limit - 4h over"
  * tells a manager what to change; "weekly_hours_exceeded" makes them go and
  * look it up. The sentences come from the server, which is the only place
  * that can see the whole week.
@@ -2623,7 +2623,7 @@ function BreachModal({ person, onClose }) {
         </div>
 
         <p className="text-[11px] mt-5" style={{ color: "var(--ink-mute-2)" }}>
-          You can leave these as they are — the roster saves either way.
+          You can leave these as they are, the roster saves either way.
           Approving the week is what needs them fixed, or deliberately
           overridden.
         </p>

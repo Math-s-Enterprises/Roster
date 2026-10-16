@@ -6,7 +6,7 @@
 
 Employees are identified by name alone now. The prototype assigned each new
 starter one of four stock Unsplash portraits on a rotating index, so a fifth
-employee wore the same stranger's face as the first — actively misleading on
+employee wore the same stranger's face as the first - actively misleading on
 a roster grid, where the picture is what the eye lands on first.
 
 The field is gone from the API and the UI; this clears it out of documents
@@ -46,7 +46,7 @@ async def _shops_for(email: Optional[str]) -> List[Dict[str, Any]]:
                 print(f"  {account.get('email')}")
             print("\nOr drop --email to clean every shop at once.")
         else:
-            print("\nThis database has no accounts at all — check MONGO_URL "
+            print("\nThis database has no accounts at all - check MONGO_URL "
                   "in backend/.env points at the right server.")
         sys.exit(1)
 
@@ -84,11 +84,11 @@ async def run(email: Optional[str], commit: bool) -> None:
             total += len(affected)
 
     if total == 0:
-        print("\nNothing to clear — already done.")
+        print("\nNothing to clear - already done.")
     elif commit:
         print(f"\nCleared the avatar field from {total} employee(s).")
     else:
-        print(f"\nDRY RUN — {total} record(s) would be cleared. "
+        print(f"\nDRY RUN - {total} record(s) would be cleared. "
               "Re-run with --commit to apply.")
 
 

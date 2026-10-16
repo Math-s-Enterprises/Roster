@@ -1,4 +1,4 @@
-# Scheduler audit — 9 September 2026
+# Scheduler audit - 9 September 2026
 
 **Status update:** both confirmed defects below were repaired in `30a47cf` and merged through PR #3 (`bf667f6`). The findings and reproductions below describe the pre-repair code. See [the work queue](WORK_QUEUE.md) for post-repair validation and remaining work.
 

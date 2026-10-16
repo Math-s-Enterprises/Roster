@@ -5,7 +5,7 @@
 "Check pay and ages" is judged by comparing three fields against what the
 importer writes when a spreadsheet does not say. That has an obvious failure:
 somebody who really is 25, really is on the default rate and really does work
-40 hours looks identical to a record nobody has touched — so the step can
+40 hours looks identical to a record nobody has touched - so the step can
 never be ticked, however many times it is edited.
 
 This prints the actual values so the difference is visible.
@@ -41,7 +41,7 @@ async def run(email: str) -> None:
     team = [e for e in employees if not e.get("past_staff")]
     active = [e for e in team if avail.is_active(e)]
 
-    print(f"\n{shop['name']} — {len(active)} active staff")
+    print(f"\n{shop['name']} - {len(active)} active staff")
     print(f"the checklist calls somebody a placeholder when ALL THREE match:")
     print(f"  rate {IMPORT_DEFAULT_RATE}  ·  age {IMPORT_DEFAULT_AGE}  "
           f"·  max hours {IMPORT_DEFAULT_MAX_HOURS}\n")
@@ -49,7 +49,7 @@ async def run(email: str) -> None:
     flagged = [e for e in active if _on_import_defaults(e)]
     if not flagged:
         print("Nobody is flagged. If the checklist still says otherwise, the")
-        print("running app is on older code — restart it.")
+        print("running app is on older code - restart it.")
         return
 
     print(f"  {'name':18}{'rate':>8}{'age':>6}{'max/wk':>9}   provenance")
@@ -65,7 +65,7 @@ async def run(email: str) -> None:
               f"   {'confirmed' if touched else 'never confirmed'}")
 
     print(f"\n{len(flagged)} flagged. If any of these values are genuinely")
-    print("correct, the current check cannot tell — which is the bug.")
+    print("correct, the current check cannot tell - which is the bug.")
 
 
 def main() -> None:

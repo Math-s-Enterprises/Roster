@@ -1,13 +1,13 @@
 """A leave entry can be corrected in place.
 
 Until now the only way to fix a mistyped date was to delete the booking and
-add it again. That is fine until somebody deletes the wrong row — which is
+add it again. That is fine until somebody deletes the wrong row - which is
 why the redesigned Holidays page drops the one-click trash icon from every
 row and puts Edit there instead, with delete inside the form.
 
 Editing needs an update endpoint, so this covers it: the correction lands,
-the entry keeps its id, the same validation applies as on create, and — the
-one that is easy to get wrong — saving without changing anything succeeds.
+the entry keeps its id, the same validation applies as on create, and - the
+one that is easy to get wrong - saving without changing anything succeeds.
 """
 from tests.test_api import EMPLOYEE, auth, register
 
@@ -48,7 +48,7 @@ def test_saving_without_changing_anything_succeeds(client):
     """The commonest way to leave an edit dialog.
 
     `update_one` reports how many documents it CHANGED, so a no-op save
-    modifies nothing — and treating that as "not found" would 404 an entry
+    modifies nothing - and treating that as "not found" would 404 an entry
     that is plainly there.
     """
     token = register(client)

@@ -94,7 +94,7 @@ export function ConsentCheckbox({ checked, onChange }) {
 export function LegalNote({ signup = false }) {
   return (
     <>
-      <p className="si-note">Staff do not sign in — they get their roster by email.</p>
+      <p className="si-note">Staff do not sign in - they get their roster by email.</p>
       {!signup && (
         <p className="legal-note">
           Signing in or continuing with Google means you accept the{" "}

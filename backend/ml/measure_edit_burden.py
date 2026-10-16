@@ -15,7 +15,7 @@ measurable as two numbers, and both must fall:
                                     feature existed.
 
 This script is the baseline. Run it before changing anything, and again
-afterwards — the same discipline that settled the 11-hour rest rule, which
+afterwards - the same discipline that settled the 11-hour rest rule, which
 was checked against 2009 real shift pairs before becoming a constraint.
 
 A NOTE ON HONESTY
@@ -86,7 +86,7 @@ async def main(shop_id: str | None, since: str | None,
 
     if not rosters:
         print("No generated rosters found" + (f" since {since}." if since else "."))
-        print("Check the shop id — this is not the same as 'nothing to measure'.")
+        print("Check the shop id - this is not the same as 'nothing to measure'.")
         return 1
 
     by_week: dict[str, list[dict]] = defaultdict(list)
@@ -105,7 +105,7 @@ async def main(shop_id: str | None, since: str | None,
           f"{len(by_week) - len(approved_weeks)}\n")
 
     if not approved_weeks:
-        print("Nothing approved yet — no baseline to measure.")
+        print("Nothing approved yet - no baseline to measure.")
         return 0
 
     # ---- generations per approved week ---------------------------------
@@ -133,7 +133,7 @@ async def main(shop_id: str | None, since: str | None,
     if not measurable:
         print("  Not measurable yet. Rosters only record what the manager")
         print("  changed if they were generated after the snapshot feature")
-        print("  existed — approve a freshly generated week and re-run.")
+        print("  existed - approve a freshly generated week and re-run.")
     else:
         edits = sorted(r.get("edit_count", 0) for r in measurable)
         print(f"  median {statistics.median(edits):.1f}"

@@ -15,7 +15,7 @@ import { useSonner } from "sonner";
  *
  * The app shows about 130 pop-ups from 16 files, each by calling sonner's
  * `toast`. Rather than change every call, <Recorder> listens through sonner's
- * own `useSonner` hook, which is handed every toast as it is created —
+ * own `useSonner` hook, which is handed every toast as it is created -
  * success, error, warning and the plain, untyped kind alike. A new page that
  * calls `toast` is recorded with no extra work.
  *

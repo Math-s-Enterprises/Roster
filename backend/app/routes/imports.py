@@ -1,9 +1,9 @@
-"""Upload historical rosters — spreadsheet, PDF or photo.
+"""Upload historical rosters - spreadsheet, PDF or photo.
 
 Deliberately two-phase. An upload is parsed and stored for review; nothing
 reaches the roster history until it is explicitly confirmed. Rosters read
 from a photo are a model's best guess, and quietly importing an approximation
-of a shop's history would poison the very data the scheduler learns from — in
+of a shop's history would poison the very data the scheduler learns from - in
 a way that is close to impossible to detect later.
 """
 import logging
@@ -29,13 +29,13 @@ DEFAULT_RATE = 13.0
 DEFAULT_MAX_WEEKLY_HOURS = 40.0
 DEFAULT_AGE = 25
 
-"""Roles are resolved against the shop's own ladder — see hierarchy.match_role.
+"""Roles are resolved against the shop's own ladder - see hierarchy.match_role.
 
 There used to be a ROLE_MAP here that rewrote sheet titles onto a fixed
 vocabulary: every kind of manager became "Manager", and both "Night Shift"
 and "Goods Inwards" became "Stocker". It consulted nothing about the shop, so
 a manager who had configured their real job titles during setup got them
-silently replaced by roles they had never chosen — and five distinct rungs of
+silently replaced by roles they had never chosen - and five distinct rungs of
 the hierarchy collapsed into one, destroying the seniority order the
 scheduler allocates hours by.
 """
@@ -76,8 +76,8 @@ def _map_role(raw: Optional[str], shop: Optional[Dict[str, Any]] = None) -> str:
 # Imported staff are created with no email, because a roster spreadsheet does
 # not contain one. There used to be a _placeholder_email() here inventing
 # "jane@imported.shop_645.local", which failed EmployeeIn's own validator
-# twice over — an underscore is illegal in a domain, and ".local" is a
-# reserved name — so imported staff could never afterwards be edited.
+# twice over - an underscore is illegal in a domain, and ".local" is a
+# reserved name - so imported staff could never afterwards be edited.
 #
 # Dispatch reports anyone without an address instead of appearing to send.
 
@@ -131,7 +131,7 @@ async def upload_roster_file(
 
     usable = [w for w in result.weeks if w.is_usable]
     if not usable:
-        # Distinguish "unreadable" from "read fine, but undated" — the second
+        # Distinguish "unreadable" from "read fine, but undated" - the second
         # is fixable by the user in one step, and saying so saves them
         # concluding the file is unsupported.
         undated = [w for w in result.weeks if w.shifts and not w.week_start]
@@ -236,7 +236,7 @@ async def upload_roster_file(
 async def import_capabilities():
     """Which upload formats this deployment can actually read.
 
-    Spreadsheets and CSV are always available — they are parsed in-process.
+    Spreadsheets and CSV are always available - they are parsed in-process.
     PDFs additionally need `pymupdf` to rasterise pages, and both PDFs and
     photos need an LLM key to read the resulting image.
 
@@ -413,7 +413,7 @@ async def commit_import(
     }
 
     # Leavers named by the manager. Their shifts are kept and their record is
-    # created, because a shift must have an owner — but the record is flagged
+    # created, because a shift must have an owner - but the record is flagged
     # so it never reaches the staff list or the solver. Dropping them instead
     # would make thirty weeks of history show a thinner shop than really
     # worked, and the solver copies the staffing it is shown.
@@ -555,7 +555,7 @@ async def remove_imported_week(roster_id: str, scope: ShopScope = CurrentScope):
     unapproving a finished week is refused.
 
     An imported week is not that. It is data the manager loaded, and loading
-    the wrong file — the wrong sheet, a misread photo, somebody else's shop —
+    the wrong file - the wrong sheet, a misread photo, somebody else's shop -
     is an ordinary mistake with no way to spot it later except by looking at
     the rosters it produces. Without this it would be permanent.
 
@@ -625,7 +625,7 @@ async def list_removed_weeks(
     """Weeks taken out of the history that the source upload can still put back.
 
     Computed by checking each noted removal against what is in the history
-    now, rather than trusting the note alone — a week re-imported by
+    now, rather than trusting the note alone - a week re-imported by
     re-uploading the file must stop being offered here.
     """
     requested_department = department
@@ -671,7 +671,7 @@ async def restore_removed_week(
 
     Re-uploading the same file already works and skips whatever is present,
     so this exists for the case that one cannot cover: the file is gone. The
-    parsed week never left the database — only the roster built from it did.
+    parsed week never left the database - only the roster built from it did.
 
     Names are resolved against the current employee list. Anybody who was
     created by the original import is still there, so in practice this maps

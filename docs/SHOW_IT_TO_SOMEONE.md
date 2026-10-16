@@ -1,6 +1,6 @@
 # Letting somebody else look at your local copy
 
-For "have a look at what I've built" — not for a customer, and not for
+For "have a look at what I've built" - not for a customer, and not for
 anything that has to stay up. Two public URLs pointing at your laptop, alive
 only while the terminals are open.
 
@@ -17,7 +17,7 @@ dies. Sleep the laptop, the link dies.
 The link is public: anyone who has it reaches your **login page**. The data
 behind it is still behind a password, but the roster holds 25 real people's
 names, wages and dates of birth, so treat the URL as you would a key to the
-back office. Stop the tunnel when they are done — `Ctrl+C` is the whole
+back office. Stop the tunnel when they are done - `Ctrl+C` is the whole
 security model here.
 
 ---
@@ -32,7 +32,7 @@ No account, no signup. Free quick tunnels are exactly what this is for.
 
 ---
 
-## Every time — four terminals, in this order
+## Every time - four terminals, in this order
 
 The order matters: both servers need to know the tunnel URLs before they
 start, and the tunnels hand out a fresh random URL each run.
@@ -44,7 +44,7 @@ cloudflared tunnel --url http://localhost:8001
 ```
 
 Prints something like `https://tall-fox-runs.trycloudflare.com`. It will 502
-until step 3 — that is expected. **Copy the URL.**
+until step 3 - that is expected. **Copy the URL.**
 
 ### 2. Frontend tunnel
 
@@ -57,13 +57,13 @@ one you send your brother.** Copy it too.
 
 ### 3. Point the two at each other
 
-`backend\.env` — let the frontend's address through CORS:
+`backend\.env` - let the frontend's address through CORS:
 
 ```
 CORS_ORIGINS=http://localhost:3000,https://blue-lake-sings.trycloudflare.com
 ```
 
-`frontend\.env` — tell the browser where the API lives. It cannot stay
+`frontend\.env` - tell the browser where the API lives. It cannot stay
 `localhost`: the browser running this is on HIS machine, and localhost there
 is HIS computer, not yours.
 

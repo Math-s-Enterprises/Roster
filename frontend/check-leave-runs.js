@@ -14,13 +14,13 @@
  * Two rules, and both have already been got wrong once:
  *
  *   1. ADJACENT DAYS for one person join into a run. A gap breaks it, and a
- *      different person never joins it — merging people onto a shared row
+ *      different person never joins it - merging people onto a shared row
  *      was the first design and the 3a revision reversed it, because a row
  *      for four people has one Edit button and no answer to "whose booking
  *      is this".
  *
  *   2. PAY TYPE DOES NOT BREAK A RUN. Thirteen days off with four of them
- *      paid is ONE absence tagged "Holiday · 9 unpaid + 4 paid" — not three
+ *      paid is ONE absence tagged "Holiday · 9 unpaid + 4 paid" - not three
  *      bookings with gaps between them, which is what the first version
  *      produced and what 3a exists to fix. Sick is NOT folded in the same
  *      way: it is a different kind of absence, not a different way of
@@ -35,7 +35,7 @@
  * second, in the same spirit as check-css-vars.js: the cheapest thing that
  * would actually have caught the bug.
  *
- * Sabotage-checked — see the commit message for which change fails which
+ * Sabotage-checked - see the commit message for which change fails which
  * case.
  */
 const babel = require('@babel/core');
@@ -140,7 +140,7 @@ check('a gap breaks a run',
   [['2026-09-17', '2026-09-18', 2], ['2026-09-21', '2026-09-21', 1]]);
 
 // PAY TYPE DOES NOT BREAK A RUN. This assertion is the exact inverse of the
-// one it replaces — paid and unpaid used to be separate rows, and that is
+// one it replaces - paid and unpaid used to be separate rows, and that is
 // what made a thirteen-day holiday look like three bookings.
 check('paid and unpaid days form ONE absence',
   buildRuns([
@@ -167,7 +167,7 @@ check('an all-paid and an all-unpaid run are tagged plainly',
   ['Holiday · paid', 'Holiday · unpaid']);
 
 // Sick is a different KIND of absence, not a different way of paying for
-// one, so it is not folded in — "Holiday · 1 unpaid + 1 paid" would describe
+// one, so it is not folded in - "Holiday · 1 unpaid + 1 paid" would describe
 // neither half.
 check('a sick day next to a holiday stays its own row',
   buildRuns([
@@ -199,7 +199,7 @@ check('a run keeps its per-day detail for expanding',
 
 // The bug the shop owner reported: a one-day leave had Edit and a longer one
 // did not, because Edit was swapped out for "Show days" on any run made of
-// more than one record — which is every multi-day holiday, since the booking
+// more than one record - which is every multi-day holiday, since the booking
 // flow writes one record per day.
 check('a multi-day absence can still be edited',
   rowActions(buildRuns([
@@ -218,7 +218,7 @@ check('a range booked as one record has Edit and nothing to expand',
   { edit: true, expand: false });
 
 // Expanding a run shows one calendar week per row. Thirteen days as a
-// continuous strip reads as an unbroken ribbon — "Mon Tue Wed ... Mon Tue" —
+// continuous strip reads as an unbroken ribbon - "Mon Tue Wed ... Mon Tue" -
 // and hides where the weeks divide, which is how cover is thought about.
 const thirteenDays = buildRuns(
   Array.from({ length: 13 }, (_, i) =>

@@ -4,8 +4,8 @@ WHY
 ---
 The importer used to fabricate an address for staff read from a spreadsheet:
 "jane@imported.shop_645.local". It failed the app's own employee validation
-twice over — an underscore is illegal in a domain, and ".local" is a reserved
-name — so anyone imported could be created and then never edited. Opening one,
+twice over - an underscore is illegal in a domain, and ".local" is a reserved
+name - so anyone imported could be created and then never edited. Opening one,
 changing their pay and saving returned a validation error about an address the
 manager had never typed and could not see.
 
@@ -44,7 +44,7 @@ async def main(shop_id: str | None, commit: bool) -> int:
         scope["shop_id"] = shop_id.strip()
 
     # Every employee in scope, not just those with an address. Filtering in
-    # the query made "nothing to do" and "nobody here" print the same line —
+    # the query made "nothing to do" and "nobody here" print the same line -
     # "Checked 0 employee(s)" is equally true of a healthy shop and of a
     # mistyped shop id, which is exactly when you need to tell them apart.
     everyone = await db.employees.find(scope, {"_id": 0}).to_list(2000)
@@ -56,13 +56,13 @@ async def main(shop_id: str | None, commit: bool) -> int:
 
     if not everyone:
         print("No employees found" + (f" for {shop_id}." if shop_id else "."))
-        print("Check the shop id — this is not the same as 'nothing to fix'.")
+        print("Check the shop id - this is not the same as 'nothing to fix'.")
         return 1
 
     if not stale:
         print(
             f"{len(everyone)} employee(s) in scope, {len(with_address)} with an "
-            f"address. No invented ones found — nothing to do."
+            f"address. No invented ones found - nothing to do."
         )
         return 0
 
@@ -81,7 +81,7 @@ async def main(shop_id: str | None, commit: bool) -> int:
 
     if not commit:
         print("\n" + "=" * 62)
-        print("DRY RUN — nothing written. Re-run with --commit to apply.")
+        print("DRY RUN - nothing written. Re-run with --commit to apply.")
         print("=" * 62)
         return 0
 

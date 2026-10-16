@@ -5,16 +5,16 @@
 "The grid says 40 but the total says 60" has several possible causes and they
 are indistinguishable from the screen:
 
-  * two shifts stored for one person on one day — the grid draws one cell per
+  * two shifts stored for one person on one day - the grid draws one cell per
     person per day, so the second is invisible but counts in every total
   * a stored `paid_hours` that disagrees with the times on the shift, left
     behind by an edit that changed the times without recomputing
   * `breaks_are_paid` differing between whoever wrote the number and whoever
-    is reading it — a 10-hour shift is 10h or 9.5h depending on that flag
+    is reading it - a 10-hour shift is 10h or 9.5h depending on that flag
   * an overnight shift counted on both the day it starts and the day it ends
 
-So this prints every shift with BOTH numbers — what is stored, and what the
-times actually come to — and totals them separately. Wherever the two columns
+So this prints every shift with BOTH numbers - what is stored, and what the
+times actually come to - and totals them separately. Wherever the two columns
 diverge is the answer.
 """
 from __future__ import annotations
@@ -54,7 +54,7 @@ async def run(email: str, week: str, who: str) -> None:
     names = {e["employee_id"]: e.get("name", e["employee_id"]) for e in employees}
     breaks_paid = bool(shop.get("breaks_are_paid"))
 
-    print(f"\n{shop['name']} — week of {roster['week_start']} ({roster.get('version')})")
+    print(f"\n{shop['name']} - week of {roster['week_start']} ({roster.get('version')})")
     print(f"breaks_are_paid = {breaks_paid}")
     print(f"roster.total_hours = {roster.get('total_hours')}\n")
 
@@ -65,13 +65,13 @@ async def run(email: str, week: str, who: str) -> None:
     )
     doubled = {k: v for k, v in counted.items() if v > 1}
     if doubled:
-        print("!! SAME PERSON TWICE ON ONE DAY — invisible in the grid, "
+        print("!! SAME PERSON TWICE ON ONE DAY - invisible in the grid, "
               "counted in every total:")
         for (employee_id, day), count in doubled.items():
             print(f"     {names.get(employee_id, employee_id)} · {day} × {count}")
         print()
     else:
-        print("no duplicate (person, day) rows — the totals disagree for "
+        print("no duplicate (person, day) rows - the totals disagree for "
               "another reason\n")
 
     mine = {}
@@ -108,7 +108,7 @@ async def run(email: str, week: str, who: str) -> None:
         )
         # WHY a person gets no hours warning is usually this line, not a bug.
         # A contract band gives both a floor and a ceiling; an hourly cap
-        # gives only a ceiling, so "short by 4h" cannot exist for them —
+        # gives only a ceiling, so "short by 4h" cannot exist for them -
         # there is nothing they are short OF.
         from app.services import availability as avail
         kind = avail.employment_type(employee)
@@ -116,7 +116,7 @@ async def run(email: str, week: str, who: str) -> None:
         cap = avail.weekly_hour_cap(employee, roster["week_start"])
         print(f"  employment: {kind}"
               + (f"   contract band {band[0]:.1f}-{band[1]:.1f}h (span)"
-                 if band else f"   cap {cap:.1f}h (paid) — CEILING ONLY,"
+                 if band else f"   cap {cap:.1f}h (paid) - CEILING ONLY,"
                               f" so a short week is never flagged"))
         breaches = compliance.audit(
             roster.get("shifts", []), shop=shop, employees=[employee],

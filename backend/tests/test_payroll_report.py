@@ -2,7 +2,7 @@
 
 Every test here is about a number a manager would hand to payroll, so they
 assert exact figures rather than "greater than zero". A report that is
-plausible but wrong is worse than one that is obviously broken — it gets
+plausible but wrong is worse than one that is obviously broken - it gets
 believed.
 """
 import pytest
@@ -21,7 +21,7 @@ def employee(eid="e1", name="Jane", rate=13.0, **extra):
 
 
 def shift(eid="e1", day="mon", start="09:00", end="17:00", **extra):
-    """A stored shift as the solver writes it — 8h span, 30m break."""
+    """A stored shift as the solver writes it - 8h span, 30m break."""
     return {
         "employee_id": eid, "day": day, "start": start, "end": end,
         "span_hours": 8.0, "break_minutes": 30, "paid_hours": 7.5, **extra,
@@ -215,7 +215,7 @@ class TestContractVariance:
         """The reason this is weekly rather than a monthly average.
 
         38h then 47h averages to exactly the contracted 42.5. A monthly
-        figure would report a clean nil variance and say nothing at all —
+        figure would report a clean nil variance and say nothing at all -
         but the person was two-and-a-half hours short one week and four and
         a half over the next, which is two separate problems.
         """
@@ -229,7 +229,7 @@ class TestContractVariance:
         assert row["short_weeks"] == ["2026-03-02"], "the short week still shows"
 
     def test_a_partial_week_is_not_judged(self):
-        """Half a week is short by definition — flagging it cries wolf at
+        """Half a week is short by definition - flagging it cries wolf at
         every month boundary."""
         out = report(
             [self._week("2026-03-02", 8.5)],

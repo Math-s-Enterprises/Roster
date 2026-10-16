@@ -3,7 +3,7 @@
 `Number("")` is 0 in JavaScript, and the API rejects 0 for hours and rates
 with "Input should be greater than 0". A manager clearing the weekly-hours
 box therefore got a refusal that named no field, on a form with a dozen
-numbers on it — and reasonably concluded the app was broken rather than that
+numbers on it - and reasonably concluded the app was broken rather than that
 one box was empty.
 
 The form now omits a blank required number rather than sending 0, so the
@@ -11,7 +11,7 @@ model's own default stands. These tests pin the contract that relies on:
 the API must accept a payload with the field missing, and must still refuse
 a real zero.
 
-Optional numbers keep behaving as they did — blank means null, meaning "not
+Optional numbers keep behaving as they did - blank means null, meaning "not
 set", which is a different thing from zero and always was.
 """
 from tests.test_api import EMPLOYEE, auth, register

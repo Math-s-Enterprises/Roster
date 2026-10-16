@@ -3,14 +3,14 @@
 The balance has five inputs, and all five are needed to get it right:
 
     opening    what they carried in from whatever system the shop used
-               before — set once during import, never recalculated
+               before - set once during import, never recalculated
     accrued    earned from hours actually worked, at the statutory rate
     used       paid holiday taken, read from approved rosters
     booked     paid holiday reserved for dates not yet on an approved roster
     adjustments manual corrections, each with a reason and a timestamp
 
 Booking more paid holiday than someone has is blocked rather than warned
-about, because the alternative is discovering it at payroll — after the
+about, because the alternative is discovering it at payroll - after the
 person has already been told they are off and paid.
 """
 from __future__ import annotations
@@ -28,7 +28,7 @@ ACCRUAL_RATE = 0.1207
 
 
 def accrual_rate(shop: Optional[Dict[str, Any]] = None) -> float:
-    """Configurable per shop — jurisdictions and contracts differ."""
+    """Configurable per shop - jurisdictions and contracts differ."""
     if shop and shop.get("holiday_accrual_rate"):
         return float(shop["holiday_accrual_rate"])
     return ACCRUAL_RATE
@@ -88,7 +88,7 @@ def compute_balance(
     """Full breakdown for one employee.
 
     Returned as a breakdown rather than a single number so the UI can show
-    the working — an employee querying their balance wants to see where it
+    the working - an employee querying their balance wants to see where it
     came from, not be told to trust it.
     """
     from app.services.learning import latest_per_week

@@ -1,4 +1,4 @@
-"""Who is below their contracted hours — derived, and derived once.
+"""Who is below their contracted hours - derived, and derived once.
 
 Salaried hours are OWED. The payslip is the same whether somebody works 41
 or 42.5, so a short week is money the shop paid for and did not use, and the
@@ -10,7 +10,7 @@ DERIVED, NOT STORED (§5). The answer changes when the MANAGER changes a
 contract, not when the roster changes. It used to be computed inside the
 solver from state that only exists mid-generation, so raising somebody's
 contract left the roster page still reporting the figure from whenever the
-week was last generated — which is exactly the staleness the Re-check button
+week was last generated - which is exactly the staleness the Re-check button
 is for.
 
 ONE IMPLEMENTATION. The solver calls the same function the roster page does.
@@ -29,7 +29,7 @@ DAYS_OF = ["mon", "tue", "wed", "thu", "fri"]
 def full_timer(employee_id="e1", hours=40, **overrides):
     """A salaried contract written in hours ON THE FLOOR (§8).
 
-    `employment_type` is what decides this, not a job title or a rate —
+    `employment_type` is what decides this, not a job title or a rate -
     `contract_span_band` returns None for anything else, and an employee
     without it is silently never reported. The band is (hours - tolerance,
     hours), so a 40h contract has a 38.5h minimum by default.
@@ -70,7 +70,7 @@ class TestItReportsAShortWeek:
 
         assert len(result) == 1, (
             f"three 8-hour days against a 40h contract is 16h short and "
-            f"should be reported — got {result}"
+            f"should be reported - got {result}"
         )
         assert result[0]["rostered_hours"] == 24.0
         assert result[0]["short_hours"] > 0
@@ -90,7 +90,7 @@ class TestItReportsAShortWeek:
 class TestLeaveIsScopedToTheWeekBeingLooked_At:
     """The bug this replaced: the solver skipped anyone with ANY leave date
     on record, because the index it consulted holds every date the shop has
-    ever booked for them — not just this week's. Somebody with a holiday
+    ever booked for them - not just this week's. Somebody with a holiday
     booked in December was therefore never reported as under contract in
     August, silently, for the rest of the year.
 
@@ -117,7 +117,7 @@ class TestLeaveIsScopedToTheWeekBeingLooked_At:
         )
         assert len(result) == 1, (
             f"a holiday booked three months away says nothing about THIS "
-            f"week, and must not suppress the report — got {result}"
+            f"week, and must not suppress the report - got {result}"
         )
 
 
@@ -162,6 +162,6 @@ class TestTheSolverAndThePageAgree:
             == {(u["employee_id"], u["short_hours"]) for u in recomputed}
         ), (
             f"the solver stored {result['under_contract']} but the roster "
-            f"page would show {recomputed} — the same week cannot have two "
+            f"page would show {recomputed} - the same week cannot have two "
             f"answers"
         )

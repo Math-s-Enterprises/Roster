@@ -54,8 +54,8 @@ class TestFourKinds:
     def test_replacing_one_person_with_another_is_a_swap(self):
         """One decision about a slot, not two unrelated ones.
 
-        A swap says something about BOTH people — the manager preferred Jane
-        for these hours AND rejected Kelvin — which remove-plus-add loses.
+        A swap says something about BOTH people - the manager preferred Jane
+        for these hours AND rejected Kelvin - which remove-plus-add loses.
         """
         out = diff_roster(
             [shift("kelvin", "wed", "06:00", "14:00")],
@@ -78,7 +78,7 @@ class TestFourKinds:
 class TestNotASwap:
     def test_different_hours_on_the_same_day_are_separate_decisions(self):
         """Kelvin off the morning and Jane onto the evening is two changes,
-        not a swap — the manager did not choose Jane *for those hours*."""
+        not a swap - the manager did not choose Jane *for those hours*."""
         out = diff_roster(
             [shift("kelvin", "wed", "06:00", "14:00")],
             [shift("jane", "wed", "14:00", "22:00")],
@@ -163,7 +163,7 @@ class TestMissingData:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2 — reading the signal back
+# Phase 2 - reading the signal back
 # ---------------------------------------------------------------------------
 def _week(week_start, corrections_list, generated=True, generated_shifts=None):
     roster = {

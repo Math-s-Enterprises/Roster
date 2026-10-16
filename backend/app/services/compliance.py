@@ -2,21 +2,21 @@
 
 WHY THIS EXISTS SEPARATELY FROM roster_validation
 -------------------------------------------------
-`roster_validation` answers "may I save this edit?" — a question about one
+`roster_validation` answers "may I save this edit?" - a question about one
 change, asked while the manager is still working. It deliberately compares
 before against after, so a swap is not refused because of a problem it did not
 cause and cannot fix.
 
 This answers a different question: "is the finished week legal, and if not,
 what exactly is wrong and who does it affect?" It is asked once, at approval,
-over the whole roster, and its output is meant to be read by a person — a
+over the whole roster, and its output is meant to be read by a person - a
 name, a sentence, a number they can check against the contract.
 
 REFUSING WAS THE WRONG SHAPE
 ----------------------------
 Before this, an edit that broke a rule was simply blocked. That reads as the
 app knowing better than the manager, and it does not: a manager swapping two
-shifts at 6am has information the app cannot see — somebody swapped with a
+shifts at 6am has information the app cannot see - somebody swapped with a
 colleague, somebody offered to cover, somebody is going home early anyway.
 Blocking made the roster impossible to finish and taught people to avoid the
 edit screen.
@@ -29,14 +29,14 @@ THE TWO THAT ARE NEVER OVERRIDABLE
 ----------------------------------
 Everything here can be forced through except:
 
-  * `minor_curfew` — an under-16 outside 08:00-19:00. That is criminal law,
+  * `minor_curfew` - an under-16 outside 08:00-19:00. That is criminal law,
     not a company policy, and a signed-off record of it is discoverable.
-  * `double_booked` — one person in two places at once. Not a judgement call
+  * `double_booked` - one person in two places at once. Not a judgement call
     at all; it is a data error, and forcing it produces a roster that cannot
     physically happen.
 
-Everything else — contracted hours, weekly caps, six-day weeks, the rest gap,
-twelve-hour shifts, booked leave — is the manager's to override, because they
+Everything else - contracted hours, weekly caps, six-day weeks, the rest gap,
+twelve-hour shifts, booked leave - is the manager's to override, because they
 carry the consequence and the app does not.
 """
 from __future__ import annotations
@@ -226,12 +226,12 @@ def uncovered_hours(
     used to read that list back. It is a stored fact about a roster that has
     since changed: fill the gap by hand and the list still names it, so
     approval refuses a week that is actually covered and the manager has no
-    way to clear it. §5 — derive state, never store it. The compliance audit
+    way to clear it. §5 - derive state, never store it. The compliance audit
     beside this already recomputes from the shifts; this brings the coverage
     check into line.
 
     The SENTENCE the solver writes is still worth more, because it knows why
-    nobody could be placed — whose day off, what the capacity shortfall is.
+    nobody could be placed - whose day off, what the capacity shortfall is.
     That reasoning cannot be reconstructed here and is not the question being
     asked at approval, which is only: is anybody in the shop.
 
@@ -294,8 +294,8 @@ def audit(
 ) -> List[Dict[str, Any]]:
     """Every rule this week breaks, grouped by the person it affects.
 
-    Each breach carries a sentence a manager can act on — the number that is
-    wrong and the number it should be — rather than a rule name. "Rostered 48h
+    Each breach carries a sentence a manager can act on - the number that is
+    wrong and the number it should be - rather than a rule name. "Rostered 48h
     against a 44h cap" tells them what to change; "weekly_hours_exceeded" does
     not.
     """
@@ -371,8 +371,8 @@ def audit(
         )
         # NAME THE FIELD, not just the number.
         #
-        # Four fields can set this cap — contracted hours, the weekly limit,
-        # a term-time limit, a summer-break limit — and the Employees screen
+        # Four fields can set this cap - contracted hours, the weekly limit,
+        # a term-time limit, a summer-break limit - and the Employees screen
         # calls them all "hours". "against a 20h limit" is true and useless:
         # the manager raised the weekly limit from 20 to 25, came back, saw
         # the same caution, and concluded the page was stale. It was not.
@@ -392,7 +392,7 @@ def audit(
             )
             add(employee, "weekly_hours",
                 f"{name} is rostered {worked_hours:.1f}h against {cap_source} "
-                f"of {cap:.0f}h — {worked_hours - cap:.1f}h over.{aside}")
+                f"of {cap:.0f}h, {worked_hours - cap:.1f}h over.{aside}")
 
         band = avail.contract_span_band(employee)
         if band:
@@ -403,18 +403,18 @@ def audit(
             if spanned > high + 0.01:
                 add(employee, "contract_over",
                     f"{name} is on {spanned:.1f}h against a {high:.1f}h "
-                    f"contract — {spanned - high:.1f}h over.")
+                    f"contract, {spanned - high:.1f}h over.")
             elif spanned < low - 0.01 and employee_id not in on_leave:
                 add(employee, "contract_under",
                     f"{name} is on {spanned:.1f}h but is contracted for at "
-                    f"least {low:.1f}h — {low - spanned:.1f}h short, and paid "
+                    f"least {low:.1f}h, {low - spanned:.1f}h short, and paid "
                     f"either way.")
 
         # ---- days ---------------------------------------------------------
         days = {s["day"] for s in theirs}
         if len(days) > max_days:
             add(employee, "days_worked",
-                f"{name} is working {len(days)} days — {len(days) - max_days} "
+                f"{name} is working {len(days)} days, {len(days) - max_days} "
                 f"more than the {max_days}-day limit, so they do not get two "
                 f"days off.")
 
@@ -423,7 +423,7 @@ def audit(
             hours = shift_duration_minutes(shift["start"], shift["end"]) / 60
             if hours > ABSOLUTE_MAX_SHIFT_HOURS + 0.01:
                 add(employee, "shift_length",
-                    f"{name}'s {shift['day']} shift is {hours:.1f}h — over the "
+                    f"{name}'s {shift['day']} shift is {hours:.1f}h, over the "
                     f"{ABSOLUTE_MAX_SHIFT_HOURS}h maximum for one shift.")
 
             if int(employee.get("age") or 99) < MINOR_AGE:
@@ -449,7 +449,7 @@ def audit(
                 add(employee, "double_booked",
                     f"{name} is rostered {earlier['start']}-{earlier['end']} on "
                     f"{earlier['day']} and {later['start']}-{later['end']} on "
-                    f"{later['day']} — those overlap.")
+                    f"{later['day']}, those overlap.")
                 continue
             rest = (starts - ends) / 60
             # A gap under an hour is a break in one long stint, not a
@@ -458,7 +458,7 @@ def audit(
             if 1.0 <= rest < min_rest:
                 add(employee, "rest_gap",
                     f"{name} finishes {earlier['end']} on {earlier['day']} and "
-                    f"starts {later['start']} on {later['day']} — {rest:.1f}h "
+                    f"starts {later['start']} on {later['day']}, {rest:.1f}h "
                     f"off, under the {min_rest:g}h between shifts.")
 
     found.extend(closing_role_breaches(
@@ -485,12 +485,12 @@ def under_contract(
     Lives here, not in the solver, because the answer changes when the
     MANAGER changes something rather than when the roster changes. Raise
     somebody's contract from 39h to 42.5h and the week they are looking at
-    is suddenly short — but the solver ran yesterday, and its stored answer
+    is suddenly short - but the solver ran yesterday, and its stored answer
     still says everybody is fine. §5: a stored figure starts lying the moment
     the data behind it changes.
 
     The solver calls this too. Two implementations of "who is below their
-    band" is the §11 trap, and this is a bad one to get wrong — it would tell
+    band" is the §11 trap, and this is a bad one to get wrong - it would tell
     a manager on the roster page something different from what the generator
     told them, about the same week, with no way to tell which was right.
 
@@ -536,7 +536,7 @@ def under_contract(
 
         band = avail.contract_span_band(employee)
         if not band:
-            continue                       # hourly or student — capped, not targeted
+            continue                       # hourly or student - capped, not targeted
 
         if off_dates.get(employee_id, set()) & dates:
             continue                       # leave that week; the band is not reachable

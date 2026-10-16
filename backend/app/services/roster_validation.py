@@ -4,16 +4,16 @@ The generator enforces curfew, hour caps, availability and leave. Manual
 editing bypassed every one of them: the save route checked only that a shift
 had a sensible length and that nobody appeared twice in a day. A manager
 could drag a fifteen-year-old onto a 23:00 shift, or push somebody twelve
-hours past their contract, and it saved without a word — which defeats the
+hours past their contract, and it saved without a word - which defeats the
 point of a tool whose job is to stop exactly that.
 
 Two tiers, because not every rule deserves the same answer:
 
-  BLOCKING   things that are not the manager's to override — the under-16
+  BLOCKING   things that are not the manager's to override - the under-16
              curfew, the maximum shift length, rostering somebody who is on
              booked leave. The save is refused.
 
-  WARNING    things a manager may legitimately decide to do — over
+  WARNING    things a manager may legitimately decide to do - over
              contracted hours, outside somebody's stated availability, a
              shift unlike anything they have worked. The save proceeds and
              the roster records the warning.
@@ -74,7 +74,7 @@ def _rest_breach(
 
     `min_rest` is the SHOP's figure. It used to be the module constant, so
     the solver built to the shop's setting while this warned against a
-    hardcoded 11 — a manager who changed the setting watched the caution stay
+    hardcoded 11 - a manager who changed the setting watched the caution stay
     put and reasonably concluded the page needed refreshing (§11: two
     switches that can disagree is one too many).
     """
@@ -168,8 +168,8 @@ def validate_shifts(
     min_rest = float((shop or {}).get("min_rest_hours") or MIN_REST_HOURS)
     days_worked: Dict[str, Set[str]] = {}
     seen: Set[tuple] = set()
-    worked: Dict[str, float] = {}    # paid hours — an hourly ceiling
-    spanned: Dict[str, float] = {}   # hours on the floor — a salaried contract
+    worked: Dict[str, float] = {}    # paid hours - an hourly ceiling
+    spanned: Dict[str, float] = {}   # hours on the floor - a salaried contract
     # Who has holiday or sickness this week, which is the one reason a
     # salaried week is allowed to come in short.
     on_leave: Dict[str, bool] = {
@@ -235,7 +235,7 @@ def validate_shifts(
         if rest is not None:
             verdict.blocking.append(
                 f"{name} would get only {rest:.1f}h rest around their {day} "
-                f"shift — {min_rest:g}h is required between shifts."
+                f"shift, {min_rest:g}h is required between shifts."
             )
             continue
 
@@ -292,7 +292,7 @@ def validate_shifts(
             if floor_hours > target + 0.01:
                 verdict.blocking.append(
                     f"{name} would be on the floor {floor_hours:.1f}h against a "
-                    f"{target:g}h contract — {floor_hours - target:.1f}h over. "
+                    f"{target:g}h contract, {floor_hours - target:.1f}h over. "
                     f"Shorten or remove one of their shifts first."
                 )
             elif floor_hours and floor_hours < minimum - 0.01 and not on_leave.get(employee_id):
@@ -301,7 +301,7 @@ def validate_shifts(
                 # full week for less than a full week.
                 verdict.blocking.append(
                     f"{name} would be on the floor {floor_hours:.1f}h against a "
-                    f"{target:g}h contract — {minimum - floor_hours:.1f}h short of the "
+                    f"{target:g}h contract, {minimum - floor_hours:.1f}h short of the "
                     f"{minimum:g}h minimum. They are paid the same either way, so give "
                     f"them the hours or book the time as leave."
                 )
@@ -316,7 +316,7 @@ def validate_shifts(
             # a judgement call for the manager to wave through.
             verdict.blocking.append(
                 f"{name} would be rostered {hours:.1f}h against a {cap:g}h "
-                f"contract — {hours - cap:.1f}h over. "
+                f"contract, {hours - cap:.1f}h over. "
                 f"Shorten or remove one of their shifts first."
             )
 

@@ -8,7 +8,7 @@ Monday 06:00 opening ahead of the floor assistant who has opened it every week
 for months.
 
 Familiarity does not prevent that. It only asks "has this person ever worked a
-shift starting near this time" — and a manager who covered a few early starts
+shift starting near this time" - and a manager who covered a few early starts
 passes, then wins on seniority. The question that matters is not who *can*
 work the shift but who *normally does*.
 
@@ -22,11 +22,11 @@ thresholds earn their place:
     count alone      4 of 20 is frequent and still not ownership
 
 The denominator is weeks, not shifts. Measured against shifts, Megan opening
-Monday in 81% of weeks came out at 53% — because a colleague sometimes worked
+Monday in 81% of weeks came out at 53% - because a colleague sometimes worked
 the same shape and their shifts inflated the total.
 
 Ownership is per (day, slot). Emma may own Monday 06:00-16:00 without owning
-Saturday 06:00-16:00 — in the manager's head those are different shifts, and
+Saturday 06:00-16:00 - in the manager's head those are different shifts, and
 they are different here too.
 
 HOW IT IS USED
@@ -53,7 +53,7 @@ from app.services.learning import latest_per_week
 
 def to_minutes(hhmm: str) -> int:
     """Minutes since midnight. Local rather than imported from
-    `availability`, which imports this module's siblings — one small
+    `availability`, which imports this module's siblings - one small
     function is cheaper than a cycle."""
     hours, _, minutes = hhmm.partition(':')
     return int(hours) * 60 + int(minutes or 0)
@@ -75,8 +75,8 @@ class SlotHistory(NamedTuple):
     `weeks` is the denominator, and getting it wrong was the original bug.
     Dividing by total SHIFTS punishes somebody whenever a colleague also
     worked their shape: Megan opens Monday in 81% of the weeks it runs, but
-    counted against every shift of that shape she came out at 53% — under the
-    bar — purely because a second person sometimes worked it too.
+    counted against every shift of that shape she came out at 53% - under the
+    bar - purely because a second person sometimes worked it too.
 
     Weeks is also what makes a doubled slot work. Tuesday runs 06:00-16:00
     twice; over 23 weeks Megan has 21 and John 17, so both clear the bar and
@@ -95,7 +95,7 @@ def _is_signal(
 
     An `extra` is "this person AS WELL AS the usual cover" (§2d), so counting
     every one of them would let somebody added four times become the OWNER of
-    a slot the shop does not run — and the solver would then place them there
+    a slot the shop does not run - and the solver would then place them there
     as ordinary cover, turning "as well as" into "instead of". That is the
     precise thing §2d exists to prevent.
 
@@ -107,8 +107,8 @@ def _is_signal(
     earn it honestly.
 
     So an extra counts toward ownership only for a shape that is ALREADY a
-    real slot. `known_shapes` is that set. Passed None — as the diagnostics
-    do — extras are ignored entirely, which is the old, safe behaviour.
+    real slot. `known_shapes` is that set. Passed None - as the diagnostics
+    do - extras are ignored entirely, which is the old, safe behaviour.
     """
     if (shift.get("sick") or shift.get("temp_override")
             or shift.get("unpaid_holiday") or shift.get("paid_holiday")):
@@ -130,14 +130,14 @@ def build_owners(
 
     `known_shapes` is the set of (day, start, end) the demand profile has
     settled on as real slots for this shop. Extras count toward ownership
-    only on those — see `_is_signal`. Omit it and extras are ignored, which
+    only on those - see `_is_signal`. Omit it and extras are ignored, which
     is the old behaviour and what the diagnostics want.
 
-    One roster per week, newest wins — a duplicated week would let one week's
+    One roster per week, newest wins - a duplicated week would let one week's
     staffing look like a settled habit.
 
     `active_ids` drops people who have left. Their history is real and stays
-    in the demand profile — the shop did run those shifts — but a leaver
+    in the demand profile - the shop did run those shifts - but a leaver
     cannot own a shift. Left in, they win the slot on every generation, are
     found ineligible, and it falls through to whoever is second, so the person
     who now actually works it never becomes its owner and the diagnostics name
@@ -208,7 +208,7 @@ def regulars_of(
 
     `owner_of` answers "who takes this instance", which is right when filling
     one slot and wrong when asking "whose shift is this". A shape that runs
-    TWICE has two regulars — see SlotHistory: "Tuesday runs 06:00-16:00
+    TWICE has two regulars - see SlotHistory: "Tuesday runs 06:00-16:00
     twice; over 23 weeks Megan has 21 and John 17, so both clear the bar and
     own one instance each."
 
@@ -219,7 +219,7 @@ def regulars_of(
     colleague on the other instance of the same shape ranked first.
 
     The same mistake was made in a diagnostic first, found, and then repeated
-    in the solver an hour later — which is why the check lives here now
+    in the solver an hour later - which is why the check lives here now
     instead of being written out at each call site.
     """
     history = owners.get((day, start, end))
@@ -236,7 +236,7 @@ class StartHistory(NamedTuple):
 
     The WEEK SET, not a count, because starts get POOLED. Asking about 11:00
     with an hour's tolerance means 10:00, 11:00 and 12:00 together, and the
-    denominator is the weeks ANY of them ran — the union. Summing counts
+    denominator is the weeks ANY of them ran - the union. Summing counts
     would double-count a week where two of them ran and push shares over
     100%, making everybody an owner of everything.
     """
@@ -304,7 +304,7 @@ def regulars_of_start(
     `tolerance_minutes` pools nearby starts, which is what familiarity has
     always done (§2, `FAMILIAR_START_TOLERANCE_MINUTES`): an hour absorbs
     07:00 against 07:30 without waving through 06:00 for somebody who always
-    starts at 10:00. Jane's Saturday needed it — 06:00 39%, 10:00 39%,
+    starts at 10:00. Jane's Saturday needed it - 06:00 39%, 10:00 39%,
     11:00 42%, nothing clearing the bar alone, while 10:00 and 11:00
     together are a real claim and her 06:00 stays separate, four hours away.
 
@@ -339,8 +339,8 @@ def ownership_strength(
 ) -> float:
     """How settled this slot's ownership is, 0.0 when nobody owns it.
 
-    Used when something with a harder claim — senior cover, which a shop
-    cannot open without — has to displace somebody. Taking the shift with the
+    Used when something with a harder claim - senior cover, which a shop
+    cannot open without - has to displace somebody. Taking the shift with the
     weakest claim means the person who has opened every week for months is
     the last to lose theirs.
     """
@@ -361,7 +361,7 @@ def preference_order(
 
     Used when the owner cannot take it. Falling back to role seniority would
     hand a 06:00 opening to whoever ranks highest rather than to the person
-    who actually covers it when the usual opener is off — which is what the
+    who actually covers it when the usual opener is off - which is what the
     manager does.
     """
     history = owners.get((day, start, end))

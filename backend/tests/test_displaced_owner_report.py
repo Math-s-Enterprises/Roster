@@ -1,13 +1,13 @@
 """A settled shift that changes hands for no reason says so.
 
 Every ownership fault at the reference shop was found by the MANAGER reading
-a roster and asking about it — a Monday 06:00 given away because the code
+a roster and asking about it - a Monday 06:00 given away because the code
 asked `owner_of` (one person) about a shape that runs twice and has two
 regulars. The check that would have caught it existed only in a diagnostic
 nobody runs unless something already looks wrong.
 
 So the solver reports it itself. §2b lists when an owner may lawfully lose a
-slot — leave, the curfew, their cap, the rest gap, a fifth day — and senior
+slot - leave, the curfew, their cap, the rest gap, a fifth day - and senior
 cover displaces them by design. All of those stay silent. What is left is a
 bug, and it should announce itself the week it happens rather than three
 rosters later.
@@ -101,7 +101,7 @@ class TestItSpeaksWhenSomethingIsWrong:
 
         Monday runs twice and `emma` and `first` both work it every week. If
         `first` keeps one instance and an outsider takes the other, Emma has
-        lost a settled shift — but `owner_of` names only the top claimant, so
+        lost a settled shift - but `owner_of` names only the top claimant, so
         a check built on it sees "the owner got one" and says nothing.
 
         The sibling test where BOTH regulars keep an instance passes either
@@ -109,12 +109,12 @@ class TestItSpeaksWhenSomethingIsWrong:
         """
         from app.services import slot_owners
         # Emma must be the SECOND claimant, not the first. With equal counts
-        # `people[0]` falls back to sorting by id, and "emma" wins that — so
+        # `people[0]` falls back to sorting by id, and "emma" wins that - so
         # an earlier version of this fixture had her as the owner and passed
         # under `owner_of` too, catching nothing.
         hist = history({"first": ["mon"], "other": ["tue"]})
         for i, roster in enumerate(hist):
-            if i >= 3:                       # 9 of 12 weeks — a clear regular
+            if i >= 3:                       # 9 of 12 weeks - a clear regular
                 roster["shifts"].append({
                     "employee_id": "emma", "day": "mon",
                     "start": SHAPE[0], "end": SHAPE[1]})
@@ -143,7 +143,7 @@ class TestItSpeaksWhenSomethingIsWrong:
         )
 
     def test_the_note_says_how_settled_the_shift_was(self):
-        """"14 of 24 weeks" is what makes it worth reading — a shape somebody
+        """"14 of 24 weeks" is what makes it worth reading - a shape somebody
         worked twice is not the same complaint."""
         b, _ = builder_for({"emma": ["mon"], "other": ["tue"]})
         b._record_shift("other", "mon", *SHAPE)
@@ -189,7 +189,7 @@ class TestItStaysSilentWhenThereIsALawfulReason:
 
     def test_nothing_is_said_when_the_owner_is_unavailable(self):
         """The real schema is `availability.available_days`, a list of the
-        days they can work — not a per-day flag, which is what this test
+        days they can work - not a per-day flag, which is what this test
         guessed at first and why it failed."""
         team = [person("emma", availability={
             "available_days": ["tue", "wed", "thu", "fri"]}),
@@ -214,7 +214,7 @@ class TestItIsSilentOnAHealthyWeek:
 
         Two people work the same Monday shape every week, so it runs twice
         and both are regulars. Each getting one instance is correct, and
-        neither has lost anything — a check built on `owner_of` would call
+        neither has lost anything - a check built on `owner_of` would call
         the second one displaced every single week.
         """
         b, profile = builder_for({"first": ["mon"], "second": ["mon"],

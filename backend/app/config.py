@@ -60,7 +60,7 @@ DB_NAME = _require("DB_NAME")
 
 # In development we generate an ephemeral secret rather than hard-failing, so
 # a new dev can boot immediately. It is regenerated on every restart, which
-# invalidates existing tokens — acceptable locally, fatal in production, so
+# invalidates existing tokens - acceptable locally, fatal in production, so
 # production explicitly requires it to be set.
 ENV = _optional("ENV", "development").lower()
 IS_PRODUCTION = ENV in ("production", "prod")
@@ -75,7 +75,7 @@ JWT_EXPIRY_DAYS = int(_optional("JWT_EXPIRY_DAYS", "7"))
 
 
 # ---------------------------------------------------------------------------
-# OPTIONAL — LLM (roster summary, roster-photo OCR, rule compilation)
+# OPTIONAL - LLM (roster summary, roster-photo OCR, rule compilation)
 # ---------------------------------------------------------------------------
 ANTHROPIC_API_KEY = _optional("ANTHROPIC_API_KEY")
 ANTHROPIC_MODEL = _optional("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
@@ -83,7 +83,7 @@ LLM_ENABLED = bool(ANTHROPIC_API_KEY)
 
 
 # ---------------------------------------------------------------------------
-# OPTIONAL — transactional email (roster dispatch to staff)
+# OPTIONAL - transactional email (roster dispatch to staff)
 # ---------------------------------------------------------------------------
 RESEND_API_KEY = _optional("RESEND_API_KEY")
 EMAIL_FROM = _optional("EMAIL_FROM", "Roster <onboarding@resend.dev>")
@@ -91,7 +91,7 @@ EMAIL_ENABLED = bool(RESEND_API_KEY)
 
 
 # ---------------------------------------------------------------------------
-# Frontend origin — used to build links inside outgoing emails (password
+# Frontend origin - used to build links inside outgoing emails (password
 # reset). Not the same as CORS_ORIGINS: that's a security allowlist, this is
 # just where a human clicking the link should land.
 # ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ PASSWORD_RESET_EXPIRY_MINUTES = int(_optional("PASSWORD_RESET_EXPIRY_MINUTES", "
 
 
 # ---------------------------------------------------------------------------
-# OPTIONAL — Google sign-in
+# OPTIONAL - Google sign-in
 # The client ID is public (it also ships to the browser). No client secret is
 # needed: we use Google Identity Services on the frontend to obtain an ID
 # token, then verify that token's signature here.
@@ -111,7 +111,7 @@ GOOGLE_ENABLED = bool(GOOGLE_CLIENT_ID)
 
 
 # ---------------------------------------------------------------------------
-# OPTIONAL — Stripe billing
+# OPTIONAL - Stripe billing
 # ---------------------------------------------------------------------------
 STRIPE_SECRET_KEY = _optional("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = _optional("STRIPE_WEBHOOK_SECRET")
@@ -124,7 +124,7 @@ FREE_PLAN_ROSTER_LIMIT = int(_optional("FREE_PLAN_ROSTER_LIMIT", "4"))
 
 
 # ---------------------------------------------------------------------------
-# OPTIONAL — CORS / dev tooling
+# OPTIONAL - CORS / dev tooling
 # ---------------------------------------------------------------------------
 _cors = _optional("CORS_ORIGINS", "http://localhost:3000")
 CORS_ORIGINS = [o.strip() for o in _cors.split(",") if o.strip()]

@@ -6,13 +6,13 @@ Imports used to rewrite the sheet's job titles onto a fixed vocabulary before
 saving them. Every kind of manager became "Manager"; both "Night Shift" and
 "Goods Inwards" became "Stocker". The table consulted nothing about the shop,
 so a manager who had configured their real job titles during setup got them
-replaced by roles they had never chosen — and five distinct rungs of the
+replaced by roles they had never chosen - and five distinct rungs of the
 hierarchy collapsed into one, flattening the seniority order the scheduler
 allocates hours by.
 
 The import is fixed. This corrects the records it already wrote, by re-reading
 the roles from the original workbook and matching them against the shop's
-configured ladder — the same `hierarchy.match_role` the import now uses, so
+configured ladder - the same `hierarchy.match_role` the import now uses, so
 the two cannot disagree.
 
 ONLY the `role` field is touched. Rosters, shifts, hours and holiday balances
@@ -73,7 +73,7 @@ async def main(
         print("No shop found.")
         return 1
     if len(shops) > 1:
-        print(f"{len(shops)} shops found — pass --shop-id or --email to choose one:")
+        print(f"{len(shops)} shops found - pass --shop-id or --email to choose one:")
         for s in shops:
             print(f"    --shop-id {s['shop_id']}    {s.get('name')}")
         return 1
@@ -83,7 +83,7 @@ async def main(
     print(f"Shop: {shop.get('name')} ({shop['shop_id']})")
     print(f"Configured roles: {', '.join(ladder)}")
     if not shop.get("role_hierarchy"):
-        print("  (no ladder configured — using the built-in default)")
+        print("  (no ladder configured - using the built-in default)")
 
     # -- aliases -----------------------------------------------------------
     # Applied to the in-memory shop first so the dry run shows exactly what a
@@ -136,7 +136,7 @@ async def main(
 
     moved = {n: h for n, h in seen_roles.items() if len(h) > 1}
     if moved:
-        print(f"\n{len(moved)} person/people changed section during the workbook — "
+        print(f"\n{len(moved)} person/people changed section during the workbook - "
               f"using their most recent:\n")
         for name in sorted(moved):
             trail = "  →  ".join(f"{role} (from {when})" for when, role in moved[name])
@@ -190,7 +190,7 @@ async def main(
               + (" …" if len(unmatched) > 8 else ""))
 
     if unknown:
-        print(f"\n{len(unknown)} role(s) in the sheet are not in your ladder — SKIPPED:\n")
+        print(f"\n{len(unknown)} role(s) in the sheet are not in your ladder - SKIPPED:\n")
         width = max(len(k) for k in unknown)
         for sheet_role in sorted(unknown):
             print(f"    sheet says {sheet_role:{width}}   → no matching role configured")
@@ -200,7 +200,7 @@ async def main(
         print("Aliases are saved on the shop, so imports match from then on.")
 
     if demotions:
-        print(f"\n{len(demotions)} change(s) would move someone DOWN the ladder — SKIPPED:\n")
+        print(f"\n{len(demotions)} change(s) would move someone DOWN the ladder - SKIPPED:\n")
         width = max(len(n) for n, _, _ in demotions)
         for name, was, now in demotions:
             print(f"    {name:{width}}  {was}  →  {now}")
@@ -218,7 +218,7 @@ async def main(
 
     if not commit:
         print("\n" + "=" * 62)
-        print("DRY RUN — nothing written. Re-run with --commit to apply.")
+        print("DRY RUN - nothing written. Re-run with --commit to apply.")
         print("=" * 62)
         return 0
 
@@ -226,7 +226,7 @@ async def main(
         await db.shops.update_one(
             {"shop_id": shop["shop_id"]}, {"$set": {"role_aliases": stored}}
         )
-        print(f"\nSaved {len(added)} alias(es) — future imports will use them.")
+        print(f"\nSaved {len(added)} alias(es) - future imports will use them.")
 
     for employee_id, _, _, now in changes:
         await db.employees.update_one(

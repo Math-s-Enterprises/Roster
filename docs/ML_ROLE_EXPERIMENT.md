@@ -1,4 +1,4 @@
-# First fitted model and role-based comparison — 9 September 2026
+# First fitted model and role-based comparison - 9 September 2026
 
 **Post-repair update:** the scheduler was rerun after `30a47cf`. The model verdict is unchanged: it remains worse and stays offline. The repaired baseline removed the sole contract shortfall without materially changing the comparison. See [the repaired scheduler baseline](SCHEDULER_BASELINE_2026_09_09.md).
 

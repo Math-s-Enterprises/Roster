@@ -1,10 +1,10 @@
 /**
- * Holidays & off-days — built to the 3a handoff (which revises 1a/2a).
+ * Holidays & off-days - built to the 3a handoff (which revises 1a/2a).
  *
  * WHAT WAS WRONG WITH THE ORIGINAL PAGE
  * -------------------------------------
- * Every leave entry rendered as an identical row — "2026-09-02 · N/A ·
- * Holiday (unpaid) · Elliot" — so the two questions a manager actually opens
+ * Every leave entry rendered as an identical row - "2026-09-02 · N/A ·
+ * Holiday (unpaid) · Elliot" - so the two questions a manager actually opens
  * this page with went unanswered: who is off right now, and does the shop
  * have cover. Four consecutive single days for one person read as four
  * unrelated bookings.
@@ -12,21 +12,21 @@
  * ONE ROW PER PERSON PER CONTINUOUS ABSENCE
  * -----------------------------------------
  * That is the whole organising idea, and it took two goes. The first version
- * also merged people onto a shared row when their dates matched — "Wed 2 Sep
- * · Elliot, Tiago, Jamie, Aaron" — which reads well in a mock and badly
+ * also merged people onto a shared row when their dates matched - "Wed 2 Sep
+ * · Elliot, Tiago, Jamie, Aaron" - which reads well in a mock and badly
  * against real data: one Edit button, four bookings, no answer to whose is
  * whose. 3a reversed it.
  *
  * It also folded pay type into the run. Thirteen days off with four of them
  * paid is ONE absence tagged "Holiday · 9 unpaid + 4 paid", not three
- * bookings with gaps — the gaps were an artefact of how we store paid days,
+ * bookings with gaps - the gaps were an artefact of how we store paid days,
  * and the manager was reading them as separate holidays. Expanding a run
  * shows the per-day detail.
  *
  * Every entry states WHEN THE PERSON IS BACK, which is the piece the old
  * list never carried.
  *
- * The `N/A` badge is gone. It was our `scope: "unavailable"` — unpaid leave —
+ * The `N/A` badge is gone. It was our `scope: "unavailable"` - unpaid leave -
  * rendered as an abbreviation that told the manager nothing. Where a field
  * has no value now, it is omitted rather than labelled.
  *
@@ -41,7 +41,7 @@
  *
  * A booking made through the leave flow is one record PER DAY, which is what
  * makes "delete selected days" possible. A booking made as a date range is a
- * single record and can only be removed whole — the delete dialog says so
+ * single record and can only be removed whole - the delete dialog says so
  * rather than offering a control that would fail.
  *
  * TODAY is taken from the browser. The handoff asks for the server's date,
@@ -83,7 +83,7 @@ function fmtRange(start, end) {
   const b = parseIso(end);
   const sameMonth =
     a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
-  // The month is stated once when both ends share it — "Thu 17 – Sun 20 Sep"
+  // The month is stated once when both ends share it - "Thu 17 – Sun 20 Sep"
   // rather than "Thu 17 Sep – Sun 20 Sep", which reads as two dates.
   const left = sameMonth
     ? a.toLocaleDateString("en-GB", { weekday: "short", day: "numeric" })
@@ -145,14 +145,14 @@ function datesOf(entry) {
 }
 
 /**
- * Collapse entries into runs — one continuous absence per person.
+ * Collapse entries into runs - one continuous absence per person.
  *
  * A person's adjacent leave days become a single row. Nothing else merges:
  * two people off the same days are two rows, because the manager is looking
  * for who is missing, and a name is what they act on.
  *
  * This is narrower than it was. Runs of the same shape used to merge their
- * people onto one row — "Wed 2 Sep · Elliot, Tiago, Jamie, Aaron" — which
+ * people onto one row - "Wed 2 Sep · Elliot, Tiago, Jamie, Aaron" - which
  * reads well in a mock and badly against real data: the row for four people
  * has one Edit button and no obvious answer to "whose booking is this".
  *
@@ -161,7 +161,7 @@ function datesOf(entry) {
  * gaps. `dayScopes` keeps the per-day detail so the run can be expanded.
  *
  * `days` counts CALENDAR days, not working days. A run across a weekend the
- * shop is closed still reads as its full length — which is what a manager
+ * shop is closed still reads as its full length - which is what a manager
  * means by "four days off", but is worth knowing before this number is used
  * for anything that costs money.
  */
@@ -230,8 +230,8 @@ export function buildRuns(entries, nameOf) {
 /**
  * A run's days, laid out one calendar week per row.
  *
- * Thirteen days as a continuous strip of chips reads as one long ribbon —
- * "Monday, Tuesday, Wednesday ... Monday, Tuesday" — and you cannot see
+ * Thirteen days as a continuous strip of chips reads as one long ribbon -
+ * "Monday, Tuesday, Wednesday ... Monday, Tuesday" - and you cannot see
  * where one week ends and the next begins, which is how a manager thinks
  * about cover. So each week gets a row and every day sits under its own
  * weekday column, with the days outside the absence left empty.
@@ -259,7 +259,7 @@ export function weeksOf(dayScopes) {
  * Which buttons a row shows.
  *
  * EDIT IS ALWAYS ONE OF THEM. It used to be swapped out for "Show days"
- * whenever a run was stitched from several records — and because the booking
+ * whenever a run was stitched from several records - and because the booking
  * flow writes one record PER DAY, that was every multi-day holiday. A
  * one-day leave could be edited and a five-day one could not, which is
  * exactly what the shop owner hit.
@@ -303,10 +303,10 @@ function upcomingGroup(start, today) {
   return sameMonth ? `Later in ${monthName(start)}` : monthName(start);
 }
 
-/** Which section of the past table — newest month first. */
+/** Which section of the past table - newest month first. */
 function pastGroup(start, today) {
   const sameMonth = start.slice(0, 7) === today.slice(0, 7);
-  return sameMonth ? `This month — ${monthName(start)}` : monthName(start);
+  return sameMonth ? `This month, ${monthName(start)}` : monthName(start);
 }
 
 function groupRuns(runs, labelFor) {
@@ -471,7 +471,7 @@ export default function CalendarPage() {
   const exportCsv = () => {
     const header = ["Who", "Start", "End", "Days", "Paid", "Unpaid", "Type", "Label"];
     const lines = allRuns.map((run) => [
-      run.family === "shop" ? "Whole shop" : run.person || "—",
+      run.family === "shop" ? "Whole shop" : run.person || "-",
       run.start, run.end, run.days, run.paidDays, run.unpaidDays,
       tagFor(run).label,
       run.entries[0]?.label || "",
@@ -502,7 +502,7 @@ export default function CalendarPage() {
 
   return (
     <div className="hol-page -m-6 lg:-m-10">
-      {/* 1 — page header ------------------------------------------------- */}
+      {/* 1 - page header ------------------------------------------------- */}
       <div className="hol-band flex items-end justify-between gap-6 flex-wrap"
            style={{ padding: "28px 32px 20px" }}>
         <div>
@@ -520,10 +520,10 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* 2 — right now --------------------------------------------------
+      {/* 2 - right now --------------------------------------------------
           Restructured by 3a: the headline and the callout sit side by side,
           and the person cells moved OUT into a full-width band below them.
-          The "working today" list is gone with them — with 25 staff it was a
+          The "working today" list is gone with them - with 25 staff it was a
           21-name column answering a question the callout answers in a
           sentence. */}
       <div className="hol-rightnow grid" style={{
@@ -532,14 +532,14 @@ export default function CalendarPage() {
         borderBottom: "1px solid var(--hairline)",
       }}>
         <div style={{ padding: "24px 30px 22px" }}>
-          <div className="hol-overline">Right now — {fmtDay(today)} {year}</div>
+          <div className="hol-overline">Right now, {fmtDay(today)} {year}</div>
 
           {offToday.length === 0 ? (
             /* The handoff's empty state: the numeral band is replaced rather
                than showing a zero, which reads as an error. */
             <div style={{ marginTop: 6 }}>
               <div style={{ fontSize: 21, fontWeight: 800, lineHeight: 1.15 }}>
-                Nobody is off today — all {activeStaff.length} staff on shift
+                Nobody is off today, all {activeStaff.length} staff on shift
               </div>
               <div className="hol-muted" style={{ fontSize: 13, marginTop: 4 }}>
                 {shopClosedToday ? "The shop is closed today."
@@ -581,7 +581,7 @@ export default function CalendarPage() {
       </div>
 
       {/* The people who are off, full width. Every cell says when they are
-          back — the piece the old list never carried. */}
+          back - the piece the old list never carried. */}
       {offToday.length > 0 && (
         <div className="hol-people grid" style={{
           gridTemplateColumns: "repeat(4, 1fr)",
@@ -606,7 +606,7 @@ export default function CalendarPage() {
       )}
       <div className="hol-band" />
 
-      {/* 3 — booked leave / history --------------------------------------- */}
+      {/* 3 - booked leave / history --------------------------------------- */}
       <div style={{ padding: "24px 32px 32px" }}>
         <div className="flex items-baseline justify-between gap-5 flex-wrap"
              style={{ marginBottom: 14 }}>
@@ -655,7 +655,7 @@ export default function CalendarPage() {
             mid-run shows as a mixed tag with a <strong style={{ fontWeight: 600 }}>Show days</strong> breakdown,
             not as a new row.{" "}
             <strong style={{ color: "var(--ink-secondary)", fontWeight: 600 }}>Delete</strong>{" "}
-            removes a booking added by mistake — it asks to confirm first, and
+            removes a booking added by mistake, it asks to confirm first, and
             on a run booked day by day it offers the whole absence or just some
             days.
           </div>
@@ -677,7 +677,7 @@ export default function CalendarPage() {
                     height: 14,
                     width: `${Math.round((row.days / perPerson.max) * 100)}%`,
                     /* Neutral rather than accent when the total is mostly
-                       sick days — those are not holiday and should not read
+                       sick days - those are not holiday and should not read
                        as somebody taking more leave than their colleagues. */
                     background: row.sick > row.days / 2
                       ? "var(--ink-mute)" : "var(--primary)",
@@ -727,13 +727,13 @@ function StatStrip({ stats, year }) {
     [stats.holidayDays, `holiday days taken in ${year}`, false],
     [stats.sickDays, "sick days recorded", false],
     [stats.closures, "shop closures", false],
-    // The handoff's fourth cell is "thinnest day — 4 staff on shift", which
+    // The handoff's fourth cell is "thinnest day - 4 staff on shift", which
     // needs roster data rather than leave data. Replaced with the equivalent
     // this page can answer honestly: the day most people were off.
     stats.thinnest
       ? [fmtDay(stats.thinnest.date),
-         `most people off — ${stats.thinnest.count} on leave`, true]
-      : ["—", "no leave taken yet", true],
+         `most people off, ${stats.thinnest.count} on leave`, true]
+      : ["-", "no leave taken yet", true],
   ];
   return (
     <div className="hol-surface hol-stats grid" style={{
@@ -797,7 +797,7 @@ function DayGrid({ days, onPick, isSelected, label }) {
               </button>
             ) : (
               /* A day the absence does not cover. Kept as an empty cell so
-                 the weekday columns stay aligned down the grid — without it
+                 the weekday columns stay aligned down the grid - without it
                  a run starting on a Wednesday would put Wednesday under
                  Monday. */
               <span key={`${week}-${i}`} className="hol-chip-empty" aria-hidden />
@@ -817,7 +817,7 @@ function DayGrid({ days, onPick, isSelected, label }) {
 
    Delete was inside the edit form for one revision, on the reasoning that a
    one-click trash icon next to eight others is easy to hit by accident. 3a
-   brings it back to the row and answers that differently — it is a labelled
+   brings it back to the row and answers that differently - it is a labelled
    word rather than an icon, and it always confirms. On a run made of several
    day-records the confirm offers the whole absence or just some days.
 ------------------------------------------------------------------------- */
@@ -850,7 +850,7 @@ function LeaveTable({ groups, expanded, onToggleRun, onEdit, onDelete, emptyMess
               const tag = tagFor(run);
               const isOpen = expanded.includes(run.id);
               // EDIT IS ALWAYS PRESENT. It used to be swapped OUT for "Show
-              // days" whenever a run was stitched from several records —
+              // days" whenever a run was stitched from several records -
               // which is every multi-day holiday, because the booking flow
               // writes one record per day. So a five-day absence had no way
               // to change its dates at all, and the manager asked why a
@@ -864,7 +864,7 @@ function LeaveTable({ groups, expanded, onToggleRun, onEdit, onDelete, emptyMess
                 <React.Fragment key={run.id}>
                   <tr className={`hol-row${run.family === "shop" ? " hol-shop-closed" : ""}${isOpen ? " hol-open" : ""}`}>
                     <td style={{ fontWeight: 600 }}>
-                      {run.family === "shop" ? "Whole shop closed" : run.person || "—"}
+                      {run.family === "shop" ? "Whole shop closed" : run.person || "-"}
                     </td>
                     <td>{fmtRange(run.start, run.end)}</td>
                     <td className="hol-days-col">{run.days}</td>
@@ -914,7 +914,7 @@ function LeaveTable({ groups, expanded, onToggleRun, onEdit, onDelete, emptyMess
                         </div>
                         <div className="hol-faint" style={{ fontSize: 11, paddingBottom: 8 }}>
                           One absence, {run.days} day{run.days === 1 ? "" : "s"}.
-                          {mixed ? " Paid days sit inside the run — they no longer split it into separate rows." : ""}
+                          {mixed ? " Paid days sit inside the run, they no longer split it into separate rows." : ""}
                         </div>
                       </td>
                     </tr>
@@ -937,7 +937,7 @@ function LeaveTable({ groups, expanded, onToggleRun, onEdit, onDelete, emptyMess
 
    A booking made through the leave flow is one record PER DAY, so selected
    days can simply be removed. A booking made as a RANGE is one record, and
-   there is no endpoint to split it — so that case is offered whole-absence
+   there is no endpoint to split it - so that case is offered whole-absence
    deletion only, and says why rather than showing a control that would fail.
 ------------------------------------------------------------------------- */
 function DeleteRunDialog({ run, onClose, onDone }) {
@@ -1037,7 +1037,7 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
   const wholeAbsence = editing && !single;
   // Only a HOLIDAY absence can be re-booked through /holidays/leave, which
   // writes paid and unpaid days. Sending a multi-day SICK run through it
-  // would rewrite every one of those days as holiday — silently, and against
+  // would rewrite every one of those days as holiday - silently, and against
   // the employee's entitlement. Those collapse into a single range record
   // instead, keeping their own scope.
   const collapse = wholeAbsence && !rebook;
@@ -1375,7 +1375,7 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
                             return (
                               <button type="button" key={d} disabled={!inRange}
                                       onClick={() => toggleDate(d)}
-                                      title={inRange ? d : `${d} — not in this booking`}
+                                      title={inRange ? d : `${d}, not in this booking`}
                                       className={`flex-1 py-1.5 ${on ? "btn btn-primary" : "btn btn-secondary"}`}
                                       style={{
                                         fontSize: 10, padding: "6px 0",

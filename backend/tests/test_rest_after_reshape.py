@@ -7,7 +7,7 @@ flexes a finish to land a salaried employee inside their band. Both check the
 
 Reported from the reference shop: "Kyle's fri shift was changed from
 10:00-19:00 to 10:00-20:00 to cover fri 19:00", and Kyle then had ten hours
-before his next shift. The roster flagged him, which is how it was noticed —
+before his next shift. The roster flagged him, which is how it was noticed -
 the solver had produced a breach and then warned about its own work.
 
 That is the daily rest entitlement in the Organisation of Working Time Act
@@ -83,7 +83,7 @@ class TestAStretchRespectsTheRestGap:
         """Kyle's exact case.
 
         Friday 10:00-19:00 and Saturday 06:00-14:00 is an eleven-hour
-        turnaround — legal, and only just. Pushing Friday's finish to 20:00
+        turnaround - legal, and only just. Pushing Friday's finish to 20:00
         to cover one short hour leaves ten, and the pass must refuse rather
         than cover the hour.
         """
@@ -98,11 +98,11 @@ class TestAStretchRespectsTheRestGap:
             b.result.shifts[0], "10:00", "20:00"
         ) is False, (
             "a stretch was allowed that leaves 10 hours before the next "
-            "shift — the Organisation of Working Time Act requires 11"
+            "shift - the Organisation of Working Time Act requires 11"
         )
 
     def test_a_stretch_that_keeps_the_gap_is_still_allowed(self):
-        """The guard must not refuse everything — that would silently disable
+        """The guard must not refuse everything - that would silently disable
         the pass and look like a fix."""
         b = builder()
         b._record_shift("kyle", "fri", "10:00", "19:00")
@@ -112,7 +112,7 @@ class TestAStretchRespectsTheRestGap:
         ) is True, "a lawful stretch was refused"
 
     def test_moving_a_start_earlier_is_checked_too(self):
-        """Several advisories move the START back an hour — '16:00-00:00 to
+        """Several advisories move the START back an hour - '16:00-00:00 to
         15:00-00:00'. That eats the gap from the PREVIOUS day, not the next,
         and `_rest_breach` checks both directions for exactly this reason."""
         b = builder()

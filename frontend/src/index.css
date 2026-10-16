@@ -1,9 +1,9 @@
 /**
- * Roster design tokens — see DESIGN.md in the project root.
+ * Roster design tokens - see DESIGN.md in the project root.
  *
  * Carbon: neutral charcoal surfaces, one emerald accent reserved for the
  * single primary action on screen. This is the Supabase *dashboard* register
- * rather than their white marketing site — same palette, dark canvas.
+ * rather than their white marketing site - same palette, dark canvas.
  *
  * Still no gradients, glass blur or glow. The roster grid is dense data read
  * all day, and every decorative layer worked against that regardless of
@@ -14,11 +14,11 @@
  * from this block alone.
  */
 /* Archivo is the Holidays handoff's typeface, and Inter 800 is its fallback
-   weight — .hol-page asks for Archivo first, so Inter 800 is only rendered
+   weight - .hol-page asks for Archivo first, so Inter 800 is only rendered
    if Archivo fails to arrive, and a browser downloads only the faces it
    actually paints.
    Substituting Inter was the first attempt: one typeface, one request. The
-   shop owner asked for the handoff's own font, which is the right call —
+   shop owner asked for the handoff's own font, which is the right call -
    Archivo is a squarer, more geometric face and the design leans on that at
    weight 800. */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=Archivo:wght@400;500;600;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
@@ -30,34 +30,34 @@
 :root {
   color-scheme: dark;
 
-  /* Brand — the only chromatic event on the page. */
+  /* Brand - the only chromatic event on the page. */
   --primary: #3ecf8e;
   --primary-hover: #4ade9e;   /* brighter on hover; on dark, deeper reads as disabled */
   --primary-deep: #24b47e;
   --on-primary: #0a0a0a;      /* near-black on green, never white */
 
   /* Ink ladder, brightest first. Contrast ratios are against --canvas
-     and are checked in the verification step — see DESIGN.md. */
-  --ink: #ededed;          /* 16.9:1 on page — body text */
+     and are checked in the verification step - see DESIGN.md. */
+  --ink: #ededed;          /* 16.9:1 on page - body text */
   --ink-secondary: #d4d4d4;
-  --ink-mute: #a1a1a1;     /*  7.1:1 — secondary text */
-  --ink-mute-2: #8f8f8f;   /*  5.4:1 — tertiary, eyebrows, timestamps */
-  --ink-faint: #5c5c5c;    /*  3.0:1 — placeholders and disabled only */
+  --ink-mute: #a1a1a1;     /*  7.1:1 - secondary text */
+  --ink-mute-2: #8f8f8f;   /*  5.4:1 - tertiary, eyebrows, timestamps */
+  --ink-faint: #5c5c5c;    /*  3.0:1 - placeholders and disabled only */
 
   /* Surfaces. Lightness steps up with elevation, so a modal is never darker
      than the page behind it. The steps are wider than they look they need to
      be: on near-black, #0a0a0a to #141414 measures 1.07:1, which is not
      enough for a card to read as a distinct surface at all. */
   --canvas: #0a0a0a;         /* page */
-  --canvas-soft: #1a1a1a;    /* in-flow card, grid cell — 1.14:1 above page */
-  --canvas-raised: #262626;  /* modal, popover — 1.15:1 above card */
+  --canvas-soft: #1a1a1a;    /* in-flow card, grid cell - 1.14:1 above page */
+  --canvas-raised: #262626;  /* modal, popover - 1.15:1 above card */
 
   /* Hairlines */
   --hairline: #2e2e2e;
   --hairline-strong: #454545;
   --hairline-cool: #242424;
 
-  /* Status — a scheduling tool has to say "shop unattended" and
+  /* Status - a scheduling tool has to say "shop unattended" and
      "please confirm", which a marketing palette has no word for.
      On dark these invert: bright text on a deep tinted surface. */
   --danger: #f87171;
@@ -86,7 +86,7 @@ body {
 }
 
 /* Weight 500 with negative tracking reads as engineered rather than
-   decorative. Above 600 the calibration breaks — see DESIGN.md. */
+   decorative. Above 600 the calibration breaks - see DESIGN.md. */
 h1, h2, h3, h4 { font-family: 'Inter', sans-serif; font-weight: 500; color: var(--ink); }
 h1 { font-size: 36px; line-height: 1.15; letter-spacing: -0.72px; }
 h2 { font-size: 28px; line-height: 1.2; letter-spacing: -0.42px; }
@@ -134,7 +134,7 @@ h4 { font-size: 18px; line-height: 1.4; }
 /* ---------------------------------------------------------------------------
    Surfaces
    Flat by default. On a dark canvas, elevation is a lighter surface rather
-   than a shadow — a drop shadow against near-black is invisible.
+   than a shadow - a drop shadow against near-black is invisible.
 --------------------------------------------------------------------------- */
 .card {
   background: var(--canvas-soft);
@@ -165,7 +165,7 @@ h4 { font-size: 18px; line-height: 1.4; }
 
 /* ---------------------------------------------------------------------------
    Buttons
-   6px radius — square-ish and technical, never pill-shaped.
+   6px radius - square-ish and technical, never pill-shaped.
 --------------------------------------------------------------------------- */
 .btn {
   display: inline-flex;
@@ -231,7 +231,7 @@ input[type="checkbox"] { min-height: 0; accent-color: var(--primary); }
 
 /* Date and time pickers.
    The glyph is drawn here rather than tinted, because Chrome's own icon
-   already flips light under `color-scheme: dark` — an invert filter on top
+   already flips light under `color-scheme: dark` - an invert filter on top
    of that turned it black again, invisible on a black field. Supplying a
    background-image replaces the native glyph outright, so it looks the same
    whatever the browser decides to do. */
@@ -295,7 +295,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 /* ---------------------------------------------------------------------------
    Role badges
    Colour encodes SENIORITY, not identity, so it reads as one ink ramp rather
-   than five unrelated hues — brightest is most senior. The prototype used
+   than five unrelated hues - brightest is most senior. The prototype used
    five 10%-opacity colours that were both low-contrast and unrelated to the
    hierarchy the solver actually uses. Emerald never appears here; it belongs
    to actions.
@@ -319,7 +319,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   background: transparent; color: #a1a1a1; border: 1px solid #454545;
 }
 /* Night shifts are the hardest slot to fill and the easiest to overlook, so
-   they get the one recessed surface — visibly "after hours" without
+   they get the one recessed surface - visibly "after hours" without
    introducing a hue. */
 .role-night-shift {
   background: #000000; color: #9a9a9a; border: 1px solid #454545;
@@ -332,7 +332,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 /* ---------------------------------------------------------------------------
    Print
    The rota gets pinned to a wall, so paper is always white regardless of what
-   the screen is doing. Scoped to the print block only — none of this leaks
+   the screen is doing. Scoped to the print block only - none of this leaks
    into the app.
 --------------------------------------------------------------------------- */
 @media print {
@@ -341,8 +341,8 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   .no-print, aside, nav { display: none !important; }
   main { padding: 0 !important; }
   /* The shell is a two-column grid. Hiding the sidebar takes it out of the
-     flow, which drops <main> into the first track — the 258px sidebar
-     column — and the sheet prints squeezed into it with the right-hand
+     flow, which drops <main> into the first track - the 258px sidebar
+     column - and the sheet prints squeezed into it with the right-hand
      columns clipped off. Collapsing the grid gives main the full page. */
   .nv-shell {
     display: block !important;
@@ -469,20 +469,20 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
    ---------------------------------------------------------------------------
    Scoped to .hol-page so nothing here leaks into the rest of the app.
 
-   SQUARE CORNERS ARE DELIBERATE. The handoff says "radius 0 everywhere — do
+   SQUARE CORNERS ARE DELIBERATE. The handoff says "radius 0 everywhere - do
    not round corners", and the shop owner chose to follow it exactly on this
    page. Everywhere else still uses the 6px/12px radii, so the override is
    scoped rather than applied to the tokens.
 
-   Colours are the app's own. The mock was drawn from this palette — its
+   Colours are the app's own. The mock was drawn from this palette - its
    --color-text #ededed is our --ink exactly, and its accent, page and
    surface values sit within a shade of --primary, --canvas and
-   --canvas-soft — so the handoff's "colours are final" and "use the app's
+   --canvas-soft - so the handoff's "colours are final" and "use the app's
    styles" turned out not to conflict.
 --------------------------------------------------------------------------- */
 .hol-page {
   /* The handoff's type: Archivo, body 15px/1.55, headings 800 with -.015em
-     tracking. Scoped to this page — the rest of the app is Inter. */
+     tracking. Scoped to this page - the rest of the app is Inter. */
   font-family: 'Archivo', 'Inter', system-ui, -apple-system, sans-serif;
   font-size: 15px;
   line-height: 1.55;
@@ -533,7 +533,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   color: var(--primary);
 }
 
-/* Tags. Square, unlike the app's pill, because this page is radius 0 — and
+/* Tags. Square, unlike the app's pill, because this page is radius 0 - and
    because a tag is a label, not a count. Never the string "N/A": a field
    with no value is omitted. */
 .hol-tag {
@@ -546,7 +546,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   border: 1px solid var(--hairline-strong);
   white-space: nowrap;
 }
-/* UNPAID is the accent outline, PAID is the quiet grey one — which is the
+/* UNPAID is the accent outline, PAID is the quiet grey one - which is the
    opposite of the instinct that paid leave is the "positive" state. Unpaid
    is the one that costs the shop cover without drawing down entitlement, so
    it is the one worth spotting in a column of forty rows. Taken from the
@@ -598,8 +598,8 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   outline-offset: 2px;
 }
 
-/* Below ~1100px the "right now" band stacks — person cells 2-up, the
-   working-today rail underneath — and the table drops the Days column,
+/* Below ~1100px the "right now" band stacks - person cells 2-up, the
+   working-today rail underneath - and the table drops the Days column,
    keeping Dates / Who / Type. Days is the most easily inferred of the five:
    the date range already states it. */
 @media (max-width: 1100px) {
@@ -617,7 +617,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 
 /* Per-day chips inside an expanded run. A paid day is filled so the mixed
-   tag's "9 unpaid + 4 paid" can be read off the row at a glance — that is
+   tag's "9 unpaid + 4 paid" can be read off the row at a glance - that is
    the whole promise of folding pay type into one absence instead of
    splitting it into separate rows. */
 .hol-chip {
@@ -649,7 +649,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 
 /* Row actions: a labelled word, not an icon. Edit carries the accent because
    it is the action the row is FOR; Delete stays grey until hovered, when it
-   turns red — the rarer intent and the costlier mistake. */
+   turns red - the rarer intent and the costlier mistake. */
 .hol-action {
   font-size: 12px;
   padding: 4px 8px;
@@ -666,7 +666,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   background: var(--danger-soft);
 }
 
-/* The segmented control. The unselected options are flat — no border — so
+/* The segmented control. The unselected options are flat - no border - so
    the selected one is the only filled thing in the row. `btn-secondary` gave
    all three a visible outline and the selection read as one green button
    among three outlined ones rather than as one control. */
@@ -685,7 +685,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 /* A run's days, one calendar week per row.
    Seven fixed columns so every day sits under its own weekday, and a day the
    absence does not cover leaves an empty cell rather than shifting the rest
-   along — otherwise a run starting on a Wednesday puts Wednesday under
+   along - otherwise a run starting on a Wednesday puts Wednesday under
    Monday and the grid stops meaning anything. */
 .hol-daygrid {
   display: grid;
@@ -710,7 +710,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
    ------------------------------------------------------------------
    Every redesigned page reads these rather than literal hex, so the
    whole app flips by setting data-theme on <html>. Dark is the default
-   and is exactly the palette the handoffs specified — the light values
+   and is exactly the palette the handoffs specified - the light values
    are the same design inverted, not a different one.
 
    --t-onsurf is the channel triplet behind the translucent overlays on
@@ -772,7 +772,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   --t-fx-hint: rgba(47, 224, 143, .55);
 
   /* Roster grid fills. Three steps that must stay clearly apart from
-     each other — they carry which shifts came from a template, which the
+     each other - they carry which shifts came from a template, which the
      solver placed, and which run unsocial hours. */
   --t-shift-fixed: #3ddc91;
   --t-shift-fixed-ink: #04140c;
@@ -791,7 +791,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 
   /* Origami: folded paper rather than white. Beige surfaces, ink brown
      text, burnt orange where the dark theme uses green. The ramp runs the
-     same way — canvas is the lightest surface, each step darkens — so
+     same way - canvas is the lightest surface, each step darkens - so
      every rule written for dark keeps its meaning. */
   --t-canvas: #f7f1e6;
   --t-hover: #f1e8d8;
@@ -805,7 +805,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   --t-offborder: #b39d73;
   --t-disabled: #a8946c;
 
-  /* Warm greys, not neutral — a cool grey on beige reads as dirt. */
+  /* Warm greys, not neutral - a cool grey on beige reads as dirt. */
   --t-faint: #756241;
   --t-muted: #6e5c3c;
   --t-body3: #5a4a2e;
@@ -839,7 +839,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   --t-focus: rgba(184, 74, 23, .35);
 
   /* The same tints in origami: terracotta, ochre and burnt orange.
-     Alphas run a little higher — a wash that reads on black disappears
+     Alphas run a little higher - a wash that reads on black disappears
      on beige. */
   --t-danger-wash: rgba(154, 43, 30, .08);
   --t-danger-wash-2: rgba(154, 43, 30, .14);
@@ -855,7 +855,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   /* The same three steps in origami. The ramp is inverted the way the
      canvas is: the brightest fill takes dark ink, exactly as the bright
      green does on black. Separation between steps is 2.19 / 2.02 / 4.43,
-     against dark's 2.27 / 1.71 / 3.88 — so the three read as distinctly
+     against dark's 2.27 / 1.71 / 3.88 - so the three read as distinctly
      apart here as they do there. */
   --t-shift-fixed: #f0913f;
   --t-shift-fixed-ink: #241c11;
@@ -867,7 +867,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   --t-shift-night-text: #5f3418;
 
   /* The pages that were not redesigned read the original tokens, so
-     those flip too — otherwise half the app would stay dark. */
+     those flip too - otherwise half the app would stay dark. */
   --canvas: #f7f1e6;
   --canvas-soft: #efe5d3;
   --canvas-raised: #e8dbc4;
@@ -896,11 +896,11 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
    These pages predate the theme and were written white-on-black, so in
    light mode their text sat on beige and disappeared. They are reached
    while signed out, which is exactly when the theme is most likely to
-   be light — the stored choice is applied before the app renders. */
+   be light - the stored choice is applied before the app renders. */
 .auth-ink-mute { color: var(--t-muted); }
 
 /* ------------------------------------------------------------------
-   Fixed Shifts — week grid (handoff 1b)
+   Fixed Shifts - week grid (handoff 1b)
    ------------------------------------------------------------------
    This page ships the handoff's own palette rather than the Carbon
    tokens above: a warmer near-black canvas, an emerald that runs
@@ -912,7 +912,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
    touches :root, so the other sixteen routes are unaffected and the
    whole block can be deleted to revert the page.
 
-   The sidebar is NOT restyled — AppLayout owns navigation for every
+   The sidebar is NOT restyled - AppLayout owns navigation for every
    route, and the handoff's 74px icon rail would be a second one.
    ------------------------------------------------------------------ */
 .fx-page {
@@ -1094,7 +1094,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   cursor: pointer;
 }
 /* The browser's own clock glyph sits inside each time input, eating
-   width and pushing the digits off centre. Hidden — the field itself
+   width and pushing the digits off centre. Hidden - the field itself
    opens the picker instead. */
 .fx-time input[type="time"]::-webkit-calendar-picker-indicator {
   display: none;
@@ -1105,7 +1105,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
    highlights the segment you are editing reads as an error state, and the
    browser's own highlight on the hour or minute is the clearer signal.
    The field's border picks up the accent instead, so focus is still shown
-   without the box — and the ring stays everywhere else on the page. */
+   without the box - and the ring stays everywhere else on the page. */
 .fx-time input:focus,
 .fx-time input:focus-visible {
   box-shadow: none !important;
@@ -1366,7 +1366,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 
 /* The employee modals reuse the original form components, which were
-   written with Tailwind's dark-only colour utilities — white text over
+   written with Tailwind's dark-only colour utilities - white text over
    whatever surface happened to be behind it. On beige that left light
    text on light panels. These read the theme instead. */
 .esp-modal-scrim { background: rgba(0, 0, 0, .6); }
@@ -1389,7 +1389,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 
 /* ------------------------------------------------------------------
-   AI rules engine — table layout (handoff: AI rules)
+   AI rules engine - table layout (handoff: AI rules)
    ------------------------------------------------------------------
    Same band language as Employees: pure black, hairlines, no cards,
    green text actions. Scoped under .air-page, literal handoff values.
@@ -1593,7 +1593,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 
 /* ------------------------------------------------------------------
-   Employees — split view (handoff: Employees option B)
+   Employees - split view (handoff: Employees option B)
    ------------------------------------------------------------------
    Master/detail: seniority-ordered list on the left, the selected
    person's record on the right. Replaces the earlier band layout.
@@ -1704,7 +1704,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   background: var(--t-inset);
   box-shadow: inset 3px 0 0 var(--t-accent);
 }
-/* Both children are spans, so they need to be told to stack — left
+/* Both children are spans, so they need to be told to stack - left
    inline they sat side by side and the name's ellipsis never fired. */
 .esp-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .esp-item-name {
@@ -1781,7 +1781,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 .esp-block[data-kind="fixed"] { background: var(--t-accent); color: var(--t-on-accent); }
 /* Same fill as a template shift. These were a second, literal green, so
-   the strip showed two different greens in dark mode and — being literal —
+   the strip showed two different greens in dark mode and - being literal -
    stayed green in light mode while the themed blocks beside them went
    orange. A worked shift now looks like a worked shift. */
 .esp-block[data-kind="ai"] { background: var(--t-accent); color: var(--t-on-accent); }
@@ -1828,7 +1828,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 
 /* ------------------------------------------------------------------
-   Past rosters — archive table (handoff: Past rosters)
+   Past rosters - archive table (handoff: Past rosters)
    ------------------------------------------------------------------
    Approved weeks grouped by month, with superseded drafts kept in a
    separate reference section below. Scoped under .par-*.
@@ -1874,7 +1874,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .par-search > svg { flex: none; }
 /* Let the input fill the row's full height and carry no vertical padding
    of its own. Browsers centre a single-line input's text within its own
-   content box, so a full-height box centres reliably — whereas boxing it
+   content box, so a full-height box centres reliably - whereas boxing it
    to a fixed height leaves the text wherever that box happens to sit. */
 .par-search input {
   flex: 1; min-width: 0;
@@ -2069,12 +2069,12 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 
 /* ------------------------------------------------------------------
-   Weekly roster — one scrolling page (handoff: Weekly roster)
+   Weekly roster - one scrolling page (handoff: Weekly roster)
    ------------------------------------------------------------------
    Header → stats → tab strip → panel → person×day grid → share →
    versions. Scoped under .wr-*. The existing modals (sick cover, extra
    staff, suggestions, force approve, print, dispatch) are unchanged and
-   keep their own styling — this is the shell around them.
+   keep their own styling - this is the shell around them.
    ------------------------------------------------------------------ */
 .wr-page {
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
@@ -2104,7 +2104,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 /* The icon and the date sit as one centred group, rather than the date
    being pinned to the left edge of the box. */
 /* The icon is taken out of the flow so it cannot push the date off
-   centre — a date input has a fixed intrinsic width, so centring the
+   centre - a date input has a fixed intrinsic width, so centring the
    flex group still left the text sitting right of middle. */
 .wr-picker {
   position: relative;
@@ -2139,7 +2139,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 .wr-picker input[type="date"] { -webkit-appearance: none; appearance: none; }
 /* The global input:focus rule is !important, so it drew its ring around the
-   input nested inside this control — a box within a box. The picker's own
+   input nested inside this control - a box within a box. The picker's own
    border takes the accent instead, which shows focus without the halo. */
 .wr-picker input:focus,
 .wr-picker input:focus-visible,
@@ -2195,11 +2195,11 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 16px; margin-bottom: 14px;
 }
-/* Same as every other label on the page — stat labels, the totals row,
+/* Same as every other label on the page - stat labels, the totals row,
    the versions heading. A section heading is a section heading. */
 .wr-panel-label { font-size: 11px; font-weight: 700; letter-spacing: .14em; color: var(--t-muted); text-transform: uppercase; }
 /* Sits under the list as a footnote, so it reads quieter than the
-   findings themselves — those are what the manager came here for. */
+   findings themselves - those are what the manager came here for. */
 .wr-panel-say {
   font-size: 14px; line-height: 1.55; color: var(--t-muted);
   max-width: 820px; margin: 16px 0 0;
@@ -2217,7 +2217,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
    The container draws the top and left edges; each item draws its own
    right and bottom. Flex-wrap with a growing basis means a short last row
    stretches to the full width, so its right edge always lands on the box
-   edge — with an auto-fit grid, a part-filled last row left the right side
+   edge - with an auto-fit grid, a part-filled last row left the right side
    open, and the left edge was never drawn at all. */
 .wr-items {
   display: flex; flex-wrap: wrap;
@@ -2232,7 +2232,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   min-width: 0;
 }
 /* Full-width findings (uncovered hours, unread rules) take a row of their
-   own. They keep their right border — removing it is what left the bottom
+   own. They keep their right border - removing it is what left the bottom
    row open on the right. */
 .wr-item[data-span="true"] { flex-basis: 100%; }
 .wr-item-title { font-size: 15.5px; font-weight: 700; }
@@ -2349,7 +2349,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .wr-dayline-name { font-size: 14.5px; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wr-dayline-time { font-size: 13.5px; font-weight: 700; flex: none; }
 /* Text, not a fill, so each needs to read against the page rather than
-   against its own block — night borrows the solver tone for that reason. */
+   against its own block - night borrows the solver tone for that reason. */
 .wr-dayline-time[data-kind="template"] { color: var(--t-accent); }
 .wr-dayline-time[data-kind="ai"] { color: var(--t-shift-solver-text); }
 .wr-dayline-time[data-kind="unsocial"] { color: var(--t-shift-night-text); }
@@ -2381,7 +2381,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .wr-empty { padding: 40px 28px; font-size: 15px; color: var(--t-muted); }
 
 /* The page paints its own black canvas, which outranks the white the
-   print stylesheet sets on body — so it has to be undone here or every
+   print stylesheet sets on body - so it has to be undone here or every
    sheet comes out black. The grid itself is hidden in print and the
    dedicated print sheet is shown instead. */
 @media print {
@@ -2406,7 +2406,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 
 /* ------------------------------------------------------------------
-   Sick leave — HR report (handoff: Sick leave)
+   Sick leave - HR report (handoff: Sick leave)
    ------------------------------------------------------------------
    Hairline stats band, inset entitlement band, two tables. Scoped
    under .sk-*. Read-only reporting apart from Record illness.
@@ -2446,7 +2446,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 /* The global input:focus rule is !important, so it ringed the select nested
    inside this control. The control's own border carries focus instead. The
    date fields in the Record illness drawer are standalone, so they keep the
-   ring — there is no outer box for it to collide with. */
+   ring - there is no outer box for it to collide with. */
 .sk-picker select:focus,
 .sk-picker select:focus-visible {
   box-shadow: none !important;
@@ -2515,7 +2515,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 /* Six columns rather than the handoff's five: an illness recorded by
    mistake has to be removable, and the incident is the only unit where
-   "delete" is unambiguous — a person's row covers several. */
+   "delete" is unambiguous - a person's row covers several. */
 .sk-row-inc {
   display: grid;
   grid-template-columns:
@@ -2615,7 +2615,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 
 /* ------------------------------------------------------------------
-   Hours and wages — payroll report (handoff: Hours and wages)
+   Hours and wages - payroll report (handoff: Hours and wages)
    ------------------------------------------------------------------
    Filter band, stats band, one wide per-person table. Scoped .hw-*.
    Read-only: the page creates nothing.
@@ -2865,7 +2865,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 
 /* ------------------------------------------------------------------
-   Dashboard — shop home (handoff: Dashboard)
+   Dashboard - shop home (handoff: Dashboard)
    ------------------------------------------------------------------
    Header, setup line, stats band, optional force-approval band, then a
    two-column split. Scoped under .db-*.
@@ -2960,7 +2960,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .db-left, .db-right { display: flex; flex-direction: column; min-width: 0; }
 /* The rosters footer lives inside the table wrapper, so margin-top:auto on
    it had no flex parent to push against and the rule sat directly under the
-   last row — while the activity footer, a direct child of its column, was
+   last row - while the activity footer, a direct child of its column, was
    pinned to the bottom. The two rules then closed at different heights. */
 .db-tablewrap { flex: 1; display: flex; flex-direction: column; }
 .db-left { border-right: 1px solid var(--t-hairline); }
@@ -3267,7 +3267,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
    ------------------------------------------------------------------
    Upload split with the drop target as hero, format line, then the
    imported weeks grouped by month. Scoped under .im-*.
-   The preview/commit review stage keeps its own styling — it is a
+   The preview/commit review stage keeps its own styling - it is a
    separate step the handoff does not cover.
    ------------------------------------------------------------------ */
 .im-page {
@@ -3305,7 +3305,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   padding: 30px 28px 32px; min-width: 0;
   transition: background 120ms ease-out, box-shadow 120ms ease-out;
 }
-/* No dashed border at rest — the zone only announces itself on dragover. */
+/* No dashed border at rest - the zone only announces itself on dragover. */
 .im-drop[data-dragging="true"] {
   background: var(--t-hover);
   box-shadow: inset 0 0 0 1px var(--t-accent);
@@ -3512,7 +3512,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
    Shop settings (handoff: Shop settings)
    ------------------------------------------------------------------
    Full-width hairline sections, no cards. Scoped under .ss-*. Applies
-   to the settings view only — first-run onboarding keeps its wizard.
+   to the settings view only - first-run onboarding keeps its wizard.
    ------------------------------------------------------------------ */
 .ss-page {
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
@@ -3529,7 +3529,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 
 .ss-label { font-size: 11px; font-weight: 700; letter-spacing: .16em; color: var(--t-muted); text-transform: uppercase; }
 .ss-label-tight { letter-spacing: .14em; }
-/* Field labels match the value they sit beside — 11px against a 17px
+/* Field labels match the value they sit beside - 11px against a 17px
    number read as a caption rather than the name of the thing. The element
    selector keeps the section eyebrows, which share the class on a div,
    at their original size. Tracking comes down as the size goes up: .16em
@@ -3581,7 +3581,7 @@ label.ss-label-tight { letter-spacing: .04em; }
 .ss-section-sub { font-size: 14.5px; line-height: 1.55; color: var(--t-muted); margin: 8px 0 0; max-width: 900px; text-wrap: pretty; }
 
 /* The band needs a rule across its top or it never closes under the
-   section description — the gap-lines only draw between cells, so there
+   section description - the gap-lines only draw between cells, so there
    was nothing along the top edge. The band below is closed by the next
    section's own border-top. */
 .ss-cells {
@@ -3683,7 +3683,7 @@ label.ss-label-tight { letter-spacing: .04em; }
 }
 .ss-note strong { color: var(--t-body); font-weight: 700; }
 .ss-warn { color: var(--t-warn); }
-/* Roster groups are a name and a Remove — not the six columns of the roles
+/* Roster groups are a name and a Remove - not the six columns of the roles
    table, which left four empty cells and a Remove stranded far from the
    name it belonged to. */
 .ss-deptrow {
@@ -3771,7 +3771,7 @@ label.ss-label-tight { letter-spacing: .04em; }
 }
 
 /* ------------------------------------------------------------------
-   Sidebar — app shell navigation (handoff: Sidebar)
+   Sidebar - app shell navigation (handoff: Sidebar)
    ------------------------------------------------------------------
    No icons by design. Three hairline bands, counts on the right, the
    active item an inset band with a green left bar. Scoped .nv-*.
@@ -3807,7 +3807,7 @@ label.ss-label-tight { letter-spacing: .04em; }
 .nv-brand-sub { font-size: 12.5px; color: var(--t-muted); }
 /* The roster-group switcher.
    ------------------------------------------------------------------
-   A native select draws its open list with the operating system — its own
+   A native select draws its open list with the operating system - its own
    font, colours and row height, none of which follow the theme. This is a
    button and a listbox in the sidebar's own measurements: 22px gutters, the
    11px heading of a nav group, the 6px radius of every other control. */
@@ -3906,7 +3906,7 @@ label.ss-label-tight { letter-spacing: .04em; }
 /* Bordered rather than plain text, so it reads as a control with a state
    rather than a third link sitting beside two actions. */
 /* Both modes are named and the thumb slides to whichever is on, so the
-   control shows its state and its alternative at once — a single label
+   control shows its state and its alternative at once - a single label
    left you guessing whether it named the current mode or the next one. */
 .nv-theme {
   border: 0; background: none; padding: 0;
@@ -3929,7 +3929,7 @@ label.ss-label-tight { letter-spacing: .04em; }
   transition: transform 160ms ease-out;
 }
 /* Light sits on the left, so the thumb travels right for DARK. This has to
-   match the order of the two labels in AppLayout — flip one without the
+   match the order of the two labels in AppLayout - flip one without the
    other and the thumb highlights the wrong word. */
 .nv-theme[data-light="false"] .nv-theme-thumb { transform: translateX(100%); }
 @media (prefers-reduced-motion: reduce) {
@@ -3986,7 +3986,7 @@ label.ss-label-tight { letter-spacing: .04em; }
 /* Shared text and surface helpers.
    ------------------------------------------------------------------
    The setup wizard, the roles table and the import review were written
-   white-on-black — text-white/40, bg-white/5, border-white/10 — which is
+   white-on-black - text-white/40, bg-white/5, border-white/10 - which is
    invisible on the beige canvas. Those are now these classes, which read
    the theme. Defined here rather than inline so all three screens stay
    consistent and a future one can reuse them.
@@ -4007,7 +4007,7 @@ label.ss-label-tight { letter-spacing: .04em; }
 .ui-warn-line { border-color: var(--t-warn); }
 
 /* ------------------------------------------------------------------
-   Signed-out pages — sign in, forgot password, reset password
+   Signed-out pages - sign in, forgot password, reset password
    (handoff: Sign in, doodle background)
    ------------------------------------------------------------------
    Beige and terracotta on a hand-drawn pattern of roster motifs. Every
@@ -4042,7 +4042,7 @@ label.ss-label-tight { letter-spacing: .04em; }
 }
 .si-page :focus-visible { outline: none; box-shadow: 0 0 0 4px rgba(184, 68, 21, .2); border-radius: 6px; }
 
-/* Background stack — all aria-hidden, none of it interactive. ------- */
+/* Background stack - all aria-hidden, none of it interactive. ------- */
 .si-bg { position: absolute; pointer-events: none; }
 .si-doodles { inset: 0; width: 100%; height: 100%; color: var(--si-accent); }
 .si-wash {
@@ -4126,7 +4126,7 @@ label.ss-label-tight { letter-spacing: .04em; }
   font-size: 54px; line-height: 1.01; font-weight: 800; letter-spacing: -.045em;
   color: var(--si-ink); text-wrap: balance;
 }
-/* The underline is drawn, not a border — a straight rule reads as a link. */
+/* The underline is drawn, not a border - a straight rule reads as a link. */
 .si-h1-mark { position: relative; white-space: nowrap; color: var(--si-accent); }
 .si-h1-mark svg {
   position: absolute; left: 0; right: 0; bottom: -10px;
@@ -4292,7 +4292,7 @@ label.ss-label-tight { letter-spacing: .04em; }
   border-radius: 9px; background: var(--si-chip); border: 1px solid var(--si-border);
   font-size: 14px; font-weight: 700; color: var(--si-muted-2); white-space: nowrap;
 }
-/* With reduced motion the marquee is a still, centred row — one copy. */
+/* With reduced motion the marquee is a still, centred row - one copy. */
 @media (prefers-reduced-motion: reduce) {
   .si-marquee-row { width: 100%; justify-content: center; }
   .si-marquee-half { width: 100%; padding-right: 0; }

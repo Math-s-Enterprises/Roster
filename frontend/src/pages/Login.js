@@ -18,7 +18,7 @@ import { LOGIN } from "@/constants/testIds/auth";
  *
  * Beige and terracotta over a hand-drawn pattern of roster motifs, one
  * centred column: hero, card, capability chips, a "Trusted by" marquee.
- * Managers only — the page says plainly that staff never sign in.
+ * Managers only - the page says plainly that staff never sign in.
  *
  * No app data is fetched here. Everything on the page before sign-in is
  * static, so nothing about any shop is visible to someone at /login.
@@ -45,7 +45,7 @@ const CONTENT = {
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** A same-origin path only — never follow a redirect off the site. */
+/** A same-origin path only - never follow a redirect off the site. */
 function safeRedirect(value) {
   if (!value || typeof value !== "string") return null;
   return value.startsWith("/") && !value.startsWith("//") ? value : null;
@@ -87,6 +87,7 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const passwordRef = useRef(null);
+  const emailRef = useRef(null);
 
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({
@@ -178,9 +179,7 @@ export default function Login() {
       }
       navigate(returnTo, { replace: true });
     } catch (err) {
-      // Sign-in never says which half was wrong — confirming an email exists
-      // tells an attacker which addresses to try. Sign-up keeps the server's
-      // reason, because "that email is taken" is the useful answer there.
+      // Sign-in does not disclose which addresses are registered.
       setStatus("error");
       setError(
         isSignup
@@ -188,7 +187,7 @@ export default function Login() {
           : "That email and password do not match.",
       );
       // The email is never cleared; the password is where the fix goes.
-      // Only a wrong password counts - not a dropped connection or a server fault.
+      // Only rejected credentials count - not a dropped connection or a server fault.
       let asked = false;
       if (!isSignup && err?.response?.status === 401) {
         const { failures } = recordFailure(form.email);
@@ -251,7 +250,7 @@ export default function Login() {
         </h1>
         <p className="si-sub">
           Set up your shop, staff and policies. Roster schedules the team while respecting every legal
-          limit, holiday and preference — and never leaves the shop unattended.
+          limit, holiday and preference, and never leaves the shop unattended.
         </p>
       </section>
 
@@ -304,7 +303,7 @@ export default function Login() {
           <div className="si-input" data-invalid={Boolean(fieldErrors.email)}>
             <Mail />
             <input
-              id="si-email" data-testid="input-email" type="email" value={form.email}
+              id="si-email" ref={emailRef} data-testid="input-email" type="email" value={form.email}
               onChange={update("email")} placeholder="you@yourshop.ie" autoComplete="email"
               aria-invalid={Boolean(fieldErrors.email)}
               aria-describedby={fieldErrors.email ? "si-email-err" : undefined}
@@ -440,7 +439,7 @@ export default function Login() {
         <div className="si-marquee">
           <div className="si-marquee-row">
             {/* Two identical halves so the loop is seamless. The second is
-                hidden from assistive tech — it is the same list again. */}
+                hidden from assistive tech - it is the same list again. */}
             {[0, 1].map((half) => (
               <div key={half} className="si-marquee-half" aria-hidden={half === 1 ? "true" : undefined}>
                 {CONTENT.trustedBy.map((name) => (

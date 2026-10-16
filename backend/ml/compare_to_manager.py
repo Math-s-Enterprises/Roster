@@ -6,7 +6,7 @@
 WHY THIS IS THE ONE THAT COUNTS
 -------------------------------
 Every other measurement in `ml/` compares the solver against a number the
-solver itself produced — coverage against its own demand curve, hours against
+solver itself produced - coverage against its own demand curve, hours against
 an average computed the same way. Those can all agree while the roster is
 still wrong, because they share the model's assumptions.
 
@@ -20,14 +20,14 @@ WHAT IT SHOWS
 The two weeks side by side, then the differences split four ways, because
 they mean completely different things:
 
-  SAME          person, day and times all match — nothing to learn
+  SAME          person, day and times all match - nothing to learn
   WRONG PERSON  the shift exists at the right time, somebody else has it
   WRONG TIMES   the right person that day, different hours
   MISSING       he rostered it, the solver did not produce it at all
   INVENTED      the solver produced it, he did not
 
 WRONG PERSON is an ownership or ranking problem. WRONG TIMES is a shape
-problem — `day_slots`, stretching, contract fitting. MISSING and INVENTED
+problem - `day_slots`, stretching, contract fitting. MISSING and INVENTED
 together mean the day's shape is wrong rather than its staffing.
 
 The week is held out of its own history, so the solver is never graded on a
@@ -112,7 +112,7 @@ async def run(email: str, week: str | None) -> None:
     ours = _shifts(generated)
     breaks_paid = bool(shop.get("breaks_are_paid"))
 
-    print(f"\n{shop.get('name', '?')} — week of {week}")
+    print(f"\n{shop.get('name', '?')} - week of {week}")
     print(f"  manager: {len(his)} shifts   solver: {len(ours)} shifts")
 
     # ---- the two weeks, side by side --------------------------------------
@@ -180,22 +180,22 @@ async def run(email: str, week: str | None) -> None:
     print(f"  INVENTED      {len(invented):3}  the solver added it, he did not")
 
     if wrong_person:
-        print("\n  WRONG PERSON — an ownership or ranking question:")
+        print("\n  WRONG PERSON - an ownership or ranking question:")
         for day, start, end, his_who, our_who in sorted(wrong_person)[:12]:
             print(f"    {day} {start}-{end:8} he had {names.get(his_who,'?')[:14]:16}"
                   f"solver put {names.get(our_who,'?')}")
     if wrong_times:
-        print("\n  WRONG TIMES — a shape question (day_slots, stretching, "
+        print("\n  WRONG TIMES - a shape question (day_slots, stretching, "
               "contract fitting):")
         for day, employee_id, was, now in sorted(wrong_times)[:12]:
             print(f"    {day} {names.get(employee_id,'?')[:14]:16}"
                   f"he had {was[0]}-{was[1]:8} solver {now[0]}-{now[1]}")
     if missing:
-        print("\n  MISSING — he rostered these and the solver did not:")
+        print("\n  MISSING - he rostered these and the solver did not:")
         for day, employee_id, start, end in sorted(missing)[:12]:
             print(f"    {day} {start}-{end:8} {names.get(employee_id,'?')}")
     if invented:
-        print("\n  INVENTED — the solver added these and he did not:")
+        print("\n  INVENTED - the solver added these and he did not:")
         for day, employee_id, start, end in sorted(invented)[:12]:
             print(f"    {day} {start}-{end:8} {names.get(employee_id,'?')}")
 
@@ -212,12 +212,12 @@ async def run(email: str, week: str | None) -> None:
         print("  looking at one by one rather than as a pattern.")
     elif wrong_person and len(wrong_person) >= len(wrong_times):
         print("  Mostly WRONG PERSON: the shifts are right and the people on")
-        print("  them are not. That is ownership and ranking — §2b — not the")
+        print("  them are not. That is ownership and ranking - §2b - not the")
         print("  demand profile.")
     elif wrong_times and len(wrong_times) > len(wrong_person):
         print("  Mostly WRONG TIMES: the right people on the wrong hours. That")
-        print("  is the shape of the day — `day_slots`, the stretching pass,")
-        print("  contract fitting — not who gets picked.")
+        print("  is the shape of the day - `day_slots`, the stretching pass,")
+        print("  contract fitting - not who gets picked.")
     else:
         print("  Mostly MISSING and INVENTED: the days are the wrong SHAPE")
         print("  rather than staffed by the wrong people. Start at")

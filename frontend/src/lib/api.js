@@ -9,7 +9,7 @@ export const API = `${BACKEND_URL}/api`;
  * The shell holds its own copy of /shop for the roster-group switcher and
  * the sidebar counts. Saving in Shop Settings used to leave that copy
  * stale until the page was reloaded, so a newly added group did not appear
- * in the dropdown. A window event is enough here — one publisher, one
+ * in the dropdown. A window event is enough here - one publisher, one
  * subscriber, no shared cache to keep in sync.
  */
 export const SHOP_CHANGED = "roster:shop-changed";
@@ -25,7 +25,7 @@ export const ROSTER_GROUP_KEY = "roster_group";
  *
  * localStorage survives closing the browser; sessionStorage is cleared when
  * it closes. Email and Google sign-in authenticate only with this Bearer
- * token — the server reads a session cookie but never sets one — so the
+ * token - the server reads a session cookie but never sets one - so the
  * choice of store genuinely decides whether you are still signed in
  * tomorrow. The token's own expiry still applies either way.
  *
@@ -43,7 +43,7 @@ export const getToken = () => {
 /**
  * `persist` true or false chooses the store; left out, the new token goes
  * wherever the current one already is. That matters for token *replacement*
- * — changing your password issues a fresh token, and defaulting to "keep"
+ * - changing your password issues a fresh token, and defaulting to "keep"
  * would silently turn a session-only sign-in into a remembered one.
  */
 export const setToken = (token, persist) => {
@@ -58,7 +58,7 @@ export const setToken = (token, persist) => {
     drop.removeItem(TOKEN_KEY);
     keep.setItem(TOKEN_KEY, token);
   } catch {
-    /* storage unavailable — the request will simply be unauthenticated */
+    /* storage unavailable - the request will simply be unauthenticated */
   }
 };
 
@@ -86,7 +86,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// A 401 means the stored token is expired or invalid — drop it so the app
+// A 401 means the stored token is expired or invalid - drop it so the app
 // falls back to the login screen instead of retrying with a dead credential.
 // Login/signup failures are excluded: a wrong password is not a dead session,
 // and the form needs to show its own error.
@@ -143,7 +143,7 @@ export function errorMessage(error, fallback = "Something went wrong") {
   //
   // NAME THE FIELD. `msg` alone is "Input should be greater than 0", which
   // is true of a form with a dozen numbers on it and useless on all of them
-  // — a manager saw exactly that, could not tell which box was wrong, and
+  // - a manager saw exactly that, could not tell which box was wrong, and
   // reasonably assumed the app was broken.
   //
   // `loc` is like ["body", "max_weekly_hours"] or ["body", "summer_break",
@@ -194,7 +194,7 @@ export const roleClass = (role) =>
  * Seniority colour for a role, as a hex value.
  *
  * Used for the 3px accent bar on roster cells. The grid has ~200 cells, so
- * they cannot each be a filled colour block — the accent carries the role and
+ * they cannot each be a filled colour block - the accent carries the role and
  * the cell stays white and legible. Matches the ink ramp in index.css: colour
  * encodes seniority, not identity, so it must read as one gradient rather
  * than five unrelated hues.
@@ -276,12 +276,12 @@ export const DAY_SHORT = {
 
 /**
  * Length of a shift in hours, handling the overnight wrap.
- * Mirrors shift_duration_minutes() on the backend — if you change the rule
+ * Mirrors shift_duration_minutes() on the backend - if you change the rule
  * in one place, change it in the other.
  *
  * Returns 0 for anything without both times. Paid-holiday and unpaid-leave
  * entries are stored with empty start/end, and arithmetic on those produced
- * NaN, which then spread through every total that touched them — the weekly
+ * NaN, which then spread through every total that touched them - the weekly
  * hours column, the CSV and the PDF all showed "NaNh" for anyone on leave.
  */
 export function shiftHours(start, end) {
@@ -297,7 +297,7 @@ export function shiftHours(start, end) {
 }
 
 /**
- * Paid hours for a stored shift — what the person is actually paid for.
+ * Paid hours for a stored shift - what the person is actually paid for.
  *
  * When the shop setting is supplied, working shifts are recalculated from
  * their times so a setting change takes effect immediately. Holiday entries
@@ -349,7 +349,7 @@ export const fmtHours = (value) => `${Number(value || 0).toFixed(1)}h`;
  * Money, in one place.
  *
  * Every currency string used to be hand-written at the call site, and one of
- * them said "$" while the rest said "€" — the kind of drift that is invisible
+ * them said "$" while the rest said "€" - the kind of drift that is invisible
  * until somebody spots it on a cost report. Anything showing an amount goes
  * through here.
  *

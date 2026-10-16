@@ -8,7 +8,7 @@ Reported twice: "Emma usually works every Monday at 6:00 am, but she was not
 rostered at 6:00 at all." Both times `check_why_these_shifts.py` reported
 ownership as sound and named no displacement.
 
-Both can be true, because ownership is keyed on the EXACT shape — the tuple
+Both can be true, because ownership is keyed on the EXACT shape - the tuple
 (day, start, end). Somebody who opens at 06:00 every Monday but finishes at
 14:00 some weeks and 16:00 others has two half-claims and no whole one, so
 `regulars_of` returns nobody and the slot is decided by tie-break. Nothing is
@@ -49,7 +49,7 @@ from app.services.learning import latest_per_week           # noqa: E402
 async def run(email: str, who: str, day_filter: str | None) -> None:
     user = await db.users.find_one({"email": email.lower()}, {"_id": 0})
     if not user:
-        sys.exit(f"No account for {email}")
+        sys.exit("No matching account.")
     shop = await db.shops.find_one({"owner_id": user["user_id"]}, {"_id": 0})
     if not shop:
         sys.exit("That account has no shop yet.")
@@ -64,11 +64,9 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
     match = exact or [e for e in employees
                       if who.lower() in (e.get("name") or "").lower()]
     if not match:
-        sys.exit(f"Nobody matching {who!r}. "
-                 f"Names: {', '.join(sorted(e.get('name', '?') for e in employees))}")
+        sys.exit("No matching employee. Check the name in the Employees page.")
     if len(match) > 1:
-        sys.exit(f"{who!r} matches {len(match)}: "
-                 f"{', '.join(e['name'] for e in match)}")
+        sys.exit(f"The selection matches {len(match)} employees. Use the full name.")
     employee = match[0]
     employee_id = employee["employee_id"]
 
@@ -81,7 +79,7 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
     # `day_slots` is built by apportioning the shop's most COMMON shapes to a
     # headcount target. Ownership is measured per shape. Nothing connects the
     # two, so a shift somebody owns outright can be left out of the list for
-    # being less frequent than its neighbours — and then every ownership
+    # being less frequent than its neighbours - and then every ownership
     # check reports "sound", because they did not lose a slot that was never
     # on the board.
     profile = build_profile(
@@ -95,7 +93,7 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
     }
 
     # How often each exact shape ran at all, and how often this person was on
-    # it — the same two numbers `owner_of` divides.
+    # it - the same two numbers `owner_of` divides.
     ran: Dict[tuple, set] = defaultdict(set)
     theirs: Dict[tuple, int] = defaultdict(int)
     for roster in weeks:
@@ -114,11 +112,11 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
             if shift["employee_id"] == employee_id:
                 theirs[key] += 1
 
-    print(f"\n{employee['name']} at {shop.get('name', '?')} — "
+    print("\nSelected employee at selected shop - "
           f"{len(weeks)} approved weeks"
           + (f", {day_filter} only" if day_filter else ""))
 
-    print(f"\n{'=' * 72}\nBY EXACT SHAPE — this is what ownership uses\n{'=' * 72}")
+    print(f"\n{'=' * 72}\nBY EXACT SHAPE - this is what ownership uses\n{'=' * 72}")
     print(f"  {'shape':26}{'they worked':>12}{'slot ran':>10}{'share':>8}"
           f"  owns?  offered?")
     stranded: list = []
@@ -144,7 +142,7 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
 
     # Regrouped by start time only. Familiarity already works this way (§2)
     # because a person is either there to open or they are not.
-    print(f"\n{'=' * 72}\nBY START TIME — what a human would call 'her shift'"
+    print(f"\n{'=' * 72}\nBY START TIME - what a human would call 'her shift'"
           f"\n{'=' * 72}")
     by_start_ran: Dict[tuple, set] = defaultdict(set)
     by_start_theirs: Dict[tuple, int] = defaultdict(int)
@@ -188,7 +186,7 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
         print("  apportions them to a headcount target. Ownership is measured")
         print("  per shape. Nothing connects the two, so a shift somebody owns")
         print("  outright is dropped for being less frequent than its")
-        print("  neighbours — and they are then left competing for a shape")
+        print("  neighbours - and they are then left competing for a shape")
         print("  they do NOT own, which they lose on the tie-break.")
         print()
         print("  Every ownership check reports 'sound', correctly: they did")
@@ -208,7 +206,7 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
     elif not stranded:
         print("  Ownership by exact shape and by start time agree, and every")
         print("  shape they own is offered. If a shift of theirs still")
-        print("  changed hands, the cause is elsewhere —")
+        print("  changed hands, the cause is elsewhere -")
         print("  check_why_these_shifts.py names displacements and reasons.")
 
 

@@ -1,10 +1,10 @@
-"""Change a rule or a contract, and THIS week reflects it — without regenerating.
+"""Change a rule or a contract, and THIS week reflects it - without regenerating.
 
 The shop owner asked for this twice: "if I go back and change shop rules or
 employee contract or something, that should reflect on the roster which I'm
 working on currently. Refresh just for the rules, not for the roster."
 
-Regenerate already answers it and is the wrong answer — it throws away every
+Regenerate already answers it and is the wrong answer - it throws away every
 edit the manager has made, which is why they stopped pressing it. So the
 figures that DESCRIBE THE WEEK are derived on read (§5) rather than stored at
 generation, and the page refetches them on demand.
@@ -13,12 +13,12 @@ What is derived, and what is not:
 
   derived   coverage gaps, rule breaches, "against the usual", who is below
             their contracted hours, which custom rules cannot be read
-  stored    what the SOLVER DID — "Martin's shift was changed from X to Y".
+  stored    what the SOLVER DID - "Martin's shift was changed from X to Y".
             That is a record of a past action. Recomputing it would be
             fiction, and it is not what goes stale.
 
 These tests are about the first row. They go through the HTTP API rather than
-calling the services, because the bug was never in the arithmetic — it was
+calling the services, because the bug was never in the arithmetic - it was
 that the page was reading a stored copy.
 """
 from tests.test_api import EMPLOYEE, auth, register
@@ -102,7 +102,7 @@ class TestRaisingAContractShowsUpWithoutRegenerating:
         ), (
             "the contract went to 42.5h and this week does not reach it, so "
             "the roster page must say so without the manager regenerating "
-            f"and losing their edits — got {after.get('under_contract')}"
+            f"and losing their edits - got {after.get('under_contract')}"
         )
 
 
@@ -133,7 +133,7 @@ class TestARuleThatCannotBeReadIsReportedLive:
         after = _audit(client, token, roster["roster_id"])
         assert "Vibes only" in after["inactive_rules"], (
             "a rule that cannot be compiled does nothing, and the week the "
-            f"manager is looking at must say so — got {after['inactive_rules']}"
+            f"manager is looking at must say so - got {after['inactive_rules']}"
         )
 
     def test_a_readable_rule_is_not_reported(self, client):
@@ -153,7 +153,7 @@ class TestARuleThatCannotBeReadIsReportedLive:
         )
         after = _audit(client, token, roster["roster_id"])
         assert after["inactive_rules"] == [], (
-            f"this one parses, so nothing should be flagged — got "
+            f"this one parses, so nothing should be flagged - got "
             f"{after['inactive_rules']}"
         )
 

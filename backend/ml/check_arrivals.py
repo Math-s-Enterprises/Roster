@@ -7,7 +7,7 @@ WHAT IS BEING TESTED
 `demand.py` learns the shop's shift SHAPES and apportions the most common
 ones to a per-day headcount target. That scores each shape independently, so
 it does not know that `06:00-16:00`, `06:00-14:00` and `06:00-11:00` compete
-for the same job — all three look common, all three get picked, and Saturday
+for the same job - all three look common, all three get picked, and Saturday
 comes out with three people starting at 06:00 where the shop runs two.
 
 The shop owner asked for something different from the start: "at 6:00 two
@@ -16,7 +16,7 @@ per hour, not bodies present and not shapes.
 
 It matters that arrivals are not what the solver used to do either. The
 original model counted bodies PRESENT each hour and was dropped because it
-double-counted changeover — a night worker still on the floor at 06:00 was
+double-counted changeover - a night worker still on the floor at 06:00 was
 in the curve, so filling 06:00 "to target" put a fourth body on an hour that
 always had three. Counting arrivals cannot make that mistake: somebody still
 on the floor at 06:00 did not START at 06:00.
@@ -32,7 +32,7 @@ For each day and hour, three numbers:
 WHAT A NON-ZERO ANSWER LOOKS LIKE, STATED BEFORE RUNNING
 --------------------------------------------------------
 The change is WORTH MAKING if `shapes` differs from `manager` at a
-meaningful number of hours — that difference is exactly what an arrivals
+meaningful number of hours - that difference is exactly what an arrivals
 model would remove, because it would fit those numbers by construction.
 
 It is NOT worth making if the two already agree almost everywhere. Then the
@@ -113,7 +113,7 @@ async def run(email: str, day_filter: str | None) -> None:
         for start, _end in (profile.slots_for(day) or []):
             shapes[day][to_minutes(start) // 60] += 1
 
-    print(f"\n{shop.get('name', '?')} — {len(approved)} approved weeks")
+    print(f"\n{shop.get('name', '?')} - {len(approved)} approved weeks")
     print("How many people START each hour: what the manager writes, against "
           "what\nthe current shape list would produce.\n")
 
@@ -153,7 +153,7 @@ async def run(email: str, day_filter: str | None) -> None:
     if len(worst) >= 5:
         print("  WORTH BUILDING. The shape list starts materially different")
         print("  numbers of people from the manager at several hours, and an")
-        print("  arrivals model would fit those numbers by construction —")
+        print("  arrivals model would fit those numbers by construction -")
         print("  it is the quantity it would be learning.")
         print()
         print("  Note what this does NOT settle: how long each of them stays.")

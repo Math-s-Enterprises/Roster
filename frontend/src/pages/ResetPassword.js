@@ -7,7 +7,7 @@ import AuthShell from "@/components/AuthShell";
 import { RESET_PASSWORD } from "@/constants/testIds/auth";
 
 /**
- * Reset password — reached from the emailed link, the sign-in page's frame.
+ * Reset password - reached from the emailed link, the sign-in page's frame.
  *
  * On success it hands a message to the sign-in page rather than toasting
  * here and navigating away, where the toast would be gone before anyone
@@ -56,7 +56,7 @@ export default function ResetPassword() {
       await resetPassword(token, password);
       navigate("/login", {
         replace: true,
-        state: { notice: "Password reset — sign in with your new password." },
+        state: { notice: "Password reset, sign in with your new password." },
       });
     } catch (err) {
       setError(errorMessage(err, "This link has expired or already been used. Request a new one."));

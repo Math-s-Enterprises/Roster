@@ -7,7 +7,7 @@ WHAT THIS ANSWERS
 Three numbers per person, and the distinction between them is the whole
 point:
 
-    span hours    clock in to clock out — time on the premises
+    span hours    clock in to clock out - time on the premises
     paid hours    what the wage is calculated on
     break hours   the difference
 
@@ -27,7 +27,7 @@ WHY SHIFTS ARE DATED INDIVIDUALLY
 ---------------------------------
 A roster week is Monday to Sunday, but a payroll month is not. The week of
 26 January runs into February, and counting the whole week into January would
-put days in a month they were not worked — a total that cannot be reconciled
+put days in a month they were not worked - a total that cannot be reconciled
 against a payslip. Every shift is therefore given its own calendar date and
 tested against the range.
 """

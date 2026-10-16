@@ -2,12 +2,12 @@
 
 Two kinds live here:
 
-  * SYSTEM rules (`locked: True`) — the guarantees the product makes about
+  * SYSTEM rules (`locked: True`) - the guarantees the product makes about
     every roster. They cannot be edited, disabled or deleted through this
     API. The block is enforced server-side; hiding the controls in the UI is
     a convenience, not the protection.
 
-  * CUSTOM rules — free text a shop owner writes, compiled into a structured
+  * CUSTOM rules - free text a shop owner writes, compiled into a structured
     constraint the solver can enforce. The common shapes are parsed
     deterministically, which works with no API key and gives the same answer
     every time; the LLM is a fallback for wording the parser cannot read.
@@ -88,7 +88,7 @@ async def _compile_locally(payload: AIRuleIn, scope: ShopScope) -> Dict[str, Any
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_rule(payload: AIRuleIn, scope: ShopScope = CurrentScope):
-    # Rules created through the API are never locked — only the seeded
+    # Rules created through the API are never locked - only the seeded
     # system defaults are.
     _validate_departments(payload, scope)
     return await scope.ai_rules.insert({
@@ -123,7 +123,7 @@ async def delete_rule(rule_id: str, scope: ShopScope = CurrentScope):
 async def compile_rule(rule_id: str, scope: ShopScope = CurrentScope):
     """Turn a free-text rule into a structured constraint via the LLM.
 
-    Compiling does not activate the rule — the result must be reviewed and
+    Compiling does not activate the rule - the result must be reviewed and
     approved first. That keeps a model misreading a rule from silently
     changing how people are scheduled.
     """

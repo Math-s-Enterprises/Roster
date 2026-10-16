@@ -1,7 +1,7 @@
 """End-to-end API tests against an in-memory MongoDB.
 
-These exercise real HTTP requests through the full stack — routing,
-validation, auth, tenancy scoping and persistence — without needing a real
+These exercise real HTTP requests through the full stack - routing,
+validation, auth, tenancy scoping and persistence - without needing a real
 database or network. `mongomock_motor` stands in for Motor.
 
 The tenancy tests are the important ones: they prove one shop cannot reach
@@ -41,7 +41,7 @@ def client(monkeypatch):
     # Rebind every collection handle the app uses. Derived from the module
     # rather than listed by hand: a collection added later and forgotten here
     # would quietly keep talking to a real database, and the failure surfaces
-    # far from the cause — as a closed event loop during startup.
+    # far from the cause - as a closed event loop during startup.
     collections = [
         name for name, value in vars(db_module).items()
         if not name.startswith("_")
@@ -369,7 +369,7 @@ def _add_team(client, token, people):
 
 
 def test_manual_row_order_is_saved_and_reused(client):
-    """The arrangement has to survive a reload — that is the whole point."""
+    """The arrangement has to survive a reload - that is the whole point."""
     token = register(client)
     ids = _add_team(client, token, [
         ("Mia", "Assistant Manager"), ("Adam", "Supervisor"), ("Zoe", "Floor Assistant"),
@@ -424,7 +424,7 @@ def test_a_new_starter_lands_at_the_bottom_not_mid_list(client):
     """Someone hired after the last reorder is not in the saved list.
 
     They sort after everyone who is, so the manager can see there is a new
-    row to place — slotting them into the middle would look like the saved
+    row to place - slotting them into the middle would look like the saved
     order had drifted on its own.
     """
     token = register(client)
@@ -586,7 +586,7 @@ def _week_with_a_pre_existing_breach(client, token):
     assert saved.status_code == 200, saved.json()
 
     # Ana's contract is cut to 20h, so the already-saved roster now puts her
-    # well over it — through no action of the person editing next.
+    # well over it - through no action of the person editing next.
     client.put(
         f"/api/employees/{a}",
         json={**EMPLOYEE, "name": "Ana", "email": "ana@example.com",
@@ -634,7 +634,7 @@ def test_a_pre_existing_breach_is_still_reported(client):
 def test_an_edit_that_makes_things_worse_is_saved_and_named(client):
     """CHANGED, deliberately: this used to assert a 400.
 
-    The distinction it protects still matters and is still tested — what the
+    The distinction it protects still matters and is still tested - what the
     EDIT introduced is reported separately from what was already wrong, so the
     manager is not shown the week's whole backlog after every change. What has
     changed is that being told no longer means being stopped.
@@ -837,7 +837,7 @@ class TestCorrectionCapture:
         assert moved and moved[0]["to_slot"] == "10:00-18:00"
 
     def test_approving_an_untouched_roster_records_zero_edits(self, client):
-        """The outcome the product is aiming at — worth measuring explicitly."""
+        """The outcome the product is aiming at - worth measuring explicitly."""
         token = register(client)
         rid, _, _ = self._week(client, token)
         client.post(f"/api/rosters/{rid}/approve?acknowledge_gaps=true",
@@ -854,7 +854,7 @@ class TestCorrectionCapture:
         assert diff_roster([], []) == []
         assert edit_count(diff_roster([], [])) == 0
         # The flag, not the count, is what distinguishes "no edits" from
-        # "cannot tell" — asserted here so the distinction is not lost.
+        # "cannot tell" - asserted here so the distinction is not lost.
         token = register(client)
         rid, _, _ = self._week(client, token)
         client.post(f"/api/rosters/{rid}/approve?acknowledge_gaps=true",
@@ -1083,7 +1083,7 @@ class TestSetupStatus:
     """The checklist a new shop follows.
 
     Every step is derived from the data, never from a stored "step 3 done"
-    flag — a flag starts lying the moment the data behind it changes, which
+    flag - a flag starts lying the moment the data behind it changes, which
     is exactly when a new user most needs to be told the truth.
     """
 
@@ -1113,7 +1113,7 @@ class TestSetupStatus:
         """The bug that made this step impossible to finish.
 
         Whether pay and age had been reviewed was worked out by comparing
-        them against the importer's defaults — which cannot tell a
+        them against the importer's defaults - which cannot tell a
         placeholder from somebody who genuinely is 25, genuinely is on that
         rate and genuinely does work 40 hours. For them the step could never
         be ticked, however many times the record was opened and saved.
@@ -1146,7 +1146,7 @@ class TestSetupStatus:
         assert "1 person" in steps["team"]["detail"]
 
     def test_placeholder_pay_is_flagged_until_reviewed(self, client):
-        """Imported staff land on €13.00, age 25, 40h — none of it real."""
+        """Imported staff land on €13.00, age 25, 40h - none of it real."""
         token = register(client)
         _seed_imported_week(client, token, "2026-03-02")
         _, steps = self._steps(client, token)
@@ -1222,7 +1222,7 @@ class TestSetupStatus:
         assert steps["roster"]["done"] is True
 
     def test_imported_history_does_not_count_as_your_first_roster(self, client):
-        """Otherwise importing would tick a step the manager never did — and
+        """Otherwise importing would tick a step the manager never did - and
         report drafts to somebody who has generated nothing."""
         token = register(client)
         _seed_imported_week(client, token, "2026-03-02")
@@ -1313,7 +1313,7 @@ class TestLearningSummary:
             "Duty Manager", "Supervisor", "Night Shift",
         ]}, headers=auth(token))
 
-        # Section in the leftmost column, names beside it — the layout the
+        # Section in the leftmost column, names beside it - the layout the
         # parser expects and real roster sheets use.
         csv = (
             "Role,Name,Mon,Tue,Wed,Thu,Fri,Sat,Sun\n"
@@ -1358,13 +1358,13 @@ class TestLearningSummary:
         assert megan["role_in_file"] == "Duty Manager"
 
     def test_an_imported_employee_can_actually_be_edited(self, client):
-        """Reviewing imported pay is a step we tell managers to do — it has
+        """Reviewing imported pay is a step we tell managers to do - it has
         to be possible.
 
         The importer used to invent "jane@imported.shop_645.local", which
         failed EmployeeIn twice over: an underscore is illegal in a domain,
         and ".local" is a reserved name. So imported staff could be created
-        and never edited — opening one, changing the pay and saving returned
+        and never edited - opening one, changing the pay and saving returned
         a validation error about an address the manager never typed.
         """
         token = register(client)
@@ -1785,7 +1785,7 @@ def test_editing_a_rule_recompiles_it(client):
 
 def test_approving_a_roster_with_uncovered_hours_is_refused(client):
     """Approval turns a draft into what people are told to work. It was going
-    through silently on rosters that left the shop unattended — the one
+    through silently on rosters that left the shop unattended - the one
     outcome this app exists to prevent."""
     token = register(client)
     client.post("/api/employees", json=EMPLOYEE, headers=auth(token))
@@ -1822,7 +1822,7 @@ def test_uncovered_hours_can_be_accepted_deliberately(client):
     # Recorded, so a week that went out with known gaps says so afterwards.
     #
     # Counted against the GAPS, not against critical_issues. That list also
-    # carries a headline — "NOT ENOUGH STAFF: this week needs 80h..." — which
+    # carries a headline - "NOT ENOUGH STAFF: this week needs 80h..." - which
     # is a summary of the week, not an hour of it, so using its length
     # recorded one more unattended hour than the roster actually had.
     hours = [g for g in roster["gaps"] if g["severity"] == "uncovered"]
@@ -1832,7 +1832,7 @@ def test_uncovered_hours_can_be_accepted_deliberately(client):
     # sentences: a headline about the week, plus one line per RUN of
     # consecutive hours, so there are far fewer of them than there are
     # unattended hours. Using its length recorded the wrong number twice
-    # over — once for the headline, and once for every hour a run covers.
+    # over - once for the headline, and once for every hour a run covers.
     assert len(roster["critical_issues"]) < len(hours), (
         "consecutive uncovered hours should collapse into one line each"
     )
@@ -1915,7 +1915,7 @@ def test_deleting_an_employee_removes_their_fixed_shifts(client):
 
 
 # ---------------------------------------------------------------------------
-# Tenant isolation — the core security property
+# Tenant isolation - the core security property
 # ---------------------------------------------------------------------------
 class TestTenantIsolation:
     def test_shops_cannot_see_each_others_employees(self, client):
@@ -2060,7 +2060,7 @@ class TestRosters:
         """CHANGED, deliberately: this used to assert a 400.
 
         Refusing the edit read as the app knowing better than the manager, and
-        it does not — somebody moving a shift at 6am knows things the app
+        it does not - somebody moving a shift at 6am knows things the app
         cannot see. It also made a roster impossible to finish, and taught
         people to work around the edit screen, which is where the corrections
         signal comes from.
@@ -2215,7 +2215,7 @@ class TestRosters:
         ).status_code == 409
 
     def test_approval_archives_rather_than_deletes_drafts(self, client):
-        """Superseded drafts are training signal — they must survive."""
+        """Superseded drafts are training signal - they must survive."""
         token = register(client)
         client.post("/api/employees", json=EMPLOYEE, headers=auth(token))
         payload = {"week_start": "2026-08-10"}
@@ -2287,7 +2287,7 @@ class TestLeave:
         """Opening balance included: paid holiday is now capped at what the
         employee actually has, so a fresh employee with no history cannot
         book any. Tests about date ranges should not double as tests of the
-        balance cap — that has its own class."""
+        balance cap - that has its own class."""
         return client.post("/api/employees", json={
             **EMPLOYEE,
             "max_weekly_hours": hours,
@@ -2672,7 +2672,7 @@ class TestUndoSick:
     """A sick call recorded by mistake has to be fully reversible.
 
     Undoing only the flag would leave the shift double-staffed and the person
-    still blocked from being rostered that day — a worse state than either
+    still blocked from being rostered that day - a worse state than either
     marking it or not.
     """
 
@@ -2765,7 +2765,7 @@ class TestUndoSick:
         ).json()["approved"] is True
 
     def test_an_unrelated_shift_that_day_is_kept(self, client):
-        """Somebody already working that day is not cover — leave them be."""
+        """Somebody already working that day is not cover - leave them be."""
         token = register(client)
         rid, shift, _ = self._sick_week(client, token, with_cover=False)
         before = len(client.get(f"/api/rosters/{rid}", headers=auth(token)).json()["shifts"])
@@ -2813,7 +2813,7 @@ class TestSystemRulesAreNotDuplicated:
     An earlier read-then-insert version raced itself: two requests both found
     a newly added rule missing, both inserted it, and the shop listed the rule
     twice. That happened the first time anybody loaded the page after a rule
-    was added — which is the worst possible moment, because it looks like the
+    was added - which is the worst possible moment, because it looks like the
     new feature is broken.
     """
 
@@ -2853,7 +2853,7 @@ class TestSystemRulesAreNotDuplicated:
 
     def test_the_wording_follows_the_code(self, client):
         """A locked rule that misstates what the solver does is worse than
-        none — the 12-hour limit read '11 hours' for a while."""
+        none - the 12-hour limit read '11 hours' for a while."""
         from app.services.scheduler import ABSOLUTE_MAX_SHIFT_HOURS, MIN_REST_HOURS
 
         token = register(client)
@@ -2868,7 +2868,7 @@ class TestTwentyFourHourShopIsActuallyOpen:
 
     Both the hours and the starter templates used to sit behind "has no
     templates yet". So a shop that already had templates could be switched to
-    24h and keep 09:00-21:00 opening hours — and because the coverage floor
+    24h and keep 09:00-21:00 opening hours - and because the coverage floor
     only checks open hours, the small hours were then unstaffed AND
     unreported.
     """
@@ -2936,7 +2936,7 @@ class TestExtraStaffEndpoint:
         """Enough staff that somebody has a free day.
 
         With two employees everyone is already on five days, so every extra
-        shift is correctly refused as a sixth — which is the guard working,
+        shift is correctly refused as a sixth - which is the guard working,
         but leaves nothing to test the happy path with.
         """
         token = register(client)
@@ -3067,7 +3067,7 @@ class TestCorrectionsReport:
 
         # Every week is GENERATED before any is approved. Approving teaches
         # the scheduler immediately, so approving as we go meant the first
-        # correction was learned and weeks two and three needed no edit —
+        # correction was learned and weeks two and three needed no edit -
         # only one correction ever reached the report, and the repeat this
         # test is about never happened. (Which is the product working; it
         # just makes for a fixture that proves nothing.)
@@ -3084,7 +3084,7 @@ class TestCorrectionsReport:
 
             # Take that employee off Wednesday every single week.
             # Times default to "" not None: leave carries no times, and the
-            # model rejects null — which made this PUT 422 silently, so the
+            # model rejects null - which made this PUT 422 silently, so the
             # roster was approved unedited and the whole fixture proved
             # nothing.
             kept = [
@@ -3106,7 +3106,7 @@ class TestCorrectionsReport:
             # acknowledge_gaps because the edit above DELETES a shift, which
             # is what leaves an hour uncovered. Approval now recomputes that
             # from the shifts rather than reading the generator's list, so a
-            # roster edited into a gap is caught — which it was not before,
+            # roster edited into a gap is caught - which it was not before,
             # and this fixture was silently failing to approve anything.
             approved = client.post(
                 f"/api/rosters/{roster['roster_id']}/approve"
@@ -3157,7 +3157,7 @@ class TestCorrectionsReport:
         )
         assert applied.status_code == 200, applied.text
 
-        # Applied to the REAL setting, visible in the ordinary UI — not to a
+        # Applied to the REAL setting, visible in the ordinary UI - not to a
         # hidden weight the manager cannot inspect.
         employee = next(
             e for e in client.get("/api/employees", headers=auth(token)).json()
@@ -3204,7 +3204,7 @@ class TestCorrectionsReport:
 
 
 class TestForceApproval:
-    """A week that breaks rules can become real — deliberately, and on record.
+    """A week that breaks rules can become real - deliberately, and on record.
 
     Two things are being balanced. The manager knows things the app does not,
     so they must be able to finish a roster the app disagrees with. And a
@@ -3293,8 +3293,8 @@ class TestForceApproval:
         # acknowledge_gaps as well as force: this fixture rewrites one
         # person's week to 09:00-17:00 six days running, which leaves the
         # evening uncovered as a side effect. Those are two separate
-        # decisions — a password for the rules somebody is overriding, a
-        # confirmation for the hours nobody will be in the shop — and this
+        # decisions - a password for the rules somebody is overriding, a
+        # confirmation for the hours nobody will be in the shop - and this
         # test is about the first.
         #
         # It passed WITHOUT this until the gap check started recomputing.
@@ -3316,7 +3316,7 @@ class TestForceApproval:
         assert roster["force_approved"] is True
         assert roster["force_approved_by"] == "owner@example.com"
         assert roster["force_approved_reason"] == "Cover for a delivery"
-        # Not a count — what was overridden, so it can be read back later by
+        # Not a count - what was overridden, so it can be read back later by
         # somebody who was not in the room.
         assert any(
             r["rule"] == "days_worked" and r["employee_id"] == employee_id
@@ -3351,7 +3351,7 @@ class TestTwentyFourHourStaysTwentyFourHour:
     """The setting that undid itself at random.
 
     apply_24h_defaults read `open_24h` from the UPDATE only. Updates are
-    partial, so a save that changed anything else carried no open_24h — the
+    partial, so a save that changed anything else carried no open_24h - the
     guard returned early and whatever `hours` the settings form was holding,
     usually 09:00-21:00, was written over a 24-hour shop's real hours.
 
@@ -3376,7 +3376,7 @@ class TestTwentyFourHourStaysTwentyFourHour:
         client.put("/api/shop", json={"open_24h": True}, headers=auth(token))
 
         # A settings save that says nothing about open_24h but does carry the
-        # hours field — which is what the form sends.
+        # hours field - which is what the form sends.
         client.put("/api/shop", json={
             "name": "Renamed Shop",
             "hours": [
@@ -3391,7 +3391,7 @@ class TestTwentyFourHourStaysTwentyFourHour:
         )
 
     def test_turning_it_off_releases_the_hours(self, client):
-        """False is a decision and must be honoured — absent is not False."""
+        """False is a decision and must be honoured - absent is not False."""
         token = register(client)
         client.put("/api/shop", json={"open_24h": True}, headers=auth(token))
         client.put("/api/shop", json={
@@ -3412,7 +3412,7 @@ class TestChangingYourPassword:
     forgot-password emails a reset link and needs email configured; there was
     nothing at all for somebody who knows their password and wants a new one.
     That became a real gap when force approval started asking for this
-    password — it went from typed once at signup to used regularly.
+    password - it went from typed once at signup to used regularly.
     """
 
     OLD = "password123"
@@ -3451,7 +3451,7 @@ class TestChangingYourPassword:
         """The promise this makes, and the half that is easy to miss.
 
         Deleting server-side sessions is not enough: a bearer token cannot be
-        revoked, so every one already issued keeps working until it expires —
+        revoked, so every one already issued keeps working until it expires -
         up to JWT_EXPIRY_DAYS of somebody else still being logged in as you,
         which is precisely the situation you change a password to end.
         """
@@ -3468,7 +3468,7 @@ class TestChangingYourPassword:
         assert changed.status_code == 200
 
         assert client.get("/api/auth/me", headers=auth(phone)).status_code == 401, (
-            "the other device is still logged in — deleting sessions alone "
+            "the other device is still logged in - deleting sessions alone "
             "does not revoke a bearer token"
         )
 
@@ -3524,7 +3524,7 @@ def test_a_spreadsheet_of_addresses_is_previewed_then_applied(client):
     _add(client, token, "Megan Byrne")
 
     preview = _preview(client, token, (
-        "Top Oil — please add your email\n"
+        "Top Oil - please add your email\n"
         "\n"
         "Name,Email address,Notes\n"
         "Emma,emma@shop.ie,\n"
@@ -3630,7 +3630,7 @@ def test_a_roster_recipient_is_not_an_employee(client):
     """The whole reason this is a shop setting and not a staff record.
 
     An employee record would put them in the seniority ladder, in the
-    solver's candidate list and on the printed rota — and sooner or later
+    solver's candidate list and on the printed rota - and sooner or later
     somebody who does not work here would be rostered a shift.
     """
     token = register(client, "not-staff@example.com")
@@ -3669,7 +3669,7 @@ def test_a_gap_filled_by_hand_can_then_be_approved(client):
 
     A generated week left Friday evening uncovered, correctly. The manager
     added a shift covering it. Approval went on refusing, saying the shop
-    would be unattended — and no amount of editing could clear it, because
+    would be unattended - and no amount of editing could clear it, because
     approval read `critical_issues` off the roster and only the SOLVER ever
     writes that field. §5: derive state, never store it.
     """

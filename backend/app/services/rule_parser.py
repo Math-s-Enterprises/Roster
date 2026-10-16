@@ -3,7 +3,7 @@
 A custom rule only reached the solver if it carried a `compiled` constraint,
 and compiling went through the language model. With no ANTHROPIC_API_KEY the
 compile step fails, so the rule saved, displayed as enabled, and did nothing
-— silently. Writing a rule and having it quietly ignored is worse than not
+- silently. Writing a rule and having it quietly ignored is worse than not
 offering the feature.
 
 Most real rules are a handful of shapes:
@@ -17,7 +17,7 @@ Most real rules are a handful of shapes:
 Those are recognised here deterministically, which means they work offline,
 give the same answer every time, and can be explained back to the manager.
 Anything not recognised is reported as unparsed rather than dropped, so the
-manager knows to reword it — and the LLM path still exists for shops that
+manager knows to reword it - and the LLM path still exists for shops that
 have a key configured.
 """
 from __future__ import annotations
@@ -305,7 +305,7 @@ def parse_rule(
     # "No more than 3 people on a Monday"
     #
     # The number must be about PEOPLE. Without that check, "shop floor shifts
-    # are a maximum of 8 hours" compiled to `max_staff: 8` — it showed as
+    # are a maximum of 8 hours" compiled to `max_staff: 8` - it showed as
     # Enforced and silently capped the shop at eight staff instead of
     # limiting shift length. A rule that quietly does the wrong thing is
     # worse than one that refuses, and §9 says an unparseable rule is

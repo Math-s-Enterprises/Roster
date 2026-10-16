@@ -8,7 +8,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import { Plus, Search, ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Sun, X, AlertTriangle } from "lucide-react";
 
 /**
- * Employees — split view (handoff: Employees option B).
+ * Employees - split view (handoff: Employees option B).
  *
  * Master/detail: the team on the left in reading order, one person's record
  * on the right. Selection lives in the URL (/employees/:employeeId) so the
@@ -28,14 +28,14 @@ import { Plus, Search, ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Sun,
  *    "AI-filled" is derived: a shift whose day, start and end match one of
  *    that person's fixed-shift templates is shown as fixed, anything else
  *    as solver-placed. That is the only signal available, and it can read
- *    wrong if a template was edited after the roster was generated — the
+ *    wrong if a template was edited after the roster was generated - the
  *    caption says as much rather than implying certainty.
  *
  * 3. Leave is a fourth week-strip state. The handoff has fixed / AI / off,
  *    but a shift can be paid holiday, unpaid holiday or sick, and drawing
  *    those as a plain "Off" day would hide a booked absence.
  *
- * 4. The eyebrow reads "READING ORDER n OF N", not "SENIORITY n — FILLED
+ * 4. The eyebrow reads "READING ORDER n OF N", not "SENIORITY n - FILLED
  *    FIRST". The list follows shop.employee_order, which the backend keeps
  *    deliberately separate from the ladder that decides who gets hours
  *    first. Printing "filled first" over it would be false.
@@ -44,8 +44,8 @@ import { Plus, Search, ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Sun,
  *    on a roster, not as its own record, so anything further ahead would
  *    mean scanning every roster in the shop.
  *
- * 6. HISTORY is composed from the holiday balance — hours worked, accrued,
- *    taken, and any manual adjustments — because no narrative history is
+ * 6. HISTORY is composed from the holiday balance - hours worked, accrued,
+ *    taken, and any manual adjustments - because no narrative history is
  *    recorded anywhere.
  */
 
@@ -69,7 +69,7 @@ function thisMonday() {
 const fmtHours = (n) => `${Number.isInteger(n) ? n : Number(n).toFixed(1)}h`;
 const edge = (t) => (typeof t === "string" && t.endsWith(":00") ? t.slice(0, 2) : t || "");
 
-/** Paid holiday, unpaid holiday or sick — present but not working. */
+/** Paid holiday, unpaid holiday or sick - present but not working. */
 const isLeave = (shift) => Boolean(shift.paid_holiday || shift.unpaid_holiday || shift.sick);
 
 const leaveWord = (shift) =>
@@ -107,9 +107,9 @@ const emptySummerBreak = { start_date: "", end_date: "", max_weekly_hours: "" };
  * How someone's hours are governed. The distinction matters because the two
  * numbers are measured differently:
  *
- *   full_time_contract — hours ON THE FLOOR, breaks included, and a fixed
+ *   full_time_contract - hours ON THE FLOOR, breaks included, and a fixed
  *       payslip whether they land on 41 or 42.5
- *   student / hourly   — PAID hours, with breaks excluded
+ *   student / hourly   - PAID hours, with breaks excluded
  *
  * Conflating them is what made a 40h employee read as "1.8h over" for
  * taking the breaks they are entitled to.
@@ -136,7 +136,7 @@ const DEFAULT_CONTRACT_SPAN = 42.5;
 const DEFAULT_CONTRACT_TOLERANCE = 1.5;
 // Beyond this, "may fall short by" stops describing slack and starts
 // switching the floor off. The tolerance exists to absorb the fact that a
-// contract can rarely be hit exactly from whole shifts — half an hour here,
+// contract can rarely be hit exactly from whole shifts - half an hour here,
 // an hour there. A whole shift's worth of it means a week can come in
 // materially short and nothing will say so.
 //
@@ -221,7 +221,7 @@ function toPayload(form) {
     can_work_overnight: form.availability.can_work_overnight !== false,
   };
   // If nothing was actually set, send no window at all rather than an object
-  // full of nulls — it keeps stored records honest about what was configured.
+  // full of nulls - it keeps stored records honest about what was configured.
   const hasAvailability =
     availability.earliest_start || availability.latest_finish ||
     availability.available_days || availability.preferred_shift !== "any" ||
@@ -241,14 +241,14 @@ function toPayload(form) {
 
   return {
     name: form.name,
-    // An empty box means "no address", not an empty string — which would
+    // An empty box means "no address", not an empty string - which would
     // fail validation and block the save on an optional field.
     email: (form.email || "").trim() || null,
     role: form.role,
     // AN EMPTY BOX IS NOT ZERO.
     //
     // `Number("")` is 0, and the API rejects 0 for these with "Input should
-    // be greater than 0" — a message that names no field, so clearing the
+    // be greater than 0" - a message that names no field, so clearing the
     // weekly-hours box produced an error that looked like it came from
     // somewhere else entirely. Every optional number below already guarded
     // against "" and these three did not.
@@ -391,7 +391,7 @@ export default function Employees() {
   /**
    * Fixed-template lookup: "empId|day|start|end" for every pinned template.
    * A roster shift matching one of these came from the template rather than
-   * the solver — the only way to tell them apart, since shifts record no
+   * the solver - the only way to tell them apart, since shifts record no
    * source of their own.
    */
   const fixedKeys = useMemo(() => {
@@ -531,7 +531,7 @@ export default function Employees() {
       await api.put(`/employees/${employee.employee_id}`, { ...employee, is_active: active });
       setDeleting(null);
       setSort(active ? "seniority" : "inactive");
-      toast.success(active ? "Employee reactivated" : "Employee marked inactive — excluded from generation");
+      toast.success(active ? "Employee reactivated" : "Employee marked inactive - excluded from generation");
       await load();
     } catch (err) {
       toast.error(errorMessage(err, "Could not change employee status"));
@@ -539,7 +539,7 @@ export default function Employees() {
     } finally { setChangingStatus(false); }
   };
 
-  /** Drag writes shop.employee_order — reading order, not the ladder. */
+  /** Drag writes shop.employee_order - reading order, not the ladder. */
   const canDrag = sort === "seniority" && !query.trim();
 
   const drop = async (targetId) => {
@@ -681,12 +681,12 @@ export default function Employees() {
           </div>
           <div className="esp-stat">
             <div className="esp-stat-label">Max per week</div>
-            <div className="esp-stat-value">{max ? `${max}h` : "—"}</div>
+            <div className="esp-stat-value">{max ? `${max}h` : "-"}</div>
           </div>
           <div className="esp-stat">
             <div className="esp-stat-label">This week</div>
             <div className="esp-stat-value" data-tone={!roster ? "none" : overBy > 0 ? "warn" : "on"}>
-              {roster ? fmtHours(worked) : "—"}
+              {roster ? fmtHours(worked) : "-"}
             </div>
           </div>
           <div className="esp-stat">
@@ -695,7 +695,7 @@ export default function Employees() {
               className="esp-stat-value"
               data-tone={typeof left !== "number" ? "none" : left < LOW_HOLIDAY_HOURS ? "warn" : undefined}
             >
-              {typeof left === "number" ? fmtHours(left) : "—"}
+              {typeof left === "number" ? fmtHours(left) : "-"}
             </div>
           </div>
         </div>
@@ -739,7 +739,7 @@ export default function Employees() {
               <p className="esp-caption">
                 A filled block is a worked shift, an outline is a day off and a bordered block is booked
                 leave. Hover a block to see whether it came from a fixed template or was placed by the
-                solver — that is matched on day and times, so a template edited after this roster was
+                solver, that is matched on day and times, so a template edited after this roster was
                 generated may read as solver-placed.
               </p>
             </>
@@ -771,7 +771,7 @@ export default function Employees() {
             {leaveDays.length > 0 ? (
               leaveDays.map((s) => (
                 <div key={s.day} className="esp-leave">
-                  {DAY_LABELS[s.day]} — {leaveWord(s)}
+                  {DAY_LABELS[s.day]}, {leaveWord(s)}
                 </div>
               ))
             ) : (
@@ -851,7 +851,7 @@ export default function Employees() {
           <div className="esp-eyebrow">TEAM</div>
           <h1 className="esp-h1">Employees</h1>
           <p className="esp-sub">
-            Pick a person on the left — everything about them opens beside it.
+            Pick a person on the left, everything about them opens beside it.
           </p>
         </div>
         <div className="esp-actions">
@@ -962,7 +962,7 @@ export default function Employees() {
       </div>
 
       <p className="esp-note">
-        The list follows the shop's <strong>reading order</strong> — how the sheet is laid out. Dragging a
+        The list follows the shop's <strong>reading order</strong>, how the sheet is laid out. Dragging a
         person changes that order only; <strong>who gets hours first follows the job ladder</strong> and is
         set in shop settings. Amber marks something to act on: over max hours this week, or a holiday
         balance running low. <strong>Delete keeps past rosters</strong>; for someone who has left, Inactive
@@ -988,7 +988,7 @@ export default function Employees() {
               <Field label="Email">
                 <input data-testid="emp-email" type="email" value={form.email || ""}
                   onChange={(e) => set({ email: e.target.value })}
-                  placeholder="Optional — needed to email their roster"
+                  placeholder="Optional, needed to email their roster"
                   className="w-full px-3 py-2.5 rounded-lg" />
               </Field>
               <Field label="Role">
@@ -1130,7 +1130,7 @@ export default function Employees() {
                 </select>
               </Field>
               <p className="text-[11px] esp-ink-faint -mt-2">
-                A preference, not a limit — it is followed where possible but
+                A preference, not a limit, it is followed where possible but
                 will not be allowed to leave the shop unattended.
               </p>
 
@@ -1163,7 +1163,7 @@ export default function Employees() {
               </Field>
               <p className="text-[11px] esp-ink-faint -mt-2">
                 Unlike preferred days off, a day switched off here is a hard
-                no — they are never rostered on it.
+                no, they are never rostered on it.
               </p>
 
               <Toggle
@@ -1242,7 +1242,7 @@ export default function Employees() {
                     </Field>
                   </div>
                   <p className="text-[11px] mt-2" style={{ color: "var(--ink-mute-2)" }}>
-                    Clock in to clock out, breaks included — not paid hours. They
+                    Clock in to clock out, breaks included, not paid hours. They
                     must land between{" "}
                     <span style={{ color: "var(--ink)" }}>
                       {(Number(form.contract_span_hours || DEFAULT_CONTRACT_SPAN)
@@ -1253,7 +1253,7 @@ export default function Employees() {
                     . A week broken by holiday or sickness is allowed to come in under.
                   </p>
 
-                  {/* A large tolerance does not look wrong — it looks like a
+                  {/* A large tolerance does not look wrong - it looks like a
                       number in a box. Saying what it COSTS is the only way it
                       gets noticed, because the sentence above already showed
                       the band and was read past. */}
@@ -1261,7 +1261,7 @@ export default function Employees() {
                     <div className="status-warn p-3 mt-3 text-[11px]">
                       Falling short by up to{" "}
                       {Number(form.contract_span_tolerance).toFixed(1)}h is a
-                      wide margin — roughly{" "}
+                      wide margin, roughly{" "}
                       {(Number(form.contract_span_tolerance) / 8).toFixed(1)} shifts.
                       A week as low as{" "}
                       {(Number(form.contract_span_hours || DEFAULT_CONTRACT_SPAN)

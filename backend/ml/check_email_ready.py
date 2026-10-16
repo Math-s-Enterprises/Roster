@@ -12,7 +12,7 @@ other and from "the app is broken":
   1. RESEND_API_KEY is set, so the mailer is enabled at all
   2. EMAIL_FROM is on a domain VERIFIED with Resend. The default,
      onboarding@resend.dev, delivers ONLY to the address that owns the Resend
-     account — so dispatch to a team appears configured and fails for
+     account - so dispatch to a team appears configured and fails for
      everybody except you
   3. the staff have email addresses. §9 is explicit that imports never
      fabricate one, so a shop set up from a spreadsheet may have none at all,
@@ -41,7 +41,7 @@ from app.services import availability as avail              # noqa: E402
 from app.services import mailer                             # noqa: E402
 
 # Deliberately loose. The job here is to spot "obviously not an address" and
-# placeholders, not to adjudicate RFC 5322 — a real address that this rejected
+# placeholders, not to adjudicate RFC 5322 - a real address that this rejected
 # would be a worse outcome than a bad one it let through, because dispatch
 # reports its own failures anyway.
 LOOKS_LIKE_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -92,7 +92,7 @@ async def run(email: str, send_test: str) -> None:
     else:
         print(f"  Sending as a domain you control: {domain}")
         print("  Resend must show this domain as VERIFIED, or every send is")
-        print("  rejected. Check resend.com/domains — the API key being valid")
+        print("  rejected. Check resend.com/domains - the API key being valid")
         print("  is a different thing and does not imply it.")
 
     print()
@@ -142,7 +142,7 @@ async def run(email: str, send_test: str) -> None:
         print()
         print("  This is the ONLY email that carries the PDF attachment.")
         print("  Staff get their own shifts, without one, by design.")
-        print("  While this list is empty nothing is sent and nothing fails —")
+        print("  While this list is empty nothing is sent and nothing fails -")
         print("  which is why an absent PDF looks like a broken feature.")
     else:
         print(f"  {len(observers)} recipient(s), each sent the whole week")
@@ -157,7 +157,7 @@ async def run(email: str, send_test: str) -> None:
         except Exception as exc:
             print(f"\n  PDF BUILD FAILS ON THIS MACHINE: {exc}")
             print("  The email still sends, without the attachment.")
-            print("  `pip install -r requirements.txt` — reportlab is needed.")
+            print("  `pip install -r requirements.txt` - reportlab is needed.")
 
     print()
     print("=" * 68)
@@ -165,7 +165,7 @@ async def run(email: str, send_test: str) -> None:
     print("=" * 68)
     if not reachable:
         print("Dispatch would reach NOBODY. The mailer being configured does")
-        print("not help — §9 means the import never invented addresses, so")
+        print("not help - §9 means the import never invented addresses, so")
         print("they have to be entered before this feature does anything.")
     elif missing or suspicious:
         print(f"Dispatch would reach {len(reachable)} of {len(active)}. The rest")
@@ -194,7 +194,7 @@ async def run(email: str, send_test: str) -> None:
             print("     not the Resend account owner")
             print("   * the key is from a different Resend account")
         else:
-            print("  Accepted by Resend. Check the inbox — and the spam folder,")
+            print("  Accepted by Resend. Check the inbox - and the spam folder,")
             print("  which is where a newly verified domain usually lands at")
             print("  first. The link in it is deliberately not a real token.")
 

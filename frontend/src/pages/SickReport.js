@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Calendar, Download, Plus } from "lucide-react";
 
 /**
- * Sick leave — HR report (handoff: Sick leave).
+ * Sick leave - HR report (handoff: Sick leave).
  *
  * Read-only reporting apart from Record illness. The scheduler never reads
  * this page and nothing here touches a roster. Styling is the handoff's
@@ -17,11 +17,11 @@ import { Calendar, Download, Plus } from "lucide-react";
  * flag. The API has no such thing:
  *
  *   GET /reports/sick-leave    absence records from the holidays collection
- *                              — dates, day counts, a free-text label. This
+ *                              - dates, day counts, a free-text label. This
  *                              is the incident log, and it updates the
  *                              moment an illness is recorded.
  *
- *   GET /reports/sick-balance  `sick` shifts read off APPROVED ROSTERS —
+ *   GET /reports/sick-balance  `sick` shifts read off APPROVED ROSTERS -
  *                              hours, entitlement, remaining, exhausted.
  *                              An illness recorded today does not appear
  *                              here until a roster covering it is approved.
@@ -29,11 +29,11 @@ import { Calendar, Download, Plus } from "lucide-react";
  * So the allowance figures lag the incident log, sometimes by weeks. The
  * per-person table is therefore built from the incident log and priced with
  * the balance's own conversion rate, rather than read straight off the
- * balance — otherwise recording an illness would leave the table unchanged
+ * balance - otherwise recording an illness would leave the table unchanged
  * and the page would look broken.
  *
  * The paid/unpaid tag is DERIVED, because the log has no such field. It
- * applies the same rule as sick_balance.compute_sick_balance — charge
+ * applies the same rule as sick_balance.compute_sick_balance - charge
  * incidents oldest-first at that person's usual day length, paid until the
  * entitlement runs out, unpaid after. Where the backend has also seen the
  * illness the two agree; where it has not, this is the answer the backend
@@ -51,7 +51,7 @@ import { Calendar, Download, Plus } from "lucide-react";
 const REASONS = [
   { key: "Sick", hint: "Called in unwell." },
   { key: "Certified", hint: "Doctor's note on file." },
-  { key: "Other", hint: "Anything else — add a note." },
+  { key: "Other", hint: "Anything else, add a note." },
 ];
 
 const FILTERS = [
@@ -88,7 +88,7 @@ function readReason(label) {
   const text = String(label || "").trim();
   const match = REASONS.find((r) => text.toLowerCase().startsWith(r.key.toLowerCase()));
   if (!match) return { reason: "Sick", note: text };
-  return { reason: match.key, note: text.slice(match.key.length).replace(/^[\s—·-]+/, "") };
+  return { reason: match.key, note: text.slice(match.key.length).replace(/^[\s\u2014·-]+/, "") };
 }
 
 export default function SickReport() {
@@ -112,7 +112,7 @@ export default function SickReport() {
       // The incident log comes from /holidays rather than
       // /reports/sick-leave: the report aggregates the same records but
       // drops their holiday_id, and without an id there is nothing to
-      // delete by. /holidays is a superset — same records, ids intact.
+      // delete by. /holidays is a superset - same records, ids intact.
       const [l, b, e] = await Promise.all([
         api.get("/holidays"),
         api.get("/reports/sick-balance").catch(() => ({ data: null })),
@@ -142,7 +142,7 @@ export default function SickReport() {
   const currentYear = balance?.leave_year || String(new Date().getFullYear());
 
   /**
-   * Someone's usual day length — the rate that converts an entitlement in
+   * Someone's usual day length - the rate that converts an entitlement in
    * days into hours. The balance knows it from real shifts; for anyone the
    * balance has not seen, fall back to their contract over five days, the
    * same assumption the booking form makes.
@@ -317,7 +317,7 @@ export default function SickReport() {
     setSaving(true);
     try {
       const label = draft.note?.trim()
-        ? `${draft.reason} — ${draft.note.trim()}`
+        ? `${draft.reason} - ${draft.note.trim()}`
         : draft.reason;
       await api.post("/holidays", {
         scope: "sick",
@@ -327,7 +327,7 @@ export default function SickReport() {
         label,
       });
       toast.success(
-        `Recorded for ${empMap[draft.employee_id]?.name || "this employee"} — no roster was changed.`
+        `Recorded for ${empMap[draft.employee_id]?.name || "this employee"}, no roster was changed.`
       );
       setDraft(null);
       await load();
@@ -391,7 +391,7 @@ export default function SickReport() {
       ? `${incident.days} days from ${fmtDay(incident.start)}`
       : fmtDay(incident.start);
     if (!confirmed) {
-      setDeleting({ title: `Delete ${incident.name}'s illness — ${span}?`,
+      setDeleting({ title: `Delete ${incident.name}'s illness - ${span}?`,
         description: "It is removed from the record entirely and their allowance is recalculated. No roster is changed.",
         confirm: () => removeIncident(incident, true) });
       return;
@@ -491,7 +491,7 @@ export default function SickReport() {
           <p className="sk-band-body">
             {entitlementDays} day{entitlementDays === 1 ? "" : "s"} a year each, converted to hours
             from the shifts each person actually works. Illness past the allowance is still
-            recorded — <strong>it is unpaid</strong>.
+            recorded, <strong>it is unpaid</strong>.
           </p>
         </div>
         <button
@@ -548,7 +548,7 @@ export default function SickReport() {
                   <div role="cell" style={{ minWidth: 0 }}>
                     <div className="sk-name">{r.name}</div>
                     <span className="sk-role">
-                      {r.role || employee?.role || "—"}{minor ? " · under 18" : ""}
+                      {r.role || employee?.role || "-"}{minor ? " · under 18" : ""}
                     </span>
                   </div>
                   <div className="sk-meta" role="cell">
@@ -649,7 +649,7 @@ export default function SickReport() {
               <div className="sk-date" role="cell">{fmtDay(i.start)}</div>
               <div role="cell" style={{ minWidth: 0 }}>
                 <div className="sk-name-inc">{i.name}</div>
-                <span className="sk-role">{i.role || employee?.role || "—"}</span>
+                <span className="sk-role">{i.role || employee?.role || "-"}</span>
               </div>
               <div className="sk-reason" role="cell">
                 {i.reason}
@@ -698,7 +698,7 @@ export default function SickReport() {
       </div>
 
       <p className="sk-note">
-        <strong>This page is for HR only</strong> — the scheduler never reads it, and recording an
+        <strong>This page is for HR only</strong>, the scheduler never reads it, and recording an
         illness here does not change any roster. Paid allowance is {entitlementDays} days a year,
         converted to hours at <strong>each person's own average shift length</strong>, so a part-timer
         and a full-timer are charged what they actually lose. Illness past the allowance is still
@@ -769,7 +769,7 @@ export default function SickReport() {
                 onChange={(e) => setDraft({ ...draft, reason: e.target.value })}
               >
                 {REASONS.map((r) => (
-                  <option key={r.key} value={r.key}>{r.key} — {r.hint}</option>
+                  <option key={r.key} value={r.key}>{r.key}, {r.hint}</option>
                 ))}
               </select>
             </div>
@@ -792,7 +792,7 @@ export default function SickReport() {
                 a day = <strong>{fmtHours(draftHours)}</strong>.{" "}
                 {draftOver
                   ? <>That takes {empMap[draft.employee_id]?.name || "them"} past their{" "}
-                      {fmtHours(draftAllowance)} allowance — the excess is recorded as unpaid.</>
+                      {fmtHours(draftAllowance)} allowance, the excess is recorded as unpaid.</>
                   : <>Inside their {fmtHours(draftAllowance)} allowance;{" "}
                       {fmtHours(Math.max(0, draftAllowance - draftUsed - draftHours))} would remain.</>}
               </div>

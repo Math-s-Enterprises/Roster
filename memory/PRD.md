@@ -1,4 +1,4 @@
-# Roster AI — PRD
+# Roster AI - PRD
 
 ## Original problem
 Futuristic dark-glassmorphism SaaS to let retail managers configure shops, staff, holidays, and AI rules, then generate compliant weekly rosters in seconds with email dispatch and version workflow.

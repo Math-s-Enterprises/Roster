@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { api, clearToken, setToken } from "@/lib/api";
 
 const AuthCtx = createContext(null);
@@ -39,10 +40,18 @@ export function AuthProvider({ children }) {
   }, [refresh]);
 
   // Every sign-in path ends the same way: store the token, set the user.
-  // `keepSignedIn` picks the store — see setToken in lib/api.
+  // `keepSignedIn` picks the store - see setToken in lib/api.
   const completeSignIn = useCallback((data, keepSignedIn = true) => {
     setToken(data.token, keepSignedIn);
     setUser(data.user);
+    // Signing in to an account that was waiting to be deleted cancels the deletion: the server
+    // does it, and says so. Say so here too, or it would happen without anyone being told.
+    if (data.restored) {
+      toast.success(
+        "Welcome back. The deletion is cancelled and your account is restored. Your subscription stays cancelled.",
+        { duration: 10000 },
+      );
+    }
     return data.user;
   }, []);
 
@@ -59,11 +68,11 @@ export function AuthProvider({ children }) {
     async (payload) => {
       const { data } = await api.post("/auth/signup", payload);
       // A new shop opens in light mode. Only here, and only once the account
-      // exists — a failed sign-up must not change anyone's saved preference.
+      // exists - a failed sign-up must not change anyone's saved preference.
       try {
         localStorage.setItem("roster_theme", "light");
       } catch {
-        /* storage unavailable (private mode) — nothing to set */
+        /* storage unavailable (private mode) - nothing to set */
       }
       return completeSignIn(data);
     },
@@ -78,7 +87,7 @@ export function AuthProvider({ children }) {
     [completeSignIn],
   );
 
-  // Both return the backend's message so the page can show it verbatim —
+  // Both return the backend's message so the page can show it verbatim -
   // forgot-password's response is deliberately generic (see the backend) and
   // must not be reworded into something more specific by the UI.
   const forgotPassword = useCallback(

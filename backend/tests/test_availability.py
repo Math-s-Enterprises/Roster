@@ -61,7 +61,7 @@ class TestHierarchy:
 
     def test_shop_can_configure_its_own_ladder(self):
         """A business must be able to reorder its job titles without a code
-        change — that is the whole point of it being configurable."""
+        change - that is the whole point of it being configurable."""
         shop = {"role_hierarchy": ["Barista", "Baker", "Manager"]}
         people = [
             make_employee("m", "Manager"),
@@ -227,7 +227,7 @@ class TestNightStaffStayOnNights:
     """Taken from the real approved roster for Top Oil South Link.
 
     The manager gives every 06:00 start to Jane, Kyle, Megan, John, Emma or
-    Steve. The night team — Andi, Kelvin, Azaryia — never start before 17:00,
+    Steve. The night team - Andi, Kelvin, Azaryia - never start before 17:00,
     on any day, including the Sunday the solver kept getting wrong.
     """
 
@@ -284,7 +284,7 @@ class TestNightStaffStayOnNights:
         assert offenders == [], f"night staff put on days: {offenders[:2]}"
 
     def test_the_roster_carries_no_unfamiliar_shifts_at_all(self):
-        """Not a warning to confirm — they simply are not created."""
+        """Not a warning to confirm - they simply are not created."""
         assert self._generate()["confirmations"] == []
 
     def test_morning_staff_still_get_their_morning_shifts(self):
@@ -298,7 +298,7 @@ class TestNightStaffStayOnNights:
 class TestFamiliarityInfluencesTheChoice:
     """Familiarity used to be checked only AFTER somebody was picked, so it
     could not prevent anything. Two equally-ranked candidates tied exactly,
-    and the tie was broken by list order — which is how a night worker ends
+    and the tie was broken by list order - which is how a night worker ends
     up opening the shop at 06:00."""
 
     def _builder(self, employees):
@@ -324,7 +324,7 @@ class TestFamiliarityInfluencesTheChoice:
         night_key = builder._rank_for_demand(night, "06:00-14:00", "mon", hours)
 
         assert morning_key < night_key, "the 06:00 shift should go to the 06:00 worker"
-        # Everything except the familiarity term is identical — that is what
+        # Everything except the familiarity term is identical - that is what
         # made the old ordering arbitrary.
         assert morning_key[0] == night_key[0]
         assert morning_key[2:] == night_key[2:]
@@ -535,7 +535,7 @@ class TestHolidayBalance:
         assert holiday_balance.check_can_book(balance, 8)["allowed"]
 
     def test_booking_beyond_the_balance_is_refused(self):
-        """The stated case: 10 hours available, days worth 4 hours each — the
+        """The stated case: 10 hours available, days worth 4 hours each - the
         third day must not be markable."""
         balance = holiday_balance.compute_balance(
             make_employee("e", opening_holiday_hours=10), []
@@ -595,7 +595,7 @@ class TestMatchRole:
         assert match_role("Goods Inwards", self.SHOP) == "Goods Inwards"
 
     def test_an_unknown_title_is_kept_verbatim(self):
-        """Nothing is invented — the owner positions it later."""
+        """Nothing is invented - the owner positions it later."""
         from app.services.hierarchy import match_role
 
         assert match_role("Bakery Lead", self.SHOP) == "Bakery Lead"
@@ -624,7 +624,7 @@ class TestRoleAliases:
     Loose matching forgives "Mgr" for "Manager", but it cannot know that
     "Ass Manager" is the sheet's "Assistant Manager" or that "Shop Floor" is
     this shop's "Floor Assistant". Without aliases those arrive as brand-new
-    roles that sort BELOW every real rung — which would have ranked the most
+    roles that sort BELOW every real rung - which would have ranked the most
     senior manager under the night staff.
     """
 
@@ -684,7 +684,7 @@ class TestRoleAliases:
 
 
 class TestSummerBreakIsRecognised:
-    """A student's cap lifts during their break — whichever field says so.
+    """A student's cap lifts during their break - whichever field says so.
 
     `on_summer_break` used to read the legacy `is_student` flag while the
     Employees screen writes `employment_type`. So a student set up through

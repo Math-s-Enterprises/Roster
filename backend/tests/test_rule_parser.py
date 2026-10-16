@@ -123,7 +123,7 @@ class TestANumberMustBeAboutPeople:
 
     It showed as Enforced and silently capped the shop at eight staff instead
     of limiting shift length. A rule that quietly does the wrong thing is
-    worse than one that refuses — §9: unparseable rules are reported, not
+    worse than one that refuses - §9: unparseable rules are reported, not
     guessed at.
     """
 

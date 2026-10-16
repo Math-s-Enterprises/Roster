@@ -3,7 +3,7 @@
     python ml/set_contract_hours.py --from 40 --to 42.5           # dry run
     python ml/set_contract_hours.py --from 40 --to 42.5 --commit
 
-Contracted hours are PAID hours — what payroll pays and what the roster owes
+Contracted hours are PAID hours - what payroll pays and what the roster owes
 somebody. Time on the floor is longer, because unpaid breaks sit on top: at
 the shop's break policy a 42.5h contract is roughly 46h of shift time.
 
@@ -71,7 +71,7 @@ async def run(email: Optional[str], old: float, new: float, commit: bool) -> Non
         print(f"\nUpdated {total} employee(s) to a {new:g}h contract.")
         print("Re-generate any open roster so the new hours are used.")
     else:
-        print(f"\nDRY RUN — {total} employee(s) would change. "
+        print(f"\nDRY RUN - {total} employee(s) would change. "
               "Re-run with --commit to apply.")
 
 

@@ -2,7 +2,7 @@
 
 `required(day, hour)` is a 24-week AVERAGE of bodies per hour. The shifts
 placed are a DISCRETE list of the shop's own shapes. Ten real shapes cannot
-reproduce an average hour by hour, so the two disagree permanently — measured
+reproduce an average hour by hour, so the two disagree permanently - measured
 on the reference shop, the shapes fall 24 hours short of the curve and run 25
 hours OVER it. The same total, distributed differently.
 
@@ -12,7 +12,7 @@ each one a shift the manager had to read and would not have written himself.
 
 So the trigger is now "nobody is on this hour" (§1 rule 1) rather than "fewer
 than average are on this hour". An hour that is thin but staffed is reported
-by "Against the usual" (§7c) instead — information rather than a silent
+by "Against the usual" (§7c) instead - information rather than a silent
 change to somebody's finishing time.
 """
 from datetime import date, timedelta
@@ -123,7 +123,7 @@ class TestAShortRunIsAChangeoverAndALongOneIsAMissingShift:
             changeover = builder._changeover_hours("mon")
             assert not (set(run) & changeover), (
                 f"a {len(run)}-hour shortfall was treated as a changeover: "
-                f"{sorted(changeover)} — that is a missing shift, and "
+                f"{sorted(changeover)} - that is a missing shift, and "
                 f"stretching cannot reach it anyway"
             )
 
@@ -131,7 +131,7 @@ class TestAShortRunIsAChangeoverAndALongOneIsAMissingShift:
         """End to end, not just the helper.
 
         The two tests above check `_changeover_hours` in isolation, so they
-        stay green if the result is computed and then never used — which is
+        stay green if the result is computed and then never used - which is
         exactly what the previous version of this pass did. This one goes
         through `_close_short_hours` and looks at the coverage afterwards.
         """
@@ -153,7 +153,7 @@ class TestAShortRunIsAChangeoverAndALongOneIsAMissingShift:
             None, None, None,
         )
         # `a` finishes at 12:00 instead of 14:00, leaving 12:00-13:59 one
-        # short — a two-hour dip, exactly the manager's Sunday.
+        # short - a two-hour dip, exactly the manager's Sunday.
         builder._record_shift("a", "mon", "08:00", "12:00")
         builder._record_shift("b", "mon", "12:00", "20:00")
         builder.assigned_by_day.setdefault("mon", set()).update({"a", "b"})
@@ -184,15 +184,15 @@ class TestThinIsReportedAndEmptyIsFixed:
         old behaviour: with simple synthetic shapes the curve and the shapes
         agree, so there is nothing to be short of and no stretch either way.
         The disagreement only appears on a real shop's varied rota. So the
-        state is constructed instead — the curve wants two people at 13:00
-        and one is on — which is precisely the condition that fired eighteen
+        state is constructed instead - the curve wants two people at 13:00
+        and one is on - which is precisely the condition that fired eighteen
         times in one week.
         """
         from app.services.scheduler import _RosterBuilder
 
         def pattern(w):
             # THREE people across 13:00 every week, so the curve wants three
-            # — and only two get placed below. Two is not zero, so the hour
+            # - and only two get placed below. Two is not zero, so the hour
             # is thin rather than empty, which is the whole distinction.
             return ([("a", d, "08:00", "14:00") for d in DAYS]
                     + [("b", d, "13:00", "20:00") for d in DAYS]
@@ -217,7 +217,7 @@ class TestThinIsReportedAndEmptyIsFixed:
         builder.assigned_by_day.setdefault("mon", set()).add("a")
         builder._record_shift("b", "mon", "13:00", "20:00")
         builder.assigned_by_day["mon"].add("b")
-        # 13:00 has ONE person and the curve wants two — thin, not empty.
+        # 13:00 has ONE person and the curve wants two - thin, not empty.
         assert builder.on_duty["mon"][13] == 2
         assert builder.on_duty["mon"][8] == 1
         assert profile.required("mon", 8) <= 1
@@ -233,7 +233,7 @@ class TestThinIsReportedAndEmptyIsFixed:
         grew = [h for h in after if after[h] > before[h]]
         assert all(before[h] == 0 for h in grew), (
             f"hours {[h for h in grew if before[h]]} already had somebody on "
-            f"them and a shift was stretched anyway — this is the "
+            f"them and a shift was stretched anyway - this is the "
             f"average-chasing that produced 18 advisories in one week"
         )
 
@@ -243,8 +243,8 @@ class TestThinIsReportedAndEmptyIsFixed:
         Tested directly on the builder, because provoking the case through a
         full solve is fragile: the fill usually places the shapes that cover
         the hour, and the coverage floor gets the rest. Here the state is
-        constructed — the curve wants somebody at 13:00 and the placed shifts
-        leave it empty — so the pass has exactly the case it exists for.
+        constructed - the curve wants somebody at 13:00 and the placed shifts
+        leave it empty - so the pass has exactly the case it exists for.
 
         An earlier version of this test asserted a hole at an hour the shop's
         history NEVER staffed. `required` is 0 there, so the pass has always

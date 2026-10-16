@@ -4,7 +4,7 @@
  * THE WORKFLOW THIS SERVES
  *
  * A manager sets the shop up from a roster spreadsheet, which per §9 contains
- * no email addresses — so every one of their staff starts with none, and
+ * no email addresses - so every one of their staff starts with none, and
  * roster dispatch is configured and reaches nobody. Typing twenty-five
  * addresses into a form is miserable, and a typo there fails SILENTLY: the
  * address looks fine and the rota simply never arrives.
@@ -15,8 +15,8 @@
  * WHY IT IS TWO STEPS
  *
  * The preview is the whole point. Matching a name to the wrong person emails
- * one member of staff another's working pattern — a data-protection incident
- * rather than a bug — so a human sees every match before anything is written.
+ * one member of staff another's working pattern - a data-protection incident
+ * rather than a bug - so a human sees every match before anything is written.
  * Ambiguous rows are refused by the server, never guessed, and shown here so
  * they can be fixed in the sheet rather than silently dropped.
  *
@@ -129,7 +129,7 @@ export default function ContactImportPanel({ missingCount, total, onDone }) {
             Add email addresses from a spreadsheet
           </div>
           <p className="text-[13px] mt-1" style={{ color: "var(--ink-mute)" }}>
-            Share a sheet with two columns — name and email — let your team fill
+            Share a sheet with two columns, name and email, let your team fill
             it in, then upload it here. Excel or CSV. The headings can say
             anything; rows without an address are ignored.
           </p>
@@ -143,7 +143,7 @@ export default function ContactImportPanel({ missingCount, total, onDone }) {
       {/* The native file input is hidden and driven by a button, the same way
           the roster importer does it. Left visible, it renders the browser's
           own "Choose file" control INSIDE a field the global stylesheet has
-          already given a height, a border and a background — the button does
+          already given a height, a border and a background - the button does
           not inherit any of that, so the two disagree and the box looks
           broken. Nothing can style that inner button; hiding the input is the
           only fix. */}
@@ -187,7 +187,7 @@ export default function ContactImportPanel({ missingCount, total, onDone }) {
               Choose a file
             </button>
             <div className="text-[11px] mt-2" style={{ color: "var(--ink-mute-2)" }}>
-              {fileName || "or drop it here — Excel or CSV"}
+              {fileName || "or drop it here, Excel or CSV"}
             </div>
           </>
         )}
@@ -207,7 +207,7 @@ export default function ContactImportPanel({ missingCount, total, onDone }) {
       {preview && (
         <div className="mt-5">
           <div className="text-[12px] mb-2" style={{ color: "var(--ink-mute)" }}>
-            {fileName} — {preview.rows.length} row(s) with an address.
+            {fileName}, {preview.rows.length} row(s) with an address.
             {ready.length > 0 && (
               <span style={{ color: "var(--ink)" }}>
                 {" "}{ready.length} will be saved.
@@ -254,7 +254,7 @@ export default function ContactImportPanel({ missingCount, total, onDone }) {
                      style={{ color: "var(--ink-mute)" }}>
                   <AlertTriangle size={11} className="mt-0.5 shrink-0"
                                  style={{ color: STATUS[row.status]?.colour }} />
-                  <span>Row {row.row} · {row.name || "no name"} — {row.note}</span>
+                  <span>Row {row.row} · {row.name || "no name"}, {row.note}</span>
                 </div>
               ))}
             </div>

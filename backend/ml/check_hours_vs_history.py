@@ -7,7 +7,7 @@ THE CLAIM BEING TESTED
 That the solver fills the first-ranked person up to their CONTRACT CAP and
 only then moves on, rather than to the hours that person normally works. If
 true, somebody who averages 16.5h a week gets 26h, and somebody who averages
-33h gets pushed to 38 — nobody is over their limit, and the roster is still
+33h gets pushed to 38 - nobody is over their limit, and the roster is still
 wrong, because the limit was never the target.
 
 WHAT A NON-ZERO ANSWER LOOKS LIKE, STATED BEFORE RUNNING
@@ -18,13 +18,13 @@ below it. That is the front-loading pattern.
 
 If drift is small, or scattered in both directions with no relation to rank,
 the claim is wrong and the front-loading theory should be dropped rather than
-built on. A measurement that cannot come back negative is not a measurement —
+built on. A measurement that cannot come back negative is not a measurement -
 this one can, and if it does, say so.
 
 WEEKS SOMEBODY WAS ABSENT ARE EXCLUDED
 --------------------------------------
 A fortnight's leave in a 24-week window drags an average down by about 8%,
-and that is not what they normally work — it is what they worked while away.
+and that is not what they normally work - it is what they worked while away.
 So a person's average is taken over the weeks they actually appear, not over
 every week in the window. Reported as `weeks` so a thin average is visible
 rather than quietly trusted.
@@ -32,7 +32,7 @@ rather than quietly trusted.
 A STUDENT'S AVERAGE IS TWO AVERAGES
 -----------------------------------
 Term time and summer break are different regimes, and mixing them produces a
-number that describes neither — too high to be a term-time target and too low
+number that describes neither - too high to be a term-time target and too low
 to be a summer one. Where `weekly_hour_cap` differs between the historical
 week and the target week, the two are split and reported separately.
 
@@ -83,7 +83,7 @@ async def run(email: str, week: str) -> None:
         {"shop_id": shop_id, "approved": True}, {"_id": 0}).to_list(500)
 
     if not approved:
-        sys.exit("No approved rosters — there is no history to compare against.")
+        sys.exit("No approved rosters - there is no history to compare against.")
 
     # The target week is held out for the same reason as in
     # `check_swap_value.py`: it carries full weight in the profile
@@ -91,7 +91,7 @@ async def run(email: str, week: str) -> None:
     # from. It would also put the same week on both sides of the drift
     # comparison, which cannot help but agree with itself.
     if any(r.get("week_start") == week for r in approved):
-        print(f"\n  NOTE: {week} is already approved — held out of the "
+        print(f"\n  NOTE: {week} is already approved - held out of the "
               f"history so the comparison is not self-fulfilling.")
         approved = [r for r in approved if r.get("week_start") != week]
     if not approved:
@@ -102,7 +102,7 @@ async def run(email: str, week: str) -> None:
     # ONE roster per week, exactly as every learning path does it.
     #
     # Skipping this is how the first run of this script reported Teja
-    # averaging 56.6h — above his 40h cap and above the EU 48h limit. A week
+    # averaging 56.6h - above his 40h cap and above the EU 48h limit. A week
     # with two approved rosters had both counted, and summing them into the
     # same week entry doubled it. `demand.py`, `slot_owners.py`,
     # `corrections.py` and `learning.py` all dedupe; a diagnostic that does
@@ -110,7 +110,7 @@ async def run(email: str, week: str) -> None:
     deduped = latest_per_week(list(approved))
     if len(deduped) < len(approved):
         print(f"\n  NOTE: {len(approved) - len(deduped)} duplicate week(s) "
-              f"dropped — {len(approved)} rosters cover {len(deduped)} weeks.")
+              f"dropped - {len(approved)} rosters cover {len(deduped)} weeks.")
 
     # Historical hours per person per week, keyed by week so a person who
     # was absent simply has no entry for it rather than a zero.
@@ -158,7 +158,7 @@ async def run(email: str, week: str) -> None:
     #
     # The second is the case the manager described: "he used to work any of
     # the seven days, but from now on he might have decided to work only on
-    # two days." So hours decay exactly as the demand curve does (§7b) —
+    # two days." So hours decay exactly as the demand curve does (§7b) -
     # reusing RECENCY_HALF_LIFE_WEEKS rather than inventing a second number
     # for the same idea.
     target = _week_start_date(week)
@@ -167,7 +167,7 @@ async def run(email: str, week: str) -> None:
     #
     # This script used to compute its own decayed average over all history
     # while the solver aimed at the median of the last TREND_WEEKS. The two
-    # disagreed by about 3 hours on anybody whose hours were changing — so
+    # disagreed by about 3 hours on anybody whose hours were changing - so
     # the diagnostic was marking the solver down for missing a target it was
     # never aiming at. A measurement that does not use the same definition as
     # the thing it measures is measuring something else.
@@ -184,19 +184,19 @@ async def run(email: str, week: str) -> None:
             weight = 0.5 ** (age / RECENCY_HALF_LIFE_WEEKS)
             total += worked * weight
             weight_sum += weight
-        # Divided by the SUM OF WEIGHTS, not the count — dividing weighted
+        # Divided by the SUM OF WEIGHTS, not the count - dividing weighted
         # hours by a plain count reports everybody as working less than they
         # do (§7b).
         return total / weight_sum if weight_sum else 0.0
 
-    # HISTORY IS NOT A TARGET ON ITS OWN — AVAILABILITY BOUNDS IT.
+    # HISTORY IS NOT A TARGET ON ITS OWN - AVAILABILITY BOUNDS IT.
     #
     # Somebody who worked 26h a week for six months and has since dropped to
     # Saturdays and Sundays cannot be given 26h, and reporting the shortfall
     # as a scheduling failure is wrong: two weekend shifts is what they are
     # available for, so ~16h IS their correct week. Recency weighting alone
-    # is too slow here — an 8-week half-life still carries most of the old
-    # average — but their availability says it immediately and exactly.
+    # is too slow here - an 8-week half-life still carries most of the old
+    # average - but their availability says it immediately and exactly.
     #
     # So the ceiling is: the longest slot they could work on each day they
     # are available for, best days first, capped at the working-day limit.
@@ -209,7 +209,7 @@ async def run(email: str, week: str) -> None:
     # manager approved. Emma and Jamie both showed as badly under-rostered
     # on the reference shop for exactly this reason.
     #
-    # Note this is leave in the TARGET week, not leave in the history —
+    # Note this is leave in the TARGET week, not leave in the history -
     # history is already handled, because a holiday shift is skipped when
     # the per-week hours are counted.
     off_dates: Dict[str, set] = defaultdict(set)
@@ -261,7 +261,7 @@ async def run(email: str, week: str) -> None:
         latest = max((d for d in seen if d), default=None)
         return (newest - latest).days / 7.0 if latest else 999.0
 
-    print(f"\n{shop.get('name', '?')} — generated week of {week}")
+    print(f"\n{shop.get('name', '?')} - generated week of {week}")
     print(f"{len(approved)} approved weeks of history, newest {newest}\n")
     print(f"  {'#':>2} {'who':20}{'role':20}{'cap':>6}{'aim':>7}"
           f"{'weeks':>6}{'got':>7}{'drift':>8}")
@@ -329,7 +329,7 @@ async def run(email: str, week: str) -> None:
               f"{row.got:7.1f}{row.drift:+8.1f}{flag}{at_cap}{why}")
 
     if dormant:
-        print(f"\n  Excluded — stopped appearing over "
+        print(f"\n  Excluded - stopped appearing over "
               f"{RECENCY_HALF_LIFE_WEEKS:g} weeks before the newest roster,")
         print("  so probably leavers still marked active. Their 'shortfall'")
         print("  is not a scheduling fault:")
@@ -361,7 +361,7 @@ async def run(email: str, week: str) -> None:
     salaried = [r for r in rows if r.salaried]
     hourly = [r for r in rows if not r.salaried]
 
-    print(f"  SALARIED ({len(salaried)}) — owed their contract, so landing")
+    print(f"  SALARIED ({len(salaried)}) - owed their contract, so landing")
     print("  on it is right:")
     off_contract = [r for r in salaried if abs(r.got - r.cap) >= 0.01]
     if not off_contract:
@@ -370,7 +370,7 @@ async def run(email: str, week: str) -> None:
         print(f"      {names[row.employee_id][:19]:20}{row.got:5.1f}h against "
               f"a {row.cap:g}h contract")
 
-    print(f"\n  HOURLY ({len(hourly)}) — owed nothing in particular, so their")
+    print(f"\n  HOURLY ({len(hourly)}) - owed nothing in particular, so their")
     print("  own recent hours bounded by their availability is the only")
     print("  statement of what is normal:")
     over = [r for r in hourly if r.drift > 2]
@@ -389,7 +389,7 @@ async def run(email: str, week: str) -> None:
     if not hourly:
         print("  Nobody is paid hourly here; there is nothing to distribute.")
     elif genuine and len(genuine) > len(hourly) / 4:
-        print(f"  MISALLOCATED — {len(genuine)} of {len(hourly)} hourly staff "
+        print(f"  MISALLOCATED - {len(genuine)} of {len(hourly)} hourly staff "
               f"are more than 2h off what they")
         print("  could be given, and are still being rostered, so this is not")
         print("  explained by anybody leaving:")
@@ -397,12 +397,12 @@ async def run(email: str, week: str) -> None:
             print(f"      {names[row.employee_id][:19]:20}aim "
                   f"{row.aim:5.1f}h -> {row.got:5.1f}h  ({row.drift:+.1f})")
     else:
-        print("  NOT MISALLOCATED — what is left after excluding suspected")
+        print("  NOT MISALLOCATED - what is left after excluding suspected")
         print("  leavers is within normal variation. Do not build a")
         print("  distribution rule on this.")
 
     if suspected_leavers:
-        print(f"\n  CHECK THESE FIRST — off their aim, but they also stopped")
+        print(f"\n  CHECK THESE FIRST - off their aim, but they also stopped")
         print("  being rostered before everybody else. Resigned, or a real")
         print("  shortfall? The app cannot tell; you can:")
         for row in sorted(suspected_leavers, key=lambda r: -r.gap):
@@ -415,9 +415,9 @@ async def run(email: str, week: str) -> None:
     # "Everybody is short" has two completely different causes and they need
     # opposite fixes:
     #
-    #   * the week is the right size and the hours go to the wrong people —
+    #   * the week is the right size and the hours go to the wrong people -
     #     a distribution problem, fixed by changing who is picked
-    #   * the week is SMALLER than a week this shop actually runs — a demand
+    #   * the week is SMALLER than a week this shop actually runs - a demand
     #     problem, fixed in demand.py, and no distribution rule touches it
     #
     # Reading the second as the first would produce a rule that shuffles a
@@ -448,18 +448,18 @@ async def run(email: str, week: str) -> None:
           f"({-short / usual_week * 100:+.0f}%)" if usual_week else "")
     print()
     if abs(short) < usual_week * 0.05:
-        print("  RIGHT SIZE — the week has the hours it should. Anybody")
+        print("  RIGHT SIZE - the week has the hours it should. Anybody")
         print("  short is short because somebody else got their hours, so")
         print("  this IS a distribution problem.")
     elif short > 0:
-        print("  TOO SMALL — the week is missing hours this shop normally")
+        print("  TOO SMALL - the week is missing hours this shop normally")
         print("  works, so people are short of them no matter who gets")
         print("  picked. Fix the demand profile first; a distribution rule")
         print("  would only move the shortfall around.")
         print("  Check `why_empty.py` on the thinnest day before assuming")
         print("  the allocation is at fault.")
     else:
-        print("  TOO BIG — the week has more hours than normal, which costs")
+        print("  TOO BIG - the week has more hours than normal, which costs")
         print("  money. Distribution is not the issue.")
 
     worst = max(rows, key=lambda r: abs(r.drift))
@@ -489,7 +489,7 @@ async def run(email: str, week: str) -> None:
         if hours > 48
     ]
     if over_cap:
-        print("\n  WEEKS ABOVE THE 48h WORKING TIME LIMIT — these are almost")
+        print("\n  WEEKS ABOVE THE 48h WORKING TIME LIMIT - these are almost")
         print("  certainly a data problem, and they are dragging the average:")
         for who, week, hours in sorted(over_cap):
             print(f"    {who} {week}: {hours:.1f}h")

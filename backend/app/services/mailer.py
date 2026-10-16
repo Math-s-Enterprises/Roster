@@ -59,7 +59,7 @@ def _date_for(week_start: str, day: str) -> Optional[date]:
 
 
 def _short(value: Optional[date]) -> str:
-    """'31 Aug' — day without a leading zero, on any platform.
+    """'31 Aug' - day without a leading zero, on any platform.
 
     %-d is not portable (it fails on Windows, where this is developed) and
     %#d is Windows-only, so neither can be used.
@@ -78,7 +78,7 @@ def render_roster_email(
 
     EVERY SHIFT CARRIES ITS DATE. "Monday, 06:00–14:00" is ambiguous the
     moment it is read on a Wednesday, or forwarded, or found again a
-    fortnight later — and a rota is exactly the kind of email people keep and
+    fortnight later - and a rota is exactly the kind of email people keep and
     re-read. The date removes the guesswork.
 
     An overnight shift says where it ends, because "23:30 – 07:00" on Monday
@@ -110,8 +110,8 @@ def render_roster_email(
 
     # A booked holiday is stored with start and end of None.
     #
-    # The crash that came from that was `shift["end"] <= shift["start"]` — the
-    # overnight test — comparing None with None. NOT the sort: two shifts only
+    # The crash that came from that was `shift["end"] <= shift["start"]` - the
+    # overnight test - comparing None with None. NOT the sort: two shifts only
     # reach the start-time tiebreak when they fall on the same day, so a
     # holiday and a working shift on different days never compared. The
     # `or ""` below is a guard for the same-day case, not the fix for the
@@ -139,7 +139,7 @@ def render_roster_email(
             # Shown rather than dropped: somebody scanning their week needs to
             # see the Tuesday they booked off, not a gap they have to
             # interpret.
-            detail = (f'<span style="color:#a1a1aa;">{html.escape(leave or "—")}</span>')
+            detail = (f'<span style="color:#a1a1aa;">{html.escape(leave or "-")}</span>')
         else:
             total += paid_hours(start, end, breaks_paid=breaks_are_paid)
             # Ends on the following day, so say so rather than leaving them to
@@ -161,7 +161,7 @@ def render_roster_email(
 
     if cells:
         # PAID hours, not time on the floor. This is the number they will hold
-        # against their payslip, so it has to be the one they are paid for —
+        # against their payslip, so it has to be the one they are paid for -
         # and whether breaks count is a per-shop setting (§8), not a constant.
         # Recomputed from the times rather than read off the stored
         # `paid_hours`, which an edit can leave behind: ml/check_hours.py
@@ -211,7 +211,7 @@ def render_shop_roster_email(
     An area manager or owner wants the same thing the printed rota gives:
     everyone, every day, at a glance. That is a different document from an
     employee's own shifts, so it is a different renderer rather than the same
-    one called in a loop — a boss sent twenty-five separate emails would have
+    one called in a loop - a boss sent twenty-five separate emails would have
     to reassemble the week themselves.
 
     `people` items need: name, shifts.
@@ -249,7 +249,7 @@ def render_shop_roster_email(
                 start, end = shift.get("start"), shift.get("end")
                 if leave or not (start and end):
                     parts.append(f'<span style="color:#a1a1aa;">'
-                                 f'{html.escape(leave or "—")}</span>')
+                                 f'{html.escape(leave or "-")}</span>')
                 else:
                     hours += paid_hours(start, end, breaks_paid=breaks_are_paid)
                     parts.append(f'{html.escape(start)}<br>{html.escape(end)}')
@@ -298,7 +298,7 @@ def render_shop_roster_email(
 
 # Resend's own ceiling is 40MB for the whole request, and base64 inflates by
 # about a third. A rota PDF is a couple of kilobytes, so this is only ever hit
-# by something having gone wrong — and a send that fails on size is worse than
+# by something having gone wrong - and a send that fails on size is worse than
 # one that arrives without the attachment.
 _MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
 
@@ -379,7 +379,7 @@ def render_password_reset_email(name: str, reset_url: str, expiry_minutes: int) 
         </a>
       </p>
       <p style="margin:0;color:#a1a1aa;font-size:13px;">
-        If you didn't request this, you can safely ignore this email — your password will not change.
+        If you didn't request this, you can safely ignore this email, your password will not change.
       </p>
     </td></tr>
     <tr><td style="padding:0 24px 24px 24px;color:#71717A;font-size:12px;">Sent via Roster</td></tr>
@@ -439,7 +439,7 @@ async def send_shop_roster(
     body = render_shop_roster_email(shop_name, week_start, people, breaks_are_paid)
 
     # A PDF of the same week, so it can be saved or printed rather than only
-    # read. Built once and reused for every recipient — identical content, and
+    # read. Built once and reused for every recipient - identical content, and
     # re-rendering it per person would be wasted work.
     #
     # If it fails the email still goes: a missing attachment is a nuisance, a
@@ -486,7 +486,7 @@ async def send_roster_emails(
     `recipients` items need: employee_id, name, email, shifts.
 
     Sends concurrently but rate-limited. Crucially, one failure never
-    prevents the remaining recipients from being emailed — every result is
+    prevents the remaining recipients from being emailed - every result is
     collected and reported, so a single bad address cannot silently cost the
     rest of the team their schedule.
     """

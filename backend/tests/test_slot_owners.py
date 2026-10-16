@@ -20,7 +20,7 @@ def week_starting(index: int, first: str = "2026-01-05") -> str:
     Weeks are SEVEN DAYS apart, which sounds too obvious to need a helper.
     It was not: these fixtures used to step one day at a time, so eight
     "weeks" spanned eight days. Nothing here noticed, because ownership uses
-    week_start only as a label to group by — but the identical shortcut in
+    week_start only as a label to group by - but the identical shortcut in
     the demand fixtures became wrong the moment weeks were weighted by age,
     and these would have gone the same way.
     """
@@ -98,7 +98,7 @@ class TestOwnershipIsPerDayAndSlot:
     def test_owning_monday_is_not_owning_saturday(self):
         """In the manager's head these are different shifts.
 
-        Both shifts go in the SAME weeks — building them as separate weeks
+        Both shifts go in the SAME weeks - building them as separate weeks
         would collide on week_start and latest_per_week would keep only one,
         which says nothing about ownership.
         """
@@ -155,7 +155,7 @@ class TestWhatIsNotSignal:
         assert owner_of(build_owners(history), "mon", "06:00", "16:00") is None
 
     def test_extra_shifts_do_not_build_ownership(self):
-        """Extra staff are deliberately above the requirement — being added
+        """Extra staff are deliberately above the requirement - being added
         for a busy spell does not make the shift yours."""
         history = [
             {"week_start": week_starting(w), "approved": True, "shifts": [
@@ -181,7 +181,7 @@ class TestWhatIsNotSignal:
 
 class TestTheDenominatorIsWeeksNotShifts:
     """From real data. Megan opens Monday 06:00-16:00 in 81% of the weeks it
-    runs — she plainly owns it. But counted against every SHIFT of that shape
+    runs - she plainly owns it. But counted against every SHIFT of that shape
     she came out at 53%, under the bar, purely because a colleague sometimes
     worked it too. Their shifts inflated her denominator.
 
@@ -191,7 +191,7 @@ class TestTheDenominatorIsWeeksNotShifts:
     """
 
     def _monday(self):
-        """21 weeks. Megan 17, Emma 9, Kevin 2, Conor 2 — 32 shifts."""
+        """21 weeks. Megan 17, Emma 9, Kevin 2, Conor 2 - 32 shifts."""
         extras = (["emma"] * 9 + ["kevin"] * 2 + ["conor"] * 2)
         out = []
         for i in range(21):
@@ -269,7 +269,7 @@ class TestTheDenominatorIsWeeksNotShifts:
 class TestALeaverCannotOwnAShift:
     """Tintu resigned, and still owned Monday 18:00-00:00.
 
-    Her history is real and stays in the demand profile — the shop did run
+    Her history is real and stays in the demand profile - the shop did run
     that shift. But left in the ownership map she wins the slot on every
     generation, is found ineligible, and it falls through to second place, so
     whoever actually works it now never becomes its owner. The diagnostics
@@ -303,7 +303,7 @@ class TestALeaverCannotOwnAShift:
         assert owner_of(owners, "mon", "18:00", "00:00") is None
 
     def test_the_denominator_still_counts_the_weeks_the_slot_ran(self):
-        """Ebyn covered it 4 times out of 24 — that is not a habit.
+        """Ebyn covered it 4 times out of 24 - that is not a habit.
 
         Recomputing the share over only the remaining weeks would make it
         4 of 4 and hand him a shift he has barely worked.

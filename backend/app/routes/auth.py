@@ -37,9 +37,8 @@ _INVALID_CREDENTIALS = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
 )
 
-
 def _public_user(user: Dict[str, Any]) -> Dict[str, Any]:
-    """Everything safe to send to the browser — never the password hash."""
+    """Everything safe to send to the browser - never the password hash."""
     return {
         "user_id": user["user_id"],
         "email": user["email"],
@@ -73,9 +72,16 @@ async def signup(payload: SignupReq):
         await db.users.insert_one(dict(document))
     except DuplicateKeyError:
         # The unique index on `email` is the real guarantee here. A prior
-        # "does this email exist?" lookup would not be atomic — two
-        # simultaneous signups could both pass it — so we let the database
+        # "does this email exist?" lookup would not be atomic - two
+        # simultaneous signups could both pass it - so we let the database
         # arbitrate and translate its error.
+        existing = await db.users.find_one(
+            {"email": payload.email.lower()}, {"_id": 0, "deletion_scheduled_for": 1},
+        )
+        if existing and existing.get("deletion_scheduled_for"):
+            # Not "already registered": that would leave somebody who just deleted their
+            # account, and came straight back, with no idea what to do.
+            raise HTTPException(status.HTTP_409_CONFLICT, account_deletion.pending_message(existing))
         raise HTTPException(status.HTTP_409_CONFLICT, "That email is already registered")
 
     await ensure_shop(document)
@@ -89,17 +95,27 @@ async def signup(payload: SignupReq):
 async def login(payload: LoginReq):
     user = await db.users.find_one({"email": payload.email.lower()}, {"_id": 0})
     if not user or not verify_password(payload.password, user.get("password_hash")):
-        # Deliberately identical response for "no such user" and "wrong
-        # password" so the endpoint cannot be used to enumerate accounts.
+        # Do not disclose registered addresses through different error responses.
+        raise _INVALID_CREDENTIALS
+
+    # The right password for an account that is waiting to be deleted cancels the deletion.
+    # After its date it does not: the clean-up is about to remove it, so it looks as if it
+    # were already gone.
+    try:
+        user, restored = await account_deletion.restore_if_pending(user)
+    except account_deletion.AccountExpired:
         raise _INVALID_CREDENTIALS
 
     await ensure_shop(user)
-    return {
+    body = {
         "token": create_access_token(
             user["user_id"], user.get("token_version", 0),
         ),
         "user": _public_user(user),
     }
+    if restored:
+        body["restored"] = True        # the screen says so; absent otherwise
+    return body
 
 
 @router.post("/google")
@@ -115,8 +131,15 @@ async def google_sign_in(payload: GoogleAuthReq):
     user = await db.users.find_one({"google_sub": profile["google_sub"]}, {"_id": 0})
     if not user:
         user = await db.users.find_one({"email": profile["email"]}, {"_id": 0})
+    restored = False
     if user:
         user = await _link_google_profile(user, profile)
+        # Only now, once the Google identity has been checked: a different Google account
+        # with the same email must not be able to bring a closed account back.
+        try:
+            user, restored = await account_deletion.restore_if_pending(user)
+        except account_deletion.AccountExpired:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "That account is no longer available.")
     else:
         user = {
             "user_id": f"user_{uuid.uuid4().hex[:12]}",
@@ -139,12 +162,15 @@ async def google_sign_in(payload: GoogleAuthReq):
             user = await _link_google_profile(user, profile)
 
     await ensure_shop(user)
-    return {
+    body = {
         "token": create_access_token(
             user["user_id"], user.get("token_version", 0),
         ),
         "user": _public_user(user),
     }
+    if restored:
+        body["restored"] = True
+    return body
 
 
 async def _link_google_profile(user, profile):
@@ -169,7 +195,7 @@ async def forgot_password(payload: ForgotPasswordReq):
 
     Returning a different response for "no such account" than for "email
     sent" would let this endpoint enumerate registered addresses, so the
-    response is identical either way — the real work happens only if a
+    response is identical either way - the real work happens only if a
     matching, password-capable account exists.
     """
     generic = {"message": "If an account exists for that email, a reset link has been sent."}
@@ -204,9 +230,9 @@ async def reset_password(payload: ResetPasswordReq):
     if not record or record.get("used") or not _reset_is_live(record):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That reset link is invalid or has expired.")
 
-    # Marked used immediately (not deleted) so a replayed request — the same
+    # Marked used immediately (not deleted) so a replayed request - the same
     # link submitted twice, e.g. via a double click or an email link
-    # prefetcher — fails instead of silently resetting the password again.
+    # prefetcher - fails instead of silently resetting the password again.
     result = await db.password_resets.update_one(
         {"_id": record["_id"], "used": False},
         {"$set": {"used": True}},
@@ -258,7 +284,7 @@ async def change_password(
     Until now there was no way to do this at all. `forgot-password` emails a
     reset link, which needs email configured, and there was nothing for
     somebody who simply knows their password and wants a different one. That
-    became a real gap when force approval started asking for this password —
+    became a real gap when force approval started asking for this password -
     it went from something typed once at signup to something used regularly.
 
     Everything else is signed out, deliberately. If the reason for changing it
@@ -339,20 +365,22 @@ async def delete_account(
     response: Response,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """Permanently delete your own account and everything in it.
+    """Close your own account now, and have everything in it permanently deleted in 30 days.
 
-    There is no undo, so it asks for three things a mis-click or a borrowed laptop cannot
-    supply: the account's email typed out, and proof of who is typing it. The proof is the
-    password, or - for an account that signs in with Google and has no password - a fresh
-    Google sign-in, checked here against the same Google account.
+    The account is closed at once (signed out everywhere, subscription cancelled) but nothing
+    is erased until the 30 days are up, and signing in again before then brings it back. It
+    asks for two things a mis-click or a borrowed laptop cannot supply: the account's email
+    typed out, and proof of who is typing it. The proof is the password, or - for an account
+    that signs in with Google and has no password - a fresh Google sign-in, checked here
+    against the same Google account.
 
     WRONG ANSWERS ARE 403, NOT 401. The screen reads a 401 as "your session has expired" and
     drops the sign-in token, so a mistyped password answered with 401 would sign the person
     out instead of letting them try again. The session is fine; what failed is the
     confirmation, which is a refusal, not a failure to authenticate.
 
-    Billing is cancelled before anything is deleted; if that cannot be done, nothing is
-    (502). See services/account_deletion.py for the order and why.
+    Billing is cancelled first; if that cannot be done, the account is left exactly as it
+    was (502). See services/account_deletion.py for the two steps and why.
     """
     if payload.confirm_email.strip().lower() != user["email"].strip().lower():
         raise HTTPException(
@@ -384,9 +412,13 @@ async def delete_account(
             )
 
     try:
-        await account_deletion.delete_account(user)
+        scheduled = await account_deletion.request_deletion(user)
     except account_deletion.BillingCleanupFailed as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc))
 
     response.delete_cookie("session_token", path="/")
-    return {"deleted": True}
+    return {
+        "scheduled": True,
+        "delete_on": scheduled.isoformat(),
+        "days": account_deletion.GRACE_DAYS,
+    }

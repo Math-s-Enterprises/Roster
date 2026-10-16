@@ -6,7 +6,7 @@ consequence, so the manager gets the decision.
 
 Rostering a child outside 08:00-19:00 is not that. It is criminal law, and a
 signed-off record of it with somebody's password against it is discoverable.
-So it is refused with or without the password — and the refusal says so
+So it is refused with or without the password - and the refusal says so
 plainly, rather than implying the right credentials would help.
 """
 from app.services.compliance import (
@@ -49,7 +49,7 @@ class TestTheHardFloor:
         assert not [b for b in breaches if b["rule"] == "minor_curfew"]
 
     def test_everything_else_is_the_managers_call(self):
-        """Six days, over the cap, a short turnaround — all overridable."""
+        """Six days, over the cap, a short turnaround - all overridable."""
         shifts = [
             {"employee_id": "e1", "day": d, "start": "09:00", "end": "21:00"}
             for d in ("mon", "tue", "wed", "thu", "fri", "sat")
@@ -134,7 +134,7 @@ class TestRealTimeNotClockTime:
             {"employee_id": "e1", "day": "tue", "start": "17:00", "end": "22:00"},
         ]
         breaches = audit(shifts, shop=SHOP, employees=_team(), week_start=WEEK)
-        # Finishes 07:00 Tuesday, starts 17:00 Tuesday — ten hours, so short.
+        # Finishes 07:00 Tuesday, starts 17:00 Tuesday - ten hours, so short.
         assert any(b["rule"] == "rest_gap" for b in breaches)
 
     def test_a_full_turnaround_is_not_flagged(self):
@@ -184,7 +184,7 @@ class TestLeaveExplainsShortHours:
         breaches = audit(shifts, shop=SHOP, employees=self._salaried(),
                          week_start=WEEK)
         assert not [b for b in breaches if b["rule"] == "contract_under"], (
-            "Steve is on holiday — being short is what holiday means"
+            "Steve is on holiday - being short is what holiday means"
         )
 
     def test_sickness_does_the_same(self):
@@ -200,7 +200,7 @@ class TestLeaveExplainsShortHours:
         assert not [b for b in breaches if b["rule"] == "contract_under"]
 
     def test_leave_booked_on_the_calendar_counts_too(self):
-        """Leave lives in two places — an entry on the roster, and a holiday
+        """Leave lives in two places - an entry on the roster, and a holiday
         record. Only reading the first would miss a week booked off before
         the roster was generated."""
         shifts = [
@@ -235,7 +235,7 @@ class TestTheRestGapFollowsTheShopSetting:
 
     Reported: the manager set it to 10, went back to the roster, and the
     caution still said 11. He assumed the page was stale and asked for a
-    refresh button. It was not stale — `scheduler.py` read the shop's figure
+    refresh button. It was not stale - `scheduler.py` read the shop's figure
     while this module and `roster_validation` both compared against a
     hardcoded constant, so the warning would never have changed however many
     times he reloaded. Two switches that can disagree is one too many (§11).
@@ -259,7 +259,7 @@ class TestTheRestGapFollowsTheShopSetting:
         breaches = audit(self._ten_hour_turnaround(), shop=shop,
                          employees=_team(), week_start=WEEK)
         assert not any(b["rule"] == "rest_gap" for b in breaches), (
-            "the shop's own setting was ignored — this is the bug that read "
+            "the shop's own setting was ignored - this is the bug that read "
             "as a stale page"
         )
 
@@ -292,7 +292,7 @@ class TestClosingRoleOn24HourShops:
     """A 24-hour shop has no closing time, so a closing role rule can never
     apply to it. Naming a role "Supervisory" (for hierarchy/solver purposes,
     unrelated to closing) must not invent a weekly, unoverridable-feeling
-    breach on every trading day — regression for the bug where approving a
+    breach on every trading day - regression for the bug where approving a
     24h shop's roster always failed with 7 "cannot apply" breaches."""
 
     def test_supervisory_roles_alone_does_not_breach_a_24h_shop(self):
@@ -321,7 +321,7 @@ class TestClosingRoleOn24HourShops:
 
     def test_a_compiled_closing_rule_still_does_nothing_on_a_24h_shop(self):
         """Even a real, explicit closing rule can't apply to a shop with no
-        close time — same reasoning, different trigger."""
+        close time - same reasoning, different trigger."""
         shop = {**SHOP, "open_24h": True}
         ai_rules = [{"text": "a manager must be present at closing every day"}]
         shifts = [

@@ -13,13 +13,13 @@ You open `http://localhost:3000`. That page calls the backend on `:8001`,
 which reads and writes MongoDB.
 
 **Only MongoDB is required to run the app.** Anthropic, Resend, Google and
-Stripe are all optional — leave their keys blank and those features report
+Stripe are all optional - leave their keys blank and those features report
 themselves unavailable while everything else works. `GET /api/health` shows
 you exactly what is live.
 
 ---
 
-## Step 1 — Prerequisites
+## Step 1 - Prerequisites
 
 ```powershell
 python --version    # 3.10+
@@ -27,17 +27,17 @@ node --version      # 18+
 yarn --version      # npm install -g yarn  (if missing)
 ```
 
-- **Python** — https://www.python.org/downloads/ (tick "Add Python to PATH")
-- **Node.js** — https://nodejs.org (LTS)
+- **Python** - https://www.python.org/downloads/ (tick "Add Python to PATH")
+- **Node.js** - https://nodejs.org (LTS)
 
-**MongoDB** — pick one:
+**MongoDB** - pick one:
 - *Docker (easiest):* `docker run -d -p 27017:27017 --name roster-mongo mongo:7`
 - *Atlas (no install):* free tier at https://www.mongodb.com/cloud/atlas
 - *Local install:* https://www.mongodb.com/try/download/community
 
 ---
 
-## Step 2 — Configuration
+## Step 2 - Configuration
 
 ```powershell
 Copy-Item backend\.env.example backend\.env
@@ -46,15 +46,15 @@ Copy-Item frontend\.env.example frontend\.env
 
 Open `backend\.env` and set:
 
-- `MONGO_URL` — your Atlas string, or `mongodb://localhost:27017`
-- `JWT_SECRET` — generate one:
+- `MONGO_URL` - your Atlas string, or `mongodb://localhost:27017`
+- `JWT_SECRET` - generate one:
   `python -c "import secrets; print(secrets.token_hex(32))"`
 
 Everything else can stay blank for now. `frontend\.env` usually needs no edits.
 
 ---
 
-## Step 3 — Install
+## Step 3 - Install
 
 **Terminal 1 (backend):**
 
@@ -72,7 +72,7 @@ pip install -r requirements.txt
 > Python projects, so version conflicts can't happen. Activate it in every new
 > terminal before running the backend.
 
-**Terminal 2 (frontend)** — split the terminal with the `+` icon:
+**Terminal 2 (frontend)** - split the terminal with the `+` icon:
 
 ```powershell
 cd frontend
@@ -81,7 +81,7 @@ yarn install
 
 ---
 
-## Step 4 — Run
+## Step 4 - Run
 
 **Terminal 1:**
 
@@ -109,14 +109,14 @@ yarn start
 ```
 
 Then open http://localhost:3000 and **create an account** via the Sign up tab.
-(There is no seeded demo login any more — a hardcoded password in source was a
+(There is no seeded demo login any more - a hardcoded password in source was a
 security problem.)
 
 Interactive API docs: http://localhost:8001/docs
 
 ---
 
-## Step 5 — Run the tests
+## Step 5 - Run the tests
 
 ```powershell
 cd backend
@@ -135,7 +135,7 @@ isolation and validation end-to-end.
 
 Add any of these to `backend\.env` and restart the backend.
 
-### AI features — summaries, roster-photo OCR, rule compiling
+### AI features - summaries, roster-photo OCR, rule compiling
 1. Get a key at https://console.anthropic.com
 2. `ANTHROPIC_API_KEY=sk-ant-...`
 
@@ -151,7 +151,7 @@ Add any of these to `backend\.env` and restart the backend.
    *Authorised JavaScript origins*
 3. `GOOGLE_CLIENT_ID=...apps.googleusercontent.com`
 
-No client secret is needed — the browser gets an ID token and the backend
+No client secret is needed - the browser gets an ID token and the backend
 verifies its signature. The button only appears once this is configured.
 
 ### Billing
@@ -165,13 +165,13 @@ verifies its signature. The button only appears once this is configured.
 
 ## Verifying the scheduling rules
 
-1. **AI Rules page** — six rules show a 🔒 *System rule* badge with the toggle
+1. **AI Rules page** - six rules show a 🔒 *System rule* badge with the toggle
    disabled and no delete button. They cannot be changed via the API either.
-2. **Full-day coverage** — set hours longer than your max shift (e.g. 09:00–21:00
+2. **Full-day coverage** - set hours longer than your max shift (e.g. 09:00–21:00
    with a 9h max), add 4+ employees, generate. Each day should be covered by
    back-to-back shifts (09:00–15:00, 15:00–21:00) with no gap and no shift over
    the cap.
-3. **Unfillable gaps** — put everyone on leave for a day and generate. You should
+3. **Unfillable gaps** - put everyone on leave for a day and generate. You should
    get a red *Uncovered shifts* panel, not a silently empty day.
 
 ---
@@ -190,7 +190,7 @@ IP is allowlisted under Network Access.
 
 **Frontend can't reach the backend**
 → Check `REACT_APP_BACKEND_URL` in `frontend\.env`. Create React App bakes env
-vars in at build time, so **restart `yarn start`** after changing it — hot
+vars in at build time, so **restart `yarn start`** after changing it - hot
 reload won't pick it up.
 
 **`Port 8001 is already in use`**
@@ -211,10 +211,10 @@ backend/
     db.py              Mongo client, collection handles, index setup
     models.py          request/response schemas (Pydantic)
     security.py        password hashing, JWTs, auth dependency
-    tenancy.py         shop scoping — makes cross-tenant queries impossible
+    tenancy.py         shop scoping - makes cross-tenant queries impossible
     main.py            app assembly, middleware, startup
     services/
-      scheduler.py     THE SOLVER — pure, no I/O, fully unit-tested
+      scheduler.py     THE SOLVER - pure, no I/O, fully unit-tested
       learning.py      historical preference counts
       llm.py           Anthropic: summaries, OCR, rule compiling
       mailer.py        Resend

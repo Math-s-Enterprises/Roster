@@ -54,7 +54,7 @@ export default function Pricing() {
       {user?.pro && (
         <div className="glass rounded-2xl p-5 mb-6 flex items-center gap-3 border border-emerald-500/30">
           <Check size={16} className="text-emerald-400" />
-          <div className="text-sm">You're on <span className="neon-text font-medium">Pro</span> — thank you for supporting the app.</div>
+          <div className="text-sm">You're on <span className="neon-text font-medium">Pro</span>, thank you for supporting the app.</div>
         </div>
       )}
 

@@ -1,4 +1,4 @@
-"""LLM integration — official Anthropic SDK (replaces the Emergent proxy).
+"""LLM integration - official Anthropic SDK (replaces the Emergent proxy).
 
 Three narrow, stateless jobs:
   1. a short narrative summary of a generated roster;
@@ -6,7 +6,7 @@ Three narrow, stateless jobs:
   3. compiling a free-text scheduling rule into a JSON constraint.
 
 The LLM deliberately does NOT decide who works when. That is
-services/scheduler.py, which is deterministic, debuggable and auditable —
+services/scheduler.py, which is deterministic, debuggable and auditable -
 important when the output must satisfy labour law.
 
 If ANTHROPIC_API_KEY is unset, `enabled` is False and each function raises
@@ -233,7 +233,7 @@ async def compile_rule(
         {"id": e["employee_id"], "name": e["name"], "role": e.get("role")}
         for e in employees
     ]
-    prompt = f"Known employees: {roster}\n\nRule: {title} — {description}"
+    prompt = f"Known employees: {roster}\n\nRule: {title} - {description}"
     raw = await _complete(
         _RULE_SYSTEM, prompt, max_tokens=1024, output_schema=ROSTER_RULE_SCHEMA
     )

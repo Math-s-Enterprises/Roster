@@ -85,7 +85,7 @@ class DemandProfile:
     #
     # This is the thing a manager writes. Learning it directly reproduces
     # the rota rather than inferring it from an hourly headcount and hoping
-    # the shapes come back out — which is how a night shift still on the
+    # the shapes come back out - which is how a night shift still on the
     # floor at 06:00 ended up being counted twice, once in the curve and
     # again as a body added on top.
     day_slots: Dict[str, List[List[str]]] = field(default_factory=dict)
@@ -95,7 +95,7 @@ class DemandProfile:
     # The shop owner asked for this from the first week: "at 6:00 two people
     # are coming in, and it should schedule two people." `day_slots` cannot
     # answer it. It scores each SHAPE independently, so three shapes that all
-    # start at 06:00 each look common and all three get picked — measured
+    # start at 06:00 each look common and all three get picked - measured
     # here, the manager starts 2.05 people at 06:00 on a Saturday and the
     # shape list starts 3, on every day of the week. The reverse happens
     # where a band is fragmented: he starts 2.11 at 16:00 on a Friday and the
@@ -103,14 +103,14 @@ class DemandProfile:
     # frequency bar alone. 23.1 people-starts adrift across the week.
     #
     # Note this is ARRIVALS, not presence. The original solver counted bodies
-    # present per hour and was dropped because it double-counted changeover —
+    # present per hour and was dropped because it double-counted changeover -
     # a night worker still on the floor at 06:00 was in the curve, so filling
     # 06:00 "to target" put a fourth body on an hour that always had three.
     # Counting arrivals cannot make that mistake: somebody still on the floor
     # at 06:00 did not START at 06:00.
     arrivals: Dict[str, List[int]] = field(default_factory=dict)
     # How many weeks from about a year ago fed into this. Zero until a shop
-    # has a year of history — and while it is zero, nothing here knows
+    # has a year of history - and while it is zero, nothing here knows
     # anything about Christmas. Reported so the UI can say that rather than
     # implying a yearly pattern that has never been observed.
     seasonal_weeks: int = 0
@@ -119,7 +119,7 @@ class DemandProfile:
     # Top Oil ends a shift on a half hour once in 555 shifts, so rounding a
     # contract trim down to a whole hour matches what its manager writes. A
     # shop that genuinely finishes at 10:30 and 12:30 would be badly served by
-    # the same rule — every trim would drift its rota toward a convention it
+    # the same rule - every trim would drift its rota toward a convention it
     # does not use, which is precisely the §10b trap of taking one shop's
     # numbers for everyone's.
     #
@@ -229,7 +229,7 @@ class DemandProfile:
 #
 # WHY WEIGHTING AT ALL: every week used to count the same, so a deliberate
 # change took the full lookback to be believed. Cut two people from the
-# evening and three months later the profile still says five — it still
+# evening and three months later the profile still says five - it still
 # BUILDS rosters with five, and the manager deletes two every week. That is
 # the edit burden this product exists to reduce, caused by the product.
 #
@@ -240,7 +240,7 @@ RECENCY_HALF_LIFE_WEEKS = 8.0
 
 # Christmas is not drift. A shop that runs extra staff in December looks, to
 # a recency-weighted average, exactly like a shop that has permanently grown
-# — and then looks like one that has permanently shrunk in January.
+# - and then looks like one that has permanently shrunk in January.
 #
 # The defence is last year: a week roughly 52 weeks before the one being
 # built is given a weight floor, so it still carries even though recency
@@ -283,7 +283,7 @@ def _weighted_rosters(
 
     anchor = _week_start_date(for_week) if for_week else None
     if anchor is None:
-        # No target week given — measure age from the newest week we have, so
+        # No target week given - measure age from the newest week we have, so
         # the most recent roster is always full weight.
         anchor = max(
             (d for d in (_week_start_date(r.get("week_start")) for r in weeks) if d),
@@ -339,7 +339,7 @@ def finish_granularity(rosters: List[Dict[str, Any]]) -> int:
     Coarsest-that-fits, rather than the most common single value, because the
     question being asked is "what may a trim round to without inventing a shape
     this shop does not write". A shop whose finishes are 99.8% on the hour
-    answers 60. A shop that mixes 12:00 and 12:30 answers 30 — half its
+    answers 60. A shop that mixes 12:00 and 12:30 answers 30 - half its
     finishes are not multiples of 60, so 60 would be wrong for it even though
     60 is its single most common step.
 
@@ -388,7 +388,7 @@ def _build_arrivals(
     Largest remainder, the same technique `_build_day_slots` uses, and for
     the same reason: rounding each hour on its own drops or invents whole
     people. Measured on the reference shop, plain rounding put three openers
-    on every day of the week where the manager writes between 2.05 and 2.85 —
+    on every day of the week where the manager writes between 2.05 and 2.85 -
     every fraction rounded up independently, and Saturday came out with three
     people at 06:00 where the shop runs two.
 
@@ -426,7 +426,7 @@ def _build_day_slots(
     Rounding each pattern on its own loses the total. A shop that runs ten
     people every Monday across a dozen varying shapes has most of those
     shapes appearing on well under half the weeks, so each rounds to zero and
-    the day comes out with six slots instead of ten — leaving the roster
+    the day comes out with six slots instead of ten - leaving the roster
     permanently a body short at every hour, and blaming it on whoever had the
     day off.
 
@@ -547,7 +547,7 @@ def learn_demand(
 
             # AN EXTRA TEACHES THE SHAPE, NOT THE STAFFING LEVEL.
             #
-            # `extra` means "this person AS WELL AS the usual cover" (§2d) —
+            # `extra` means "this person AS WELL AS the usual cover" (§2d) -
             # a deliberate addition for one week, not a statement that the
             # shop needs another body on Fridays for ever. Counting it toward
             # the headcount made every extra permanently raise the level, so
@@ -556,7 +556,7 @@ def learn_demand(
             #
             # The SHAPE is different. If the same 17:00-21:00 is added ten
             # weeks running, that is a shift this shop runs, and it belongs
-            # in the vocabulary — where it competes with every other shape on
+            # in the vocabulary - where it competes with every other shape on
             # frequency and earns a slot or does not. So `slot_counts` still
             # sees it while `headcount_totals`, `role_totals` and
             # `staff_totals` do not.
@@ -567,7 +567,7 @@ def learn_demand(
             # Shifts worked by people who have since left still tell us how
             # many bodies the shop needed, so they count toward headcount.
             # They have no current role though, so without the fallback below
-            # they would be missing from the role mix — making role targets
+            # they would be missing from the role mix - making role targets
             # sum to less than the headcount and weakening the saturation
             # rule. The role recorded on the shift itself covers that case.
             employee_id = shift.get("employee_id", "")
@@ -584,7 +584,7 @@ def learn_demand(
             pattern_counts[(start, end)] += 1
             slot_counts[day][(start, end)] += weight
             # ARRIVALS: who comes IN at this hour. An extra counts here
-            # — the manager did put somebody on at that time, and this
+            # - the manager did put somebody on at that time, and this
             # is a statement about timing, not about the staffing level
             # (§2d).
             arrival_totals[day][to_minutes(start) // 60] += weight
@@ -795,7 +795,7 @@ def build_profile(
 ) -> DemandProfile:
     """Learned profile when there is enough history, otherwise the fallback.
 
-    A manual override stored on the shop always wins — an owner who has edited
+    A manual override stored on the shop always wins - an owner who has edited
     their curve should not have it silently relearned out from under them.
     """
     override = shop.get("demand_profile")
@@ -850,7 +850,7 @@ def compare_to_usual(
     """Where this week departs from the shape the shop normally runs.
 
     Information, never a refusal. Running leaner is a business decision and
-    the manager is allowed to make it — what they are not allowed to do is
+    the manager is allowed to make it - what they are not allowed to do is
     make it by accident, which is what happens when nothing says the evening
     normally has three people in it.
 
@@ -910,7 +910,7 @@ def compare_to_usual(
 
     for note in notes:
         note["message"] = (
-            f"{note['day']} {note['from_hour']:02d}:00–{note['to_hour']:02d}:00 — "
+            f"{note['day']} {note['from_hour']:02d}:00–{note['to_hour']:02d}:00, "
             f"{note['have']} on, this shop usually runs {note['usual']}."
         )
     return notes

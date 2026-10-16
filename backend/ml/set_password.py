@@ -8,7 +8,7 @@ signup does, and writes it.
 WHY THIS EXISTS
 ---------------
 There is no way to change a password from inside the app. `forgot-password`
-emails a reset link, and email is off until RESEND_API_KEY is set — so the
+emails a reset link, and email is off until RESEND_API_KEY is set - so the
 link is generated and never arrives. There is no "change password" screen for
 somebody already logged in either.
 
@@ -19,7 +19,7 @@ signup, and "I want to change it" has no answer in the product.
 This is the stopgap, not the fix. The fix is a change-password endpoint and a
 screen, which needs the current password re-entered.
 
-Any active sessions keep working — the token was issued before this and is not
+Any active sessions keep working - the token was issued before this and is not
 invalidated by it. Log out and back in if that matters.
 """
 from __future__ import annotations
@@ -54,12 +54,12 @@ async def run(email: str) -> int:
     print(f"Changing the password for {user.get('email')}"
           f" ({user.get('name', 'no name')})")
 
-    # Says so out loud. getpass shows nothing at all — not even asterisks —
+    # Says so out loud. getpass shows nothing at all - not even asterisks -
     # and a prompt that looks frozen is indistinguishable from one that is.
-    print("(what you type will not appear on screen — that is deliberate)\n")
+    print("(what you type will not appear on screen - that is deliberate)\n")
     first = getpass.getpass("New password: ")
     if len(first) < MIN_LENGTH:
-        print(f"Too short — at least {MIN_LENGTH} characters.")
+        print(f"Too short - at least {MIN_LENGTH} characters.")
         return 1
     if first != getpass.getpass("Again: "):
         print("They do not match. Nothing changed.")
@@ -74,7 +74,7 @@ async def run(email: str) -> int:
     # find out at the login screen instead of here.
     updated = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
     if not verify_password(first, updated.get("password_hash")):
-        print("The new password did not verify. Nothing is safe to assume — "
+        print("The new password did not verify. Nothing is safe to assume - "
               "check the database before logging out.")
         return 1
 

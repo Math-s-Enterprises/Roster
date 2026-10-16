@@ -1,6 +1,6 @@
 """Request/response schemas (Pydantic).
 
-These are the API's contract with the frontend — they are NOT database
+These are the API's contract with the frontend - they are NOT database
 models. MongoDB stores plain dicts; these classes validate what comes in
 over HTTP and shape what goes back out.
 
@@ -99,7 +99,7 @@ class RosterRecipient(BaseModel):
 
 
 class ShopUpdate(BaseModel):
-    """Partial update — every field optional, only what's sent is written."""
+    """Partial update - every field optional, only what's sent is written."""
     name: Optional[str] = None
     hours: Optional[List[ShopHours]] = None
     min_shift_hours: Optional[float] = Field(None, gt=0, le=24)
@@ -111,7 +111,7 @@ class ShopUpdate(BaseModel):
     shift_templates: Optional[List[ShiftTemplate]] = None
     onboarded: Optional[bool] = None
     # Ordered most senior first. Drives who is considered first when
-    # allocating hours — one of the rules that cannot be overridden.
+    # allocating hours - one of the rules that cannot be overridden.
     role_hierarchy: Optional[List[str]] = None
     # Roles that count as supervisory cover. Presence of this field is
     # deliberate: an explicit empty list means the shop has chosen none,
@@ -120,11 +120,11 @@ class ShopUpdate(BaseModel):
     # What a roster file's wording means in this shop's own vocabulary:
     # {"Shop Floor": "Floor Assistant", "Ass Manager": "Assistant Manager"}.
     # Imports match loosely enough to forgive "Mgr" for "Manager", but an
-    # abbreviation only this shop uses has to be stated rather than guessed —
+    # abbreviation only this shop uses has to be stated rather than guessed -
     # guessing is what silently rewrote everybody's job title before.
     role_aliases: Optional[Dict[str, str]] = None
     # People who get the WHOLE roster when it is dispatched, without working
-    # in the shop — an area manager, a franchise owner, head office. They are
+    # in the shop - an area manager, a franchise owner, head office. They are
     # deliberately NOT employees: giving them an employee record to hang an
     # address off would put them in the seniority ladder, in the solver's
     # candidate list and on the printed rota, and somebody would eventually be
@@ -132,7 +132,7 @@ class ShopUpdate(BaseModel):
     #
     # Name and email only. Nothing here needs an age, a wage or a contract.
     roster_recipients: Optional[List["RosterRecipient"]] = None
-    # Paid sick leave per year, in DAYS — which is how the law writes it
+    # Paid sick leave per year, in DAYS - which is how the law writes it
     # (Ireland's statutory entitlement is 5) and how a manager thinks. It is
     # spent in hours, converted per person from their own usual shift, so a
     # part-timer losing a 4-hour Saturday is not charged the same as a
@@ -176,7 +176,7 @@ class AvailabilityWindow(BaseModel):
     """Hard limits on when someone can work.
 
     Distinct from preferred_days_off, which is a preference. A student who
-    cannot start before 10:00 genuinely cannot open the shop — rostering them
+    cannot start before 10:00 genuinely cannot open the shop - rostering them
     at 06:00 produces a schedule that will not happen.
     """
     earliest_start: Optional[str] = Field(None, description="e.g. '10:00'")
@@ -208,7 +208,7 @@ class SummerBreak(BaseModel):
 class EmployeeIn(BaseModel):
     name: str = Field(min_length=1)
     # Optional because a roster spreadsheet does not contain email addresses.
-    # The importer used to invent one — "jane@imported.shop_645.local" — which
+    # The importer used to invent one - "jane@imported.shop_645.local" - which
     # failed this very validator twice over: an underscore is illegal in a
     # domain, and ".local" is a reserved name. Imported staff could be created
     # and then never edited, because saving any change re-validated an address
@@ -233,14 +233,14 @@ class EmployeeIn(BaseModel):
     availability: Optional[AvailabilityWindow] = None
 
     # How this person's hours are governed.
-    #   full_time_contract — salaried. Contracted to be ON THE FLOOR for
+    #   full_time_contract - salaried. Contracted to be ON THE FLOOR for
     #       contract_span_hours (breaks included), and paid the same whether
     #       they hit it or fall short by up to the tolerance.
-    #   student           — term-time and summer-break paid-hour caps.
-    #   hourly            — paid for what they work, capped by max_weekly_hours.
+    #   student           - term-time and summer-break paid-hour caps.
+    #   hourly            - paid for what they work, capped by max_weekly_hours.
     employment_type: Literal["full_time_contract", "student", "hourly"] = "hourly"
 
-    # Full-time only. Hours on the floor, not paid hours — a contract is
+    # Full-time only. Hours on the floor, not paid hours - a contract is
     # written clock-in to clock-out, and mixing the two is what made a 40h
     # employee read as "1.8h over" for taking their breaks.
     contract_span_hours: Optional[float] = Field(
@@ -368,7 +368,7 @@ class LeaveRequest(BaseModel):
        be left alone rather than blocked.
 
     2. Within the range, an employee is paid only for the days they would
-       normally have worked. The rest are unpaid and simply unavailable —
+       normally have worked. The rest are unpaid and simply unavailable -
        booking a fortnight off is not fourteen days of holiday pay.
 
     Paid days are given as explicit dates rather than weekday names, because
@@ -430,7 +430,7 @@ class RosterGenReq(BaseModel):
     # hand and re-solve everyone else around them.
     keep_pinned: bool = False
     # Re-solve ONE day and leave the other six exactly as they are. Their
-    # hours still count against weekly caps and the five-day limit — this
+    # hours still count against weekly caps and the five-day limit - this
     # narrows what may be changed, not what is taken into account.
     only_day: Optional[DayKey] = None
 
@@ -451,7 +451,7 @@ class ForceApproval(BaseModel):
     """Approving a week that breaks rules, deliberately.
 
     The password is the account's own, re-entered. It is not a second factor
-    and does not pretend to be — it establishes WHO authorised the override,
+    and does not pretend to be - it establishes WHO authorised the override,
     so the record names a person rather than a session that was left open.
     """
     force: bool = False
@@ -479,7 +479,7 @@ class ExtraShiftReq(BaseModel):
 class ShiftIn(BaseModel):
     """One cell of the roster grid.
 
-    Times are optional because a leave entry genuinely has none — somebody on
+    Times are optional because a leave entry genuinely has none - somebody on
     holiday is not in the shop from any hour to any other. Requiring them
     meant that once a week contained booked leave, saving ANY edit to ANY
     shift failed validation, because the grid sends the whole week back.
@@ -495,7 +495,7 @@ class ShiftIn(BaseModel):
     # Set by hand and held through a rebalance. Sent explicitly as False to
     # release one, so the solver may move that person again.
     pinned: Optional[bool] = None
-    # Deliberately ON TOP of normal staffing — a delivery, a renovation, an
+    # Deliberately ON TOP of normal staffing - a delivery, a renovation, an
     # unusually busy Saturday. The exact inverse of pinned: a pin says "THIS
     # person fills that slot", an extra says "this person AS WELL AS the
     # slots", so an extra shift never cancels one and is never reported as

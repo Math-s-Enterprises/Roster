@@ -15,8 +15,8 @@ The manager, asked how he rosters:
 
 The app has no way to express that. `preferred_days_off` is static, and every
 custom rule (`max_staff`, `not_together`, `no_open`, ...) is answerable from
-the week being built. A rotation depends on PREVIOUS weeks — whose turn it is
-comes from history — so it would be the first cross-week constraint.
+the week being built. A rotation depends on PREVIOUS weeks - whose turn it is
+comes from history - so it would be the first cross-week constraint.
 
 Before building one, the question is whether the pattern is real. What the
 manager describes may be what he intends rather than what he does, and those
@@ -30,7 +30,7 @@ the person off changes from weekend to weekend in a way that gives each of
 them a turn.
 
 It does NOT hold if weekends routinely have two off or none off, or if the
-same person is off most weekends — that is a fixed arrangement, not a
+same person is off most weekends - that is a fixed arrangement, not a
 rotation, and `preferred_days_off` already covers it.
 
 NOTHING IS WRITTEN.
@@ -77,7 +77,7 @@ async def run(email: str, names: List[str], days: List[str]) -> None:
     if not weeks:
         sys.exit("No approved rosters to look at.")
 
-    print(f"\n{shop.get('name', '?')} — {len(weeks)} approved weeks")
+    print(f"\n{shop.get('name', '?')} - {len(weeks)} approved weeks")
     print(f"Group: {', '.join(ids.values())}   weekend = {', '.join(days)}\n")
     print(f"  {'week':12}" + "".join(f"{n[:9]:>11}" for n in ids.values())
           + "   who was off")
@@ -108,7 +108,7 @@ async def run(email: str, names: List[str], days: List[str]) -> None:
         if not all(present.values()):
             absent = [ids[e] for e, p in present.items() if not p]
             print(f"  {roster.get('week_start', '?'):12}"
-                  + "".join(f"{'—':>11}" for _ in ids)
+                  + "".join(f"{'-':>11}" for _ in ids)
                   + f"   skipped: {', '.join(absent)} not working this week")
             continue
         counted += 1
@@ -135,7 +135,7 @@ async def run(email: str, names: List[str], days: List[str]) -> None:
     print(f"\n{'=' * 70}\nVERDICT\n{'=' * 70}")
     skipped = len(weeks) - counted
     if skipped:
-        print(f"  {skipped} week(s) skipped — not all of them were working "
+        print(f"  {skipped} week(s) skipped - not all of them were working "
               f"yet, so those\n  weekends say nothing about whose turn it "
               f"was.")
     if not counted:
@@ -151,7 +151,7 @@ async def run(email: str, names: List[str], days: List[str]) -> None:
         print("  NOT A ROTATION. Most weekends do not have exactly one of")
         print("  them off, so what the manager described is what he intends")
         print("  rather than what the rosters show. A rule for it would have")
-        print("  to be CONFIGURED by him, not detected — which is fine, but")
+        print("  to be CONFIGURED by him, not detected - which is fine, but")
         print("  it cannot be proposed from evidence.")
     elif len(off_counts) < len(ids):
         missing = [n for n in ids.values() if n not in off_counts]
@@ -166,7 +166,7 @@ async def run(email: str, names: List[str], days: List[str]) -> None:
         print(f"  Turns are spread within {spread} weekend(s) of each other.")
         print()
         print("  So the rule can be DETECTED and proposed to him rather than")
-        print("  configured from scratch — the same flow as 'make this a")
+        print("  configured from scratch - the same flow as 'make this a")
         print("  fixed shift'. Whose turn it is next: whoever has gone")
         print("  longest without one, derived from history each solve.")
         if len(pattern) >= 6:

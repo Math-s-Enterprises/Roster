@@ -1,4 +1,4 @@
-# Scheduler v2 — demand-driven rostering
+# Scheduler v2 - demand-driven rostering
 
 Status: **proposed**. Replaces the block-based assignment loop in
 `app/services/scheduler.py`.
@@ -43,7 +43,7 @@ The result is a roster staffing roughly a third of what the business needs.
 
 Three learned inputs, one new assignment loop.
 
-### 2.1 Demand curve — how many people, per day, per hour
+### 2.1 Demand curve - how many people, per day, per hour
 
 Derived from approved history; editable by the shop owner. Measured values:
 
@@ -56,7 +56,7 @@ Derived from approved history; editable by the shop owner. Measured values:
 
 Stored as a 7x24 integer matrix per shop.
 
-### 2.2 Role mix — which roles make up that headcount
+### 2.2 Role mix - which roles make up that headcount
 
 Also learned. The measured mix, pooled across days:
 
@@ -75,7 +75,7 @@ means the next hire for that hour is Floor, because Floor is furthest below
 target.
 
 Learning it rather than hard-coding "never two supervisors" also captures
-behaviour the rule misses — managers taper from 2.2 at 14:00 to 0.4 at 23:00
+behaviour the rule misses - managers taper from 2.2 at 14:00 to 0.4 at 23:00
 while supervisors rise from 0.4 to 0.8. Evening cover shifts from managers to
 supervisors, and no hand-written rule said so.
 
@@ -116,7 +116,7 @@ for each day:
 
         person     = best of eligible, ranked by:
                        1. role deficit   (how far their role is below target)
-                       2. role priority  (RULE 1 — seniority)
+                       2. role priority  (RULE 1 - seniority)
                        3. learned affinity (day / pattern / coworker history)
 
         assign; update coverage; loop
@@ -141,7 +141,7 @@ The hard constraint filter is untouched and still runs *before* any scoring:
 
 A demand curve is a *target*. It can never license an illegal assignment. If
 the curve asks for 6 people and only 3 are legally available, the roster gets 3
-and an advisory — never a curfew breach.
+and an advisory - never a curfew breach.
 
 ---
 
@@ -157,7 +157,7 @@ These pull in opposite directions and the resolution needs stating plainly.
 
 Ordering is: role deficit first, seniority as the tie-break within it. A
 manager still outranks a floor assistant when both roles are equally short.
-Without this ordering, four managers absorb the entire week — which is exactly
+Without this ordering, four managers absorb the entire week - which is exactly
 what happens today.
 
 ---
@@ -178,12 +178,12 @@ what happens today.
 
 | File | Change |
 |---|---|
-| `app/services/demand.py` | **new** — learn/store curve, role mix, pattern catalogue |
+| `app/services/demand.py` | **new** - learn/store curve, role mix, pattern catalogue |
 | `app/services/scheduler.py` | replace `_staff_segment` / segment logic with the demand loop |
 | `app/routes/rosters.py` | pass the demand profile into `solve_roster` |
 | `app/routes/shop.py` | endpoints to read/edit the curve |
 | `tests/test_scheduler.py` | rewrite block-based assertions; keep all constraint tests |
-| `tests/test_demand.py` | **new** — curve learning, role deficit ordering |
+| `tests/test_demand.py` | **new** - curve learning, role deficit ordering |
 | `ml/show_roster.py` | show target vs actual coverage per hour |
 
 The four non-negotiable rules keep their existing tests unchanged. Those are

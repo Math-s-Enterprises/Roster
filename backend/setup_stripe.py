@@ -4,7 +4,7 @@ Run once against a Stripe account (test or live):
 
     python setup_stripe.py
 
-Idempotent — it looks for existing products and prices before creating
+Idempotent - it looks for existing products and prices before creating
 anything, so re-running is safe. Prices in Stripe are immutable, so changing
 an amount here deactivates the old price and creates a new one.
 """
@@ -19,7 +19,7 @@ load_dotenv(Path(__file__).parent / ".env")
 
 api_key = os.environ.get("STRIPE_SECRET_KEY")
 if not api_key:
-    sys.exit("STRIPE_SECRET_KEY is not set in backend/.env — nothing to do.")
+    sys.exit("STRIPE_SECRET_KEY is not set in backend/.env - nothing to do.")
 stripe.api_key = api_key
 
 # `lookup_key` is what the app asks for at checkout, so these strings are a
@@ -29,7 +29,7 @@ CATALOG = [
     {
         "product_key": "roster_pro",
         "name": "Roster · Pro",
-        "tax_code": "txcd_10103001",  # SaaS — business use
+        "tax_code": "txcd_10103001",  # SaaS - business use
         "prices": [
             {"lookup_key": "roster_pro_monthly", "amount": 1900, "currency": "usd", "interval": "month"},
             {"lookup_key": "roster_pro_yearly", "amount": 19000, "currency": "usd", "interval": "year"},

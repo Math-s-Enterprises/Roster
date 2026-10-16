@@ -1,4 +1,4 @@
-# Scheduler baseline after the week-context repairs — 9 September 2026
+# Scheduler baseline after the week-context repairs - 9 September 2026
 
 ## Verdict
 
@@ -41,7 +41,7 @@ Distances are sums of absolute count differences. A move can therefore add one m
 | 17 Aug | 27 | 70 | 69 | 33 | 35 | 73 | 363.5h | 25 |
 | 24 Aug | 28 | 69 | 68 | 25 | 33 | 65 | 337.0h | 26 |
 | 7 Sep | 29 | 71 | 69 | 24 | 36 | 72 | 315.5h | 30 |
-| **Total** | — | **557** | **552** | **207** | **235** | **561** | **2,624.0h** | **228** |
+| **Total** | - | **557** | **552** | **207** | **235** | **561** | **2,624.0h** | **228** |
 
 The role-independent arrival distance is 235. The larger role/arrival distance of 561 shows that many timing differences are role substitutions at an hour, not a different number of people arriving.
 
@@ -104,7 +104,7 @@ These explain concrete role-count differences without establishing a coverage de
 
 ### Recurring arrival differences
 
-Several weeks move one Friday arrival from 07:00 to 06:00: the reference commonly has two starts in each hour, while the simulation has three at 06:00 and one at 07:00. The role detail shows the current Goods Inwards/fixed-shift context contributing to that change. Later weeks also move changeover starts—for example, 7 September has two generated Shop Floor starts at Saturday 17:00 where the reference has none, and two reference starts at Tuesday 14:00 where the simulation has none.
+Several weeks move one Friday arrival from 07:00 to 06:00: the reference commonly has two starts in each hour, while the simulation has three at 06:00 and one at 07:00. The role detail shows the current Goods Inwards/fixed-shift context contributing to that change. Later weeks also move changeover starts-for example, 7 September has two generated Shop Floor starts at Saturday 17:00 where the reference has none, and two reference starts at Tuesday 14:00 where the simulation has none.
 
 These are real timing differences worth retaining in the baseline. They are not uncovered hours, and this run does not prove whether the manager would edit them under today's context.
 

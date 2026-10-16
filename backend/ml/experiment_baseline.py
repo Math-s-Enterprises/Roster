@@ -7,10 +7,10 @@ Run:
 
 Two questions are asked separately, because they are different problems:
 
-  1. ATTENDANCE  — will this person work on this day?      (binary)
-  2. PATTERN     — given they work, which shift do they get? (multi-class)
+  1. ATTENDANCE  - will this person work on this day?      (binary)
+  2. PATTERN     - given they work, which shift do they get? (multi-class)
 
-METHODOLOGY NOTE — why the split is by date, not random
+METHODOLOGY NOTE - why the split is by date, not random
 -------------------------------------------------------
 Rosters are a time series. A random train/test split would let the model see
 week 30 while predicting week 12, and every historical feature would be
@@ -164,7 +164,7 @@ def main(path: str) -> None:
     # -- 1. attendance ------------------------------------------------------
     X, y, week_of = build_attendance_dataset(weeks, roles)
     train = temporal_split(week_of, weeks)
-    print("1) ATTENDANCE — will this person work this day?")
+    print("1) ATTENDANCE - will this person work this day?")
     print(f"   {len(y)} decisions   {y.mean():.1%} positive")
     print(f"   train {train.sum()} / test {(~train).sum()}")
 
@@ -183,7 +183,7 @@ def main(path: str) -> None:
     # -- 2. pattern ---------------------------------------------------------
     Xp, yp, week_of_p, patterns = build_pattern_dataset(weeks, roles)
     train_p = temporal_split(week_of_p, weeks)
-    print(f"\n2) SHIFT PATTERN — which of the top {len(patterns)} shifts?")
+    print(f"\n2) SHIFT PATTERN - which of the top {len(patterns)} shifts?")
     print(f"   train {train_p.sum()} / test {(~train_p).sum()}")
 
     usual = Xp[~train_p][:, 2].astype(int)
@@ -201,7 +201,7 @@ def main(path: str) -> None:
 
     print("\nInterpretation: top-3 is the number that matters for the product. "
           "The solver needs a good shortlist to choose from, not a single "
-          "guaranteed answer — a human approves the result either way.")
+          "guaranteed answer - a human approves the result either way.")
 
 
 if __name__ == "__main__":

@@ -7,62 +7,43 @@ import { LEGAL } from "@/components/legalDetails";
  *
  * Shown in two places that must never disagree: the small dialog that opens from
  * the sign-up form, and the pages at /terms and /privacy. Both render
- * <LegalDocument>, so editing a sentence here changes it everywhere. There is
- * deliberately no longer version behind this one: a customer who agrees to a
- * short summary while a different long text sits elsewhere would leave it unclear
- * which one governs.
- *
- * Short does not mean missing. Each point is one or two sentences, and between
- * them they still cover what GDPR asks of a notice and of a processor agreement:
- *
- *   Privacy Policy (Art. 13)  who is responsible and how to reach them; what is
- *     collected, and what is needed to sign up; the purpose and legal basis for
- *     each use; who receives it; transfers outside the EU and their safeguard;
- *     how long it is kept; the right to access, correct, delete, restrict,
- *     export and object; the right to complain; automated decisions; breaches.
- *   Terms (Art. 28)  the processor's duties: act only on instructions, keep it
- *     confidential and secure, use only named sub-processors, help with requests
- *     and breach duties, report breaches, delete or return the data, and allow
- *     checks.
+ * <LegalDocument>, so editing a sentence here changes it everywhere.
  *
  * Everything here describes what the app actually does. If the app changes - a
- * new provider, a new kind of data, something new kept in the browser - change
- * this text in the same change, and raise LEGAL_VERSION below.
+ * new provider, a new kind of data, something new kept in the browser, a new
+ * price - change this text in the same change, update LEGAL_UPDATED, and raise
+ * LEGAL_VERSION if the change matters.
  *
- * GENERAL BY DEFAULT. The text reads properly with nothing filled in: it says
- * "Roster", "we" and "the business that creates a Roster account", and points to
- * "the contact details on our website". Three optional lines in legalDetails.js
- * (company, email, closureDays) make it more specific when they are filled in,
- * and the text adapts. Nothing is ever shown as an empty slot.
+ * TWO DETAILS. The text names who runs Roster and how to reach them, from legalDetails.js
+ * (company, email). With no company set it says "the Roster team"; with no email set it
+ * shows [YOUR EMAIL] in its place, deliberately visible, so the contact address can never
+ * go live missing without anyone noticing.
  *
- * Before real customers sign up, a privacy notice does need a way to contact
- * whoever is responsible (GDPR Art. 13(1)(a)), and a website needs to show its
- * operator's details somewhere (the e-Commerce rules). Filling in `company` and
- * `email` covers the first; the second can live in a site footer.
+ * Typed into the wording, and so to be kept in step by hand: the plan prices
+ * (Terms, Plans and payment), the 60-minute reset link and 7-day sign-in (Privacy,
+ * How long we keep it), the 50 activity entries, and the list of providers.
  *
  * This is a starting point, not legal advice. Have a solicitor or data
- * protection adviser review it before launch, especially liability, retention
- * and governing law.
+ * protection adviser read it before launch.
  */
 
-// The version and date belong to the wording, so they live with it. They are NOT
-// shown to readers - the Terms and the Privacy Policy carry no version or date
-// line. They are kept so that, when the app starts recording who accepted what,
-// there is a version to record, and so a significant change can be told apart
-// from a tidy-up. Raise the version when the wording changes in a way that
-// matters, and update the date whenever the wording changes at all.
-export const LEGAL_VERSION = "1.3";
-export const LEGAL_UPDATED = "October 2026";
+// The version belongs to the wording, so it lives with it, and is not shown. It is
+// kept so that, when the app starts recording who accepted what, there is a version
+// to record. The date IS shown: both documents promise that it changes when they do.
+export const LEGAL_VERSION = "2.2";
+export const LEGAL_UPDATED = "15 October 2026";
 
-// The optional details, trimmed. Empty means "not given": the text stays general.
+// The two details, trimmed. Empty means "not given yet": a visible blank is shown.
 const COMPANY = String(LEGAL.company || "").trim();
 const EMAIL = String(LEGAL.email || "").trim();
-const DAYS = String(LEGAL.closureDays || "").trim();
 
-const Mail = () => <a className="legal-link" href={`mailto:${EMAIL}`}>{EMAIL}</a>;
-
-/** "Questions: email x@y" when we have an address; otherwise a pointer, not a gap. */
-const Ask = () => (EMAIL ? <>email <Mail /></> : <>contact us using the details on our website</>);
+// "start" is for the place where the name begins a sentence, so the fallback gets its capital.
+const Company = ({ start = false }) => <>{COMPANY || (start ? "The Roster team" : "the Roster team")}</>;
+const Email = () => (
+  EMAIL
+    ? <a className="legal-link" href={`mailto:${EMAIL}`}>{EMAIL}</a>
+    : <>[YOUR EMAIL]</>
+);
 
 /**
  * A reference from one document to the other.
@@ -92,40 +73,80 @@ const PRIVACY = [
     title: "Who we are.",
     body: (
       <>
-        “We” means Roster{COMPANY ? <>, run by {COMPANY}</> : null}. Questions: <Ask />. We post
-        changes here and email you about significant ones.
-      </>
-    ),
-  },
-  {
-    id: "account",
-    title: "Your account.",
-    body: (
-      <>
-        Your name, email, business name and a password (stored only as a hash) — or your Google
-        email if you use Google. You need to give us these to create an account.
-      </>
-    ),
-  },
-  {
-    id: "staff",
-    title: "Your staff’s details.",
-    body: (
-      <>
-        What you enter: names, emails, role, age, pay, hours, availability, holidays, sick leave
-        (health data, so extra care) and imported rosters. Age matters because under-18s have
-        different working-time limits.
+        <Company start /> (“we”, “us”) runs Roster. For any question about your information, email{" "}
+        <Email />.
       </>
     ),
   },
   {
     id: "roles",
-    title: "Who decides.",
+    title: "Your details, and your staff’s.",
+    body: (
+      <ul>
+        <li>For your own account details, we are responsible for how they are used.</li>
+        <li>
+          For details about staff that a business enters, the business is responsible and we handle
+          them for it. If you are a staff member, please ask your employer first. You can also email
+          us, tell us which business, and we will pass your request on.
+        </li>
+      </ul>
+    ),
+  },
+  {
+    id: "collect",
+    title: "What we collect.",
     body: (
       <>
-        We decide how your account details are used. For your staff’s details, you decide and we act
-        as your processor under the <LegalRef to="terms">Terms of Service</LegalRef>. Staff: ask
-        your employer first.
+        <p><strong>About you</strong></p>
+        <ul>
+          <li>Your name and email address, and your password (stored scrambled; we have none if you only use Google).</li>
+          <li>If you sign in with Google: your name, email and profile picture from Google. We never see your Google password.</li>
+          <li>Your business name and settings: opening hours, roster groups, roles, shift and break rules.</li>
+          <li>The names and emails of people you choose to send rosters to.</li>
+          <li>Your plan and payment records, but not your card number. Stripe handles that.</li>
+          <li>What you do in the app, such as “roster approved”, and when.</li>
+          <li>Sign-in sessions and password-reset requests.</li>
+        </ul>
+        <p><strong>About your staff (entered by you)</strong></p>
+        <ul>
+          <li>Name, and email address if you add one.</li>
+          <li>Job title, roster group, and whether they are still active.</li>
+          <li>Age (13 or over). It is used for young-worker rules, such as the under-16 curfew check.</li>
+          <li>Pay: an hourly rate, or a weekly or monthly salary for full-time contract staff.</li>
+          <li>
+            Whether they are on a full-time contract, a student or hourly, and their contract hours.
+            For students, term-time hours and summer break dates.
+          </li>
+          <li>
+            Availability: the days and times they can work, preferred days off, preferred shift, and
+            whether they can work overnight.
+          </li>
+          <li>Holiday entitlement and balances, leave booked, and sick days.</li>
+          <li>Sick-leave reports: the shift missed, who covered it, and an optional reason you type.</li>
+          <li>Rosters, shifts, hours, breaks and labour cost; fixed shifts; and rules you write in plain words.</li>
+          <li>
+            Files you upload to import: roster photos, PDFs, spreadsheets and staff lists. We do not keep
+            the file, only what was read from it.
+          </li>
+        </ul>
+        <p>
+          A sick-leave reason can reveal health information, which the law treats as especially
+          sensitive. It is optional. Please keep it general (“unwell”).
+        </p>
+        <p><strong>On your device</strong></p>
+        <ul>
+          <li>
+            We set no cookies of our own. Your browser keeps a few settings for Roster: your sign-in,
+            colour theme, last roster group, display choices, your last 20 notifications (which can
+            name staff) and a short count of wrong passwords typed for an email address (up to 15
+            minutes). These stay on your device.
+          </li>
+          <li>
+            When Roster loads, your browser asks Google for fonts, so Google can see your IP address.
+            The sign-in screen also loads Google’s sign-in button.
+          </li>
+          <li>We use no analytics, no advertising and no session recording.</li>
+        </ul>
       </>
     ),
   },
@@ -134,22 +155,46 @@ const PRIVACY = [
     title: "Why we use it.",
     body: (
       <>
-        To run Roster (our contract with you), keep it secure (our legitimate interest) and keep
-        billing records (a legal duty). We never sell it or use it for ads, and a manager approves
-        every roster — nothing is decided automatically.
+        To run your account and rosters, take payment and keep billing records, keep Roster secure, and
+        answer your questions. We do not sell personal information or use it for advertising. Roster
+        suggests rosters; you review and approve them.
       </>
     ),
   },
   {
     id: "share",
-    title: "Who gets it.",
+    title: "Who we share it with.",
     body: (
       <>
-        Only providers that help us run Roster: our hosting and database providers, Resend (email),
-        Stripe (payments), Google (fonts, and sign-in if you use it) and, if AI features are on,
-        Anthropic (reads imported rosters, writes short summaries that can name staff). Some are
-        outside the EU, including the US; we rely on the EU–US Data Privacy Framework or Standard
-        Contractual Clauses.
+        We share only what each one needs to do its job.
+        <ul>
+          <li>
+            <strong>Anthropic (AI):</strong> reads roster images and PDFs you upload, turns plain-English
+            rules into rules, and writes short roster summaries. It receives the uploaded images and PDFs
+            (which show staff names and shifts), staff names and roles with the rule text, and roster
+            totals and warnings.
+          </li>
+          <li><strong>Resend (email):</strong> sends password-reset emails and the rosters you choose to send.</li>
+          <li>
+            <strong>Stripe (payments):</strong> takes payment and manages plans. You give your card and
+            billing details to Stripe directly.
+          </li>
+          <li><strong>Google:</strong> sign-in and fonts.</li>
+          <li><strong>Our hosting providers:</strong> run Roster and store the data.</li>
+          <li><strong>The people you email rosters to.</strong></li>
+        </ul>
+        <p>We also share information if the law requires it.</p>
+      </>
+    ),
+  },
+  {
+    id: "abroad",
+    title: "Outside Europe.",
+    body: (
+      <>
+        Some of these providers may handle data outside the European Economic Area, including in the
+        United States. Where they do, they rely on safeguards the law accepts, such as EU standard
+        contractual clauses or an EU adequacy decision.
       </>
     ),
   },
@@ -157,12 +202,21 @@ const PRIVACY = [
     id: "keep",
     title: "How long we keep it.",
     body: (
-      <>
-        While your account is open. You can delete your account yourself, any time, from the account
-        menu: everything in it is erased straight away and any subscription is cancelled. If you ask us
-        to close it instead, we delete it {DAYS ? `within ${DAYS} days` : "promptly"}. Either way we keep
-        only what the law requires (such as billing records).
-      </>
+      <ul>
+        <li>While your account is open, we keep what you put in.</li>
+        <li>
+          If you delete your account (account menu, Delete account), it is closed straight away and any
+          plan is cancelled. We keep your data for 30 days in case you change your mind, then permanently
+          delete everything. Signing in again within those 30 days cancels the deletion.
+        </li>
+        <li>
+          If you press Reset all data on the Dashboard, your staff, rosters, rules and fixed shifts are
+          deleted at once, and your account stays.
+        </li>
+        <li>The Dashboard shows your latest 50 activity entries. Older ones stay stored until the account is deleted.</li>
+        <li>Password-reset links expire after 60 minutes. Your sign-in lasts up to 7 days.</li>
+        <li>Stripe keeps its own payment records for as long as the law requires.</li>
+      </ul>
     ),
   },
   {
@@ -170,17 +224,9 @@ const PRIVACY = [
     title: "Your rights.",
     body: (
       <>
-        Delete your account yourself from the account menu. To see, correct, restrict, export or
-        object: <Ask /> (free; we reply within one month). You can also complain to the Data Protection Commission (
-        <a
-          className="legal-link"
-          href="https://www.dataprotection.ie"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          dataprotection.ie
-        </a>
-        ) or your local authority.
+        You can ask to see, correct or delete your information, to limit or object to how we use it,
+        or to take a copy with you. In the app you can already edit what you entered and delete your
+        account. For anything else, email <Email /> and we will reply within one month.
       </>
     ),
   },
@@ -189,20 +235,54 @@ const PRIVACY = [
     title: "Keeping it safe.",
     body: (
       <>
-        Each business’s data is kept separate. If a breach puts personal data at risk we report it
-        within 72 hours where required, and tell those affected if the risk is high.
+        Passwords are stored scrambled. Each account’s data is kept apart, so you only see your own.
+        Signing in is required, and card numbers never reach us.
+        <p>
+          If a breach puts your information at risk, we will tell the affected account holders and,
+          where the law requires, the regulator, without undue delay. No system is perfectly secure, so
+          use a strong password you use nowhere else.
+        </p>
       </>
     ),
   },
   {
-    id: "browser",
-    title: "Cookies and browser storage.",
+    id: "young",
+    title: "Young people.",
     body: (
       <>
-        No cookies of our own and no analytics or tracking. Your browser keeps your sign-in, theme,
-        roster group, layout choices, your last 20 notifications (kept for your account until you
-        clear them) and, after wrong passwords, a short count of failed sign-in attempts. Google
-        may set its own cookies if you use Google sign-in.
+        Roster is for businesses: an account holder must be 18 or over. Employers can add staff aged 13
+        and over, because age is needed for the young-worker rules. Employers are responsible for
+        employing young people lawfully.
+      </>
+    ),
+  },
+  {
+    id: "changes",
+    title: "Changes.",
+    body: (
+      <>
+        If we change this policy, the new version replaces this one on this page, and the “Last updated”
+        date changes. We do not email about changes, so please look from time to time. We will not use
+        your information for a new purpose without first updating this page.
+      </>
+    ),
+  },
+  {
+    id: "complaints",
+    title: "Complaints.",
+    body: (
+      <>
+        Please email us first at <Email />; we would like the chance to put it right. You can also
+        complain to the Data Protection Commission, Ireland’s data protection regulator (
+        <a
+          className="legal-link"
+          href="https://www.dataprotection.ie"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          dataprotection.ie
+        </a>
+        ), or to the regulator in your own country.
       </>
     ),
   },
@@ -210,22 +290,13 @@ const PRIVACY = [
 
 const TERMS = [
   {
-    id: "between",
-    title: "Who this is between.",
+    id: "about",
+    title: "About Roster.",
     body: (
       <>
-        {COMPANY || "Roster"} (“we”) and the business that creates a Roster account (“you”). You
-        confirm you are 18 or over and can agree for your business.
-      </>
-    ),
-  },
-  {
-    id: "does",
-    title: "What Roster does.",
-    body: (
-      <>
-        It suggests rosters and checks them against working-time rules. You approve every roster and
-        stay responsible for it. It is not legal advice.
+        Roster is run by <Company /> (“we”, “us”). It helps a business plan staff rosters, keep track of
+        leave and sick days, estimate wage costs and email rosters to staff. These terms are between us
+        and the business that opens an account (“you”). Roster is for businesses, not for personal use.
       </>
     ),
   },
@@ -234,41 +305,63 @@ const TERMS = [
     title: "Your account.",
     body: (
       <>
-        Keep your sign-in secure and tell us if someone else uses it. You are responsible for what
-        happens under it.
-      </>
-    ),
-  },
-  {
-    id: "data",
-    title: "Your data.",
-    body: (
-      <>
-        You own it. You must have a lawful reason to hold your staff’s details, and tell them they
-        are in Roster and are emailed their rosters.
-      </>
-    ),
-  },
-  {
-    id: "role",
-    title: "Our role with staff details.",
-    body: (
-      <>
-        You are the controller; we are your processor. We use it only to run Roster for you, keep it
-        confidential and secure, use only the providers in the{" "}
-        <LegalRef to="privacy">Privacy Policy</LegalRef> (telling you before changes), help with
-        staff requests and breaches, tell you without delay of any breach, allow checks by audit,
-        and delete it or hand it back when you leave.
+        You must be 18 or over and allowed to act for your business. Give true details and keep your
+        password private. You are responsible for everything done through your account. If you think
+        someone else has got in, email <Email /> straight away.
       </>
     ),
   },
   {
     id: "use",
-    title: "Using Roster properly.",
+    title: "Using Roster.",
     body: (
       <>
-        No unlawful use, no reaching other businesses’ data or accounts, no overloading the service
-        or harmful uploads.
+        Use Roster to run your own business’s staffing, and follow the law. Do not try to get into other
+        accounts, overload the service, or copy it. Enter only what you need about your staff. Please
+        keep sick-leave reasons general: “unwell” is enough.
+      </>
+    ),
+  },
+  {
+    id: "staff",
+    title: "Your staff’s information.",
+    body: (
+      <>
+        What you put into Roster is yours. You decide what to enter about your staff, so you are
+        responsible for having a good reason to hold it and for telling your staff what you hold.
+        <p>
+          We only use it to run Roster for you. We keep it confidential and secure, use only the
+          providers named in the <LegalRef to="privacy">Privacy Policy</LegalRef>, help you answer your
+          staff’s requests, tell you without delay if we learn of a breach, and erase it for good 30 days
+          after you delete your account.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "aids",
+    title: "Rosters, costs and AI are aids, not advice.",
+    body: (
+      <>
+        Roster’s warnings, holiday and sick balances, wage costs and AI features can be wrong. Wage
+        costs are estimates: for salaried staff they come from an hourly rate worked out from contract
+        hours.
+        <p>
+          Check everything before you approve a roster, send it or pay anyone. You are responsible for
+          following employment law and for paying your staff correctly. None of this is legal, tax or
+          payroll advice.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "emails",
+    title: "Emails Roster sends.",
+    body: (
+      <>
+        When you send a roster, we email it to the addresses you entered. Only add addresses you are
+        allowed to email. We also email you when you ask to reset your password. We use your staff’s
+        addresses for nothing else.
       </>
     ),
   },
@@ -277,29 +370,64 @@ const TERMS = [
     title: "Plans and payment.",
     body: (
       <>
-        Free and paid plans, billed monthly or yearly through Stripe. Paid plans renew until you
-        cancel.
+        Some features may need a paid plan. Plans and prices are on the Pricing page when you buy. Today,
+        Pro Monthly is €19 a month and Pro Yearly is €190 a year, plus tax where it applies. Stripe takes
+        the payment; we never see your card number.
+        <p>
+          A paid plan renews automatically until you cancel. You can cancel at any time by deleting your
+          account, which stops the plan straight away, or by emailing <Email />. We do not refund fees
+          unless the law says we must. A new price applies from your next renewal.
+        </p>
       </>
     ),
   },
   {
-    id: "changes",
-    title: "Reliability and changes.",
+    id: "delete",
+    title: "Deleting your account.",
     body: (
       <>
-        We aim to keep Roster reliable but cannot promise it will never be interrupted. We email you
-        before significant changes to these terms and ask you to accept them again.
+        You can delete your account at any time from the account menu (Delete account). We cancel your
+        plan and close the account straight away, and you are signed out everywhere. We then keep your
+        data for 30 days in case you change your mind. Nobody can see or use it in that time, and
+        signing in again within the 30 days cancels the deletion and restores your account (your plan
+        stays cancelled).
+        <p>
+          After 30 days everything is permanently deleted: your staff, rosters, leave and sick records,
+          fixed shifts, AI rules, imports and history. This cannot be undone, so download what you need
+          first. You can sign up again later with the same email once it has been deleted. Stripe keeps
+          its own payment records, as the law requires.
+        </p>
       </>
     ),
   },
   {
     id: "ending",
-    title: "Ending, liability and law.",
+    title: "Ending.",
     body: (
       <>
-        You can close your account any time yourself from the account menu, which erases everything
-        in it, or by emailing us; we may close one that seriously breaks these terms. We do not limit liability the law does not allow us to limit. The laws of{" "}
-        {LEGAL.governingLaw} apply.
+        You can stop at any time by deleting your account. We can close an account if you seriously
+        break these terms, use Roster unlawfully, or do not pay.
+      </>
+    ),
+  },
+  {
+    id: "changes",
+    title: "Changes.",
+    body: (
+      <>
+        We may update these terms. The new version replaces this one on this page, and the “Last
+        updated” date at the top changes. We do not email about changes, so please look from time to
+        time. If you carry on using Roster after a change, you accept it; if you do not, delete your
+        account.
+      </>
+    ),
+  },
+  {
+    id: "law",
+    title: "Law and contact.",
+    body: (
+      <>
+        These terms follow Irish law, and the Irish courts decide any dispute. Questions: <Email />.
       </>
     ),
   },
@@ -324,6 +452,7 @@ export function LegalDocument({ kind }) {
   return (
     <>
       <p className="legal-lead">{doc.lead}</p>
+      <p className="legal-updated">Last updated: {LEGAL_UPDATED}</p>
 
       <ul className="legal-points">
         {doc.points.map((point) => (

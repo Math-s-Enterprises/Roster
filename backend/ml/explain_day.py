@@ -6,8 +6,8 @@ A roster can only place somebody on a shift the day's plan contains. So when
 a shift you expect is missing, there are two very different causes and the
 roster looks the same either way:
 
-  * the slot IS in the plan and somebody else won it — a ranking question
-  * the slot is NOT in the plan at all — an apportionment question, and no
+  * the slot IS in the plan and somebody else won it - a ranking question
+  * the slot is NOT in the plan at all - an apportionment question, and no
     amount of tuning who-beats-whom will ever put it back
 
 This prints the day's learned patterns with the arithmetic that decided each
@@ -53,13 +53,13 @@ async def run(email: str, day: str) -> None:
     )
 
     weeks = latest_per_week(approved)
-    print(f"\n{shop['name']} — {day.upper()}")
+    print(f"\n{shop['name']} - {day.upper()}")
     print(f"profile: {profile.source}, {profile.weeks_observed} weeks observed, "
           f"{len(weeks)} approved rosters after de-duplication\n")
 
     if profile.source != "learned":
         print("This day is on FALLBACK block coverage, not the shop's own")
-        print("history — so the slot list is generic. Approve at least 4")
+        print("history - so the slot list is generic. Approve at least 4")
         print("weeks to switch it over.")
         return
 
@@ -95,7 +95,7 @@ async def run(email: str, day: str) -> None:
         quota = seen / observed
         in_plan = planned.get((start, end), 0)
         owner_id = slot_owners.owner_of(owners, day, start, end)
-        owner = names.get(owner_id, "") if owner_id else "—"
+        owner = names.get(owner_id, "") if owner_id else "-"
         mark = str(in_plan) if in_plan else "NO"
         print(f"  {start}-{end:<8}{seen:>7}/{observed:<3}{quota:>7.2f}"
               f"{mark:>9}   {owner}")

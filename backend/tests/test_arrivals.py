@@ -1,4 +1,4 @@
-"""How many people come IN each hour — the quantity the manager rosters by.
+"""How many people come IN each hour - the quantity the manager rosters by.
 
 The shop owner described the model on day one: "at 6:00 two people are
 coming in, and it should schedule two people. At 7:00 there are three people
@@ -11,7 +11,7 @@ Three models have been tried and only the last one can express that.
              target put a fourth body on an hour that always had three.
   SHAPES     count whole shifts by how often each is worked. Scores every
              shape independently, so it does not know that `06:00-16:00`,
-             `06:00-14:00` and `06:00-11:00` compete for the same job —
+             `06:00-14:00` and `06:00-11:00` compete for the same job -
              all three look common, all three get picked, and Saturday comes
              out with three openers where the shop starts two. Where a band
              is FRAGMENTED the reverse happens and a real shift disappears.
@@ -35,13 +35,13 @@ WEEK = "2026-08-17"
 # These tests describe how the ARRIVALS fill behaves, so they turn it on
 # regardless of what the solver currently ships with. It ships OFF: measured
 # over the reference shop's 31 approved weeks it reproduced the manager worse
-# than the shape list, and — the reason it is off rather than merely tuned —
+# than the shape list, and - the reason it is off rather than merely tuned -
 # it did not move the arrivals distance it exists to fit. See the comment on
 # `_RosterBuilder.USE_ARRIVALS`.
 #
 # Flip this to False to sabotage-check the file: four of the six tests below
 # must fail, because four of them are about counting arrivals rather than
-# shapes. Setting the solver's own default is NOT the sabotage — that would
+# shapes. Setting the solver's own default is NOT the sabotage - that would
 # leave these tests silently passing on the model they do not describe.
 ARRIVALS_UNDER_TEST = True
 
@@ -116,7 +116,7 @@ def fragmented_shop(morning, morning_finishes, evening, evening_finishes):
     A bridge shift and a night shift keep the day gapless, so the coverage
     floor has nothing to add and cannot be mistaken for an extra arrival.
 
-    Nothing here is unusual — it is an ordinary shop where the finish moves
+    Nothing here is unusual - it is an ordinary shop where the finish moves
     around and the number of bodies does not. That is the case the shape
     list cannot describe: it scores each shape on its own, so a band split
     four ways has four small numbers where the truth is one big one.
@@ -176,7 +176,7 @@ class TestTheHourStartsAsManyPeopleAsItReallyStarts:
         openers = starts_at(result, "mon", 6)
         assert len(openers) == 3, (
             f"three people open this shop every day and the roster starts "
-            f"{len(openers)} — "
+            f"{len(openers)} - "
             f"{sorted((s['employee_id'], s['end']) for s in openers)}"
         )
 
@@ -186,7 +186,7 @@ class TestTheHourStartsAsManyPeopleAsItReallyStarts:
         Each of the four morning shapes is worked about a quarter of the
         time, so every one of them rounds to zero and loses the leftovers to
         a six-way evening. The shop opens with two people and the roster
-        opens with none — which is the same fault as the one above, seen
+        opens with none - which is the same fault as the one above, seen
         from the other side, and the likelier reason a manager says the app
         "ignores who works Mondays".
         """
@@ -197,7 +197,7 @@ class TestTheHourStartsAsManyPeopleAsItReallyStarts:
         openers = starts_at(result, "mon", 6)
         assert len(openers) == 2, (
             f"two people open this shop every day and the roster starts "
-            f"{len(openers)} — "
+            f"{len(openers)} - "
             f"{sorted((s['employee_id'], s['end']) for s in openers)}"
         )
 
@@ -206,13 +206,13 @@ class TestTheHourStartsAsManyPeopleAsItReallyStarts:
 
         The reference shop runs `16:00-00:00` and `16:00-23:00` in the same
         hour, worked by different people. Handing both slots the first
-        erases the second along with everybody who works it — the same "pick
+        erases the second along with everybody who works it - the same "pick
         one shape and hunt for somebody to fit it" fault arrivals exist to
         remove, one layer down.
 
         The people matter here. Where a band is worked by a pool who all
         work all of its shapes, the placeholder cannot matter, because
-        `_usual_finish` falls back to the shop's commonest finish anyway —
+        `_usual_finish` falls back to the shop's commonest finish anyway -
         which is why deleting the apportionment once measured as harmless
         across 120 shops of exactly that kind. A shape worked by ONE person
         is the case that catches it.
@@ -235,7 +235,7 @@ class TestTheHourStartsAsManyPeopleAsItReallyStarts:
         finishes = {s["end"] for s in starts_at(result, "mon", 16)}
         assert finishes == {"00:00", "21:00"}, (
             f"mon 16:00 runs two different shifts and the roster produced "
-            f"{sorted(finishes)} — one of the shop's real shapes has been "
+            f"{sorted(finishes)} - one of the shop's real shapes has been "
             f"erased by giving both slots the commonest finish"
         )
 
@@ -289,7 +289,7 @@ class TestTheFinishComesFromWhoeverGotTheShift:
             and s["end"] != theirs[s["employee_id"]]
         ]
         assert not wrong, (
-            f"an opener was given a finish they have never worked — "
+            f"an opener was given a finish they have never worked - "
             f"{wrong[:4]} (day, who, given, what they actually work). The "
             f"slot's shape is a placeholder; the person brings the finish."
         )
@@ -306,7 +306,7 @@ class TestPresenceCapsArrivals:
     THE THRESHOLD IS SET BY MEASUREMENT, NOT BY A TEST HERE, and that is
     worth stating plainly. Written first as the literal `on_duty >=
     required`, it fired eight times in one real week and five of those cost
-    a shift the manager actually rosters — Monday 07:00, Tuesday 10:00,
+    a shift the manager actually rosters - Monday 07:00, Tuesday 10:00,
     Thursday 14:00, Friday 13:00, Saturday 18:00. It now fires only on
     `on_duty > required`, real over-staffing, which over 80 randomised shops
     drops the firing rate from 331 in 4102 slots to 17.
@@ -315,7 +315,7 @@ class TestPresenceCapsArrivals:
     needs an hour whose arrival is frequent enough to win a slot from the
     day-level largest-remainder rounding and rare enough that the presence
     average rounds down past it, and a shop small enough to write as a
-    fixture does not produce one — presence and arrivals round from the same
+    fixture does not produce one - presence and arrivals round from the same
     fraction and move together. Several were tried. The evidence is
     `ml/check_arrivals_ab.py --explain` on real weeks, and that is the check
     to re-run before touching this threshold.
@@ -334,7 +334,7 @@ class TestPresenceCapsArrivals:
                "starts the shop writes, then delete this marker.")
     def test_the_solver_does_not_invent_a_start_the_shop_has_never_used(self):
         """Familiarity is keyed on the start and is absolute (§2), so a pass
-        that MOVES a start has to respect it too — and this one does not."""
+        that MOVES a start has to respect it too - and this one does not."""
         history, team = fragmented_shop(
             3, ["14:00", "12:00", "11:00"],
             4, ["00:00", "23:00", "20:00", "19:00", "22:00", "21:00"])
@@ -372,7 +372,7 @@ class TestTheFloorIsNeverLeftToTheCurve:
 
         That zero is what makes this the case worth testing. The cap asks
         whether the floor already holds what the curve wants, and at an hour
-        wanting nobody an empty floor satisfies it — so a cap applied here
+        wanting nobody an empty floor satisfies it - so a cap applied here
         would read "covered" of a dark shop and leave it dark.
         """
         def week(w):
@@ -404,6 +404,6 @@ class TestTheFloorIsNeverLeftToTheCurve:
                     last += 24
                 hours.update(h % 24 for h in range(first, last))
             assert len(hours) == 24, (
-                f"{day} is staffed for only {len(hours)} hours of 24 — the "
+                f"{day} is staffed for only {len(hours)} hours of 24 - the "
                 f"coverage floor must not be capped by the demand curve"
             )
