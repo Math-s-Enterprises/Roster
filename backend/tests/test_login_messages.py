@@ -1,12 +1,7 @@
-"""What sign-in says when it fails.
-
-An address nobody has registered is told so ("Sorry, this email doesn't exist."). A real address
-with the wrong password gets the existing answer, that the two do not match. The server names the
-first case with a code, so the sign-in page can tell it from every other failure.
-"""
+"""Failed sign-in responses must not disclose whether an address is registered."""
 from tests.test_api import client, register  # noqa: F401 - the shared fixtures
 
-NO_SUCH_EMAIL = {"code": "email_not_found", "message": "Sorry, this email doesn't exist."}
+INVALID_CREDENTIALS = "Invalid email or password"
 
 
 def login(client, email, password):
@@ -14,19 +9,19 @@ def login(client, email, password):
 
 
 class TestAnAddressWithNoAccount:
-    def test_it_is_told_the_email_does_not_exist(self, client):
+    def test_it_gets_the_same_generic_credentials_error(self, client):
         register(client)
         response = login(client, "xyz@gmail.com", "whatever-password")
-        assert response.status_code == 404
-        assert response.json()["detail"] == NO_SUCH_EMAIL
+        assert response.status_code == 401
+        assert response.json()["detail"] == INVALID_CREDENTIALS
 
     def test_whatever_the_password_it_says_the_same(self, client):
         for password in ("x", "password123", "a much longer password than anyone has"):
-            assert login(client, "xyz@gmail.com", password).json()["detail"] == NO_SUCH_EMAIL
+            assert login(client, "xyz@gmail.com", password).json()["detail"] == INVALID_CREDENTIALS
 
     def test_capital_letters_do_not_matter(self, client):
         register(client)
-        assert login(client, "XYZ@Gmail.com", "pw-123456").json()["detail"] == NO_SUCH_EMAIL
+        assert login(client, "XYZ@Gmail.com", "pw-123456").json()["detail"] == INVALID_CREDENTIALS
 
     def test_nothing_is_issued(self, client):
         response = login(client, "xyz@gmail.com", "pw-123456")
@@ -62,13 +57,13 @@ class TestARealAddressWithTheWrongPassword:
         assert response.status_code == 401 and response.json()["detail"] == "Invalid email or password"
 
 
-class TestTheTwoAnswersAreDifferent:
-    def test_an_unknown_and_a_wrong_password_cannot_be_confused(self, client):
+class TestTheTwoAnswersAreIdentical:
+    def test_an_unknown_and_a_wrong_password_do_not_disclose_account_existence(self, client):
         register(client)
         unknown = login(client, "xyz@gmail.com", "password123")
         wrong = login(client, "owner@example.com", "wrong-password")
-        assert unknown.status_code != wrong.status_code
-        assert unknown.json() != wrong.json()
+        assert unknown.status_code == wrong.status_code == 401
+        assert unknown.json() == wrong.json()
 
     def test_a_malformed_request_is_still_a_validation_error(self, client):
         assert client.post("/api/auth/login", json={"email": "not-an-email", "password": "x"}).status_code == 422

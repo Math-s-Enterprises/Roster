@@ -310,8 +310,8 @@ class TestThirtyDays:
         self.request(client)
         purge()
         response = login(client)
-        # The account is gone for good, so its address is simply not registered any more.
-        assert response.status_code == 404 and response.json()["detail"]["code"] == "email_not_found"
+        # Erasure must not reveal whether this address used to have an account.
+        assert response.status_code == 401 and response.json()["detail"] == "Invalid email or password"
 
     def test_running_the_clean_up_again_finds_nothing_and_is_harmless(self, client):
         token, user_id, _ = self.request(client)

@@ -1525,3 +1525,35 @@ Merged-source verification: all 20 frontend tests and 205 backend tests for
 compliance, low-history scheduling, learned slots and contract pay passed. The
 production build and full merged backend suite were not rerun; GitHub CI must
 finish before merging the updated PR. No remote writes or deployments performed.
+
+## 28. Fix diagnostic privacy at the output, not in the scheduling inputs
+
+PR #37's logging autofix inserted a top-level helper in the middle of the async
+staff-email importer. Its remaining body, including an await, ended up inside
+the synchronous helper and the script could not compile. Masking two diagnostic
+lines also left names exposed in other staff tables, lookup errors and free-text
+notes. Repair the importer and remove identities from these output paths without
+changing the records used for matching or solving.
+
+diagnose.py now uses report-local Employee labels consistently; who_owns.py
+reports the selected employee without echoing their name or listing other staff.
+set_emails.py reports CSV line numbers and reasons instead of names and addresses.
+It still defaults to a dry run, rejects ambiguous matches and shared addresses,
+and requires --replace before overwriting an existing address. Diagnostic reports
+retain scheduling details and are not a guarantee of complete anonymisation.
+
+The user explicitly chose to restore the generic login error. Unknown addresses
+and wrong passwords return the same 401 response, and the frontend no longer
+renders the old email_not_found message. Successful sign-in and account
+restoration are unchanged; the deletion regression expects the generic error too.
+
+Regression evidence: the new CLI tests initially had 11 failures, including the
+syntax error and identity leaks; all 13 passed after the fix. Reintroducing the
+raw employee name in an isolated, in-memory mutation made its privacy test fail,
+without changing a source file. The updated login tests had four failures before
+the backend response was repaired. Final verification passed 1,221 backend tests
+with one existing expected failure, and all 22 frontend tests. Tests used mock
+data, not live Atlas records. Production build and GitHub CodeQL were not run
+locally; remote required checks and review must finish before merging. The
+account-deletion loop only runs while the backend is awake; hosting was not
+changed as part of these fixes.

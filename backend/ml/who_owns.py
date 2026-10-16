@@ -49,7 +49,7 @@ from app.services.learning import latest_per_week           # noqa: E402
 async def run(email: str, who: str, day_filter: str | None) -> None:
     user = await db.users.find_one({"email": email.lower()}, {"_id": 0})
     if not user:
-        sys.exit(f"No account for {email}")
+        sys.exit("No matching account.")
     shop = await db.shops.find_one({"owner_id": user["user_id"]}, {"_id": 0})
     if not shop:
         sys.exit("That account has no shop yet.")
@@ -64,11 +64,9 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
     match = exact or [e for e in employees
                       if who.lower() in (e.get("name") or "").lower()]
     if not match:
-        sys.exit(f"Nobody matching {who!r}. "
-                 f"Names: {', '.join(sorted(e.get('name', '?') for e in employees))}")
+        sys.exit("No matching employee. Check the name in the Employees page.")
     if len(match) > 1:
-        sys.exit(f"{who!r} matches {len(match)}: "
-                 f"{', '.join(e['name'] for e in match)}")
+        sys.exit(f"The selection matches {len(match)} employees. Use the full name.")
     employee = match[0]
     employee_id = employee["employee_id"]
 
@@ -114,7 +112,7 @@ async def run(email: str, who: str, day_filter: str | None) -> None:
             if shift["employee_id"] == employee_id:
                 theirs[key] += 1
 
-    print(f"\n{employee['name']} at {shop.get('name', '?')} - "
+    print("\nSelected employee at selected shop - "
           f"{len(weeks)} approved weeks"
           + (f", {day_filter} only" if day_filter else ""))
 

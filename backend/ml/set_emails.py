@@ -31,8 +31,8 @@ AN EXISTING ADDRESS IS NEVER OVERWRITTEN WITHOUT --replace
 Re-running this after adding one person should not quietly rewrite the other
 twenty-four, and a stale CSV should not undo a correction made in the UI since.
 
-NOTHING IS WRITTEN WITHOUT --commit. The dry run prints exactly what would
-change, and is the same code path as the real thing minus the write.
+NOTHING IS WRITTEN WITHOUT --commit. The dry run identifies changes by CSV
+line, not staff names or addresses, and follows the same path minus the write.
 """
 from __future__ import annotations
 
@@ -52,22 +52,6 @@ from app.services import availability as avail              # noqa: E402
 
 # Same shape check the readiness report uses. Loose on purpose: rejecting a
 # real address is worse than passing a bad one, which dispatch reports anyway.
-
-
-def _mask_email(email: str) -> str:
-    value = (email or "").strip()
-    if not value:
-        return ""
-    if "@" not in value:
-        return "***"
-    local, domain = value.split("@", 1)
-    masked_local = (local[0] + "***") if local else "***"
-    if "." in domain:
-        first, rest = domain.split(".", 1)
-        masked_domain = (first[0] + "***." + rest) if first else "***." + rest
-    else:
-        masked_domain = (domain[0] + "***") if domain else "***"
-    return f"{masked_local}@{masked_domain}"
 LOOKS_LIKE_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -84,14 +68,14 @@ def _key(name: str) -> str:
 async def run(account: str, csv_path: str, commit: bool, replace: bool) -> None:
     user = await db.users.find_one({"email": account.lower()}, {"_id": 0})
     if not user:
-        sys.exit(f"No account for {account}")
+        sys.exit("No matching account.")
     shop = await db.shops.find_one({"owner_id": user["user_id"]}, {"_id": 0})
     if not shop:
         sys.exit("That account has no shop yet.")
 
     path = Path(csv_path)
     if not path.exists():
-        sys.exit(f"No such file: {path}")
+        sys.exit("CSV file not found.")
 
     employees = [
         e for e in await db.employees.find(
@@ -121,20 +105,7 @@ async def run(account: str, csv_path: str, commit: bool, replace: bool) -> None:
         sys.exit(f"The CSV needs a header row with: name,email (missing {missing})")
 
     planned, skipped = [], []
-    seen_emails: Dict[str, str] = {}
-
-def _mask_name(name: str) -> str:
-    """Return a minimally identifying version of a person's name for logs."""
-    value = (name or "").strip()
-    if not value:
-        return "?"
-    parts = [p for p in value.split() if p]
-    if not parts:
-        return "?"
-    if len(parts) == 1:
-        return parts[0][0] + "***"
-    return f"{parts[0][0]}*** {parts[-1][0]}***"
-
+    seen_emails: Dict[str, int] = {}
 
     for line, row in enumerate(rows, start=2):
         clean = {(k or "").strip().lower(): (v or "").strip()
@@ -144,17 +115,16 @@ def _mask_name(name: str) -> str:
             continue
 
         if not LOOKS_LIKE_EMAIL.match(address):
-            skipped.append((line, name, address, "not an email address"))
+            skipped.append((line, "not an email address"))
             continue
 
         matches = by_name.get(_key(name), [])
         if not matches:
-            skipped.append((line, name, address, "no active employee by that name"))
+            skipped.append((line, "no active employee by that name"))
             continue
         if len(matches) > 1:
-            others = ", ".join(m.get("name", "?") for m in matches)
-            skipped.append((line, name, address,
-                            f"matches {len(matches)} people ({others}) - "
+            skipped.append((line,
+                            f"matches {len(matches)} people - "
                             f"use the full name"))
             continue
 
@@ -163,34 +133,31 @@ def _mask_name(name: str) -> str:
         # them reads the other's hours, and it is far more likely a
         # copy-paste slip in the CSV than a real arrangement.
         if address.lower() in seen_emails:
-            skipped.append((line, name, address,
-                            f"already used for {_mask_email(seen_emails[address.lower()])}"))
+            skipped.append((line, f"already used on line {seen_emails[address.lower()]}"))
             continue
-        seen_emails[address.lower()] = employee.get("name", "?")
+        seen_emails[address.lower()] = line
 
         current = (employee.get("email") or "").strip()
         if current and not replace:
-            skipped.append((line, name, address, "existing address present - pass --replace to change"))
+            skipped.append((line, "existing address present - pass --replace to change"))
             continue
 
-        planned.append((employee, current, address))
+        planned.append((employee, address, line))
 
-    print(f"\n{shop['name']} - {len(employees)} active staff, "
-          f"{len(rows)} row(s) in {path.name}\n")
+    print(f"\nSelected shop - {len(employees)} active staff, {len(rows)} CSV row(s)\n")
 
     if planned:
         print(f"WOULD SET {len(planned)} address(es):" if not commit
               else f"SETTING {len(planned)} address(es):")
-        for employee, current, address in planned:
-            arrow = f"{_mask_email(current)} -> " if current else ""
-            print(f"    {_mask_name(employee.get('name', '?')):22} {arrow}{_mask_email(address)}")
+        for _, _, line in planned:
+            print(f"    line {line}: set address")
     else:
         print("Nothing to change.")
 
     if skipped:
         print(f"\nSKIPPED {len(skipped)}:")
-        for line, name, address, why in skipped:
-            print(f"    line {line}: {name or '(no name)'} <{_mask_email(address)}> - {why}")
+        for line, why in skipped:
+            print(f"    line {line}: {why}")
 
     # Anyone the CSV never mentioned is still unreachable, and saying so here
     # avoids a second round trip to the readiness report.
@@ -201,13 +168,12 @@ def _mask_name(name: str) -> str:
     ]
     if still_missing:
         print(f"\nSTILL WITHOUT AN ADDRESS ({len(still_missing)}):")
-        print("    " + ", ".join(sorted(still_missing)))
 
     if not commit:
         print("\nDry run - nothing written. Re-run with --commit to apply.")
         return
 
-    for employee, _, address in planned:
+    for employee, address, _ in planned:
         await db.employees.update_one(
             {"employee_id": employee["employee_id"], "shop_id": shop["shop_id"]},
             {"$set": {"email": address}},

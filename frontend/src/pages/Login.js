@@ -179,22 +179,15 @@ export default function Login() {
       }
       navigate(returnTo, { replace: true });
     } catch (err) {
-      // Sign-in says which half was wrong. An address with no account is told so; a real address
-      // with the wrong password is told the two do not match. The server names the first case with
-      // a code, so a dropped connection or a wrong server address is never reported as "no such
-      // email". Sign-up keeps the server's reason, because "that email is taken" is useful there.
-      const detail = err?.response?.data?.detail;
-      const noSuchEmail = detail?.code === "email_not_found";
+      // Sign-in does not disclose which addresses are registered.
       setStatus("error");
       setError(
         isSignup
           ? errorMessage(err, "Could not create the account.")
-          : noSuchEmail
-            ? detail.message || "Sorry, this email doesn't exist."
-            : "That email and password do not match.",
+          : "That email and password do not match.",
       );
       // The email is never cleared; the password is where the fix goes.
-      // Only a wrong password counts - not a dropped connection or a server fault.
+      // Only rejected credentials count - not a dropped connection or a server fault.
       let asked = false;
       if (!isSignup && err?.response?.status === 401) {
         const { failures } = recordFailure(form.email);
@@ -205,8 +198,7 @@ export default function Login() {
         }
       }
       // (Not when the reset pop-up is about to take the focus.)
-      // An unknown email is fixed in the email box; a wrong password in the password box.
-      if (!isSignup && !asked) requestAnimationFrame(() => (noSuchEmail ? emailRef : passwordRef).current?.focus());
+      if (!isSignup && !asked) requestAnimationFrame(() => passwordRef.current?.focus());
     }
   };
 

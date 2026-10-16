@@ -37,7 +37,7 @@ from app.services.scheduler import DAYS  # noqa: E402
 async def run(email: str, week: str, dry_run: bool = False) -> None:
     user = await db.users.find_one({"email": email.lower()}, {"_id": 0})
     if not user:
-        sys.exit(f"No account for {email}")
+        sys.exit("No matching account.")
     shop = await db.shops.find_one({"owner_id": user["user_id"]}, {"_id": 0})
     shop_id = shop["shop_id"]
 
@@ -74,12 +74,14 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
             {"_id": 0}, sort=[("created_at", -1)],
         )
 
-    by_id = {e["employee_id"]: e for e in employees}
+    # Output-only labels: matching and solving still use the original records.
+    names = {e["employee_id"]: f"Employee {i}" for i, e in enumerate(employees, 1)}
     monday = datetime.strptime(week, "%Y-%m-%d").date()
     dates = {d: (monday + timedelta(days=i)).isoformat() for i, d in enumerate(DAYS)}
 
     # ---- shop -----------------------------------------------------------
-    print(f"\n{'=' * 70}\nSHOP: {shop['name']}\n{'=' * 70}")
+    print(f"\n{'=' * 70}\nSHOP: selected shop\n{'=' * 70}")
+    print("Staff labels apply only to this report; personal names and free-text notes are omitted.")
     for hours in shop.get("hours", []):
         state = "CLOSED" if hours.get("closed") else f"{hours['open']}-{hours['close']}"
         print(f"  {hours['day']}: {state}")
@@ -100,7 +102,7 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
     if not fixed:
         print("  none configured")
     for f in fixed:
-        name = by_id.get(f["employee_id"], {}).get("name", f["employee_id"])
+        name = names.get(f["employee_id"], "Unknown employee")
         print(f"  {name:16} {','.join(f['days']):24} {f['start']}-{f['end']}")
 
     # ---- leave in this week --------------------------------------------
@@ -113,10 +115,10 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
     if not relevant:
         print("  nobody is on leave this week")
     for h in relevant:
-        who = by_id.get(h.get("employee_id"), {}).get("name", "WHOLE SHOP")
+        who = "WHOLE SHOP" if h.get("scope") == "shop" else names.get(h.get("employee_id"), "Unknown employee")
         span = h["date"] if not h.get("end_date") or h["end_date"] == h["date"] else f"{h['date']}..{h['end_date']}"
         flag = "  <-- CLOSES THE SHOP" if h.get("scope") == "shop" else ""
-        print(f"  {who:16} {h.get('scope'):10} {span:24} {h.get('label', '')}{flag}")
+        print(f"  {who:16} {h.get('scope'):10} {span:24}{flag}")
 
     # ---- employees ------------------------------------------------------
     print(f"\n{'=' * 70}\nEMPLOYEES ({len(employees)})\n{'=' * 70}")
@@ -126,12 +128,12 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
     from app.services import availability as avail
 
     print(f"  {'name':16}{'role':18}{'cap/wk':>7}{'  preferred days off'}")
-    for e in sorted(employees, key=lambda x: x["name"]):
+    for e in employees:
         off = ",".join(e.get("preferred_days_off") or []) or "-"
         cap = avail.weekly_hour_cap(e, week)
         raw = float(e.get("max_weekly_hours") or 0)
         note = f"   (contract {raw:.0f}, lifted for summer break)" if cap != raw else ""
-        print(f"  {e['name'][:15]:16}{(e.get('role') or '?')[:17]:18}"
+        print(f"  {names[e['employee_id']]:16}{(e.get('role') or '?')[:17]:18}"
               f"{cap:7.0f}  {off}{note}")
 
     # ---- demand ---------------------------------------------------------
@@ -153,7 +155,6 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
         approved,
         {e['employee_id'] for e in employees if avail.is_active(e)},
     )
-    names = {e["employee_id"]: e.get("name", e["employee_id"]) for e in employees}
 
     print(f"\n{'=' * 70}\nWHO OWNS WHICH SHIFT\n{'=' * 70}")
     print(f"  owned at {so.OWNERSHIP_SHARE:.0%} of the WEEKS it ran, "
@@ -178,17 +179,17 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
                 who_id, count = hist.people[instance]
                 share = count / hist.weeks
                 if share >= so.OWNERSHIP_SHARE:
-                    label = names.get(who_id, who_id)
+                    label = names.get(who_id, "Unknown employee")
                     suffix = f"  [instance {instance + 1}]" if instance else ""
                     print(f"      {start}-{end:<6} {label} "
                           f"({share:.0%} of {hist.weeks} weeks){suffix}")
                     continue
             if owner and hist and instance == 0:
                 share = hist.people[0][1] / hist.weeks
-                who = f"{names.get(owner, owner)} ({share:.0%} of {hist.weeks} weeks)"
+                who = f"{names.get(owner, 'Unknown employee')} ({share:.0%} of {hist.weeks} weeks)"
             elif hist:
                 top = ", ".join(
-                    f"{names.get(e, e)} {c}" for e, c in hist.people[:3]
+                    f"{names.get(e, 'Unknown employee')} {c}" for e, c in hist.people[:3]
                 )
                 who = f"nobody owns it - {top}  (ran {hist.weeks} weeks)"
             else:
@@ -208,8 +209,7 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
     problems = 0
     for f in fixed:
         for day in f["days"]:
-            raw_name = by_id.get(f["employee_id"], {}).get("name", f["employee_id"])
-            name = f"{str(raw_name)[:1]}***" if raw_name else "employee"
+            name = names.get(f["employee_id"], "Unknown employee")
             actual = placed.get((f["employee_id"], day))
             on_leave = any(
                 h.get("employee_id") == f["employee_id"] and dates[day] in _expand(h)
@@ -232,7 +232,7 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
             if shift:
                 overridden += 1
                 reason = "coverage floor" if shift.get("coverage_fallback") else "demand shortfall"
-                print(f"  WARN {e['name']} worked {day} despite preferring it off ({reason})")
+                print(f"  WARN {names[e['employee_id']]} worked {day} despite preferring it off ({reason})")
 
     if not problems and not overridden:
         print("  all fixed shifts honoured, all preferred days off respected")
@@ -260,7 +260,7 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
             continue
         days_by_person.setdefault(shift["employee_id"], set()).add(shift.get("day"))
     overworked = {
-        by_id.get(eid, {}).get("name", eid): len(days)
+        names.get(eid, "Unknown employee"): len(days)
         for eid, days in days_by_person.items() if len(days) > 5
     }
     print(f"  working more than 5 days: {len(overworked)}"
@@ -270,7 +270,7 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
     if short:
         print(f"  below contracted hours: {len(short)}")
         for entry in short[:5]:
-            print(f"    {entry['name']:15} {entry['rostered_hours']}h "
+            print(f"    {names.get(entry.get('employee_id'), 'Unknown employee'):16} {entry['rostered_hours']}h "
                   f"of {entry.get('minimum_hours', entry['contracted_hours'])}h minimum")
 
     # Who is actually in the shop, hour by hour. Answers "the shop opens at
@@ -283,7 +283,7 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
     for shift in shifts:
         if not (shift.get("start") and shift.get("end")):
             continue
-        name = by_id.get(shift["employee_id"], {}).get("name", "?")
+        name = names.get(shift["employee_id"], "Unknown employee")
         for cday, chour in _RosterBuilder.hours_covered(
             shift["day"], shift["start"], shift["end"]
         ):
@@ -297,8 +297,8 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
     early = ", ".join(cover["sun"][6]) or "NOBODY"
     print(f"\n  sunday 06:00 is covered by: {early}")
 
-    for issue in (roster.get("critical_issues") or [])[:5]:
-        print(f"    ! {issue[:110]}")
+    if roster.get("critical_issues"):
+        print("    View critical-issue details in the app; free-text details are omitted here.")
 
 
 def _expand(holiday) -> set:

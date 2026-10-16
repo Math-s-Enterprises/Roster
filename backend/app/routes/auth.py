@@ -37,15 +37,6 @@ _INVALID_CREDENTIALS = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
 )
 
-# An address nobody has registered. It carries a code as well as the words, so the sign-in page
-# can tell this case from every other failure and never says it for a dropped connection or a
-# wrong server address.
-_NO_SUCH_EMAIL = HTTPException(
-    status_code=status.HTTP_404_NOT_FOUND,
-    detail={"code": "email_not_found", "message": "Sorry, this email doesn't exist."},
-)
-
-
 def _public_user(user: Dict[str, Any]) -> Dict[str, Any]:
     """Everything safe to send to the browser - never the password hash."""
     return {
@@ -104,10 +95,8 @@ async def signup(payload: SignupReq):
 async def login(payload: LoginReq):
     user = await db.users.find_one({"email": payload.email.lower()}, {"_id": 0})
     if not user or not verify_password(payload.password, user.get("password_hash")):
-        # An address with no account is told so, and a real address with the wrong password is
-        # told the two do not match, so it is clear which to fix. (This replaces the old rule of
-        # one identical answer for both, at the cost of confirming which addresses are registered.)
-        raise _INVALID_CREDENTIALS if user else _NO_SUCH_EMAIL
+        # Do not disclose registered addresses through different error responses.
+        raise _INVALID_CREDENTIALS
 
     # The right password for an account that is waiting to be deleted cancels the deletion.
     # After its date it does not: the clean-up is about to remove it, so it looks as if it
