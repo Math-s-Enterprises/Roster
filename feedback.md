@@ -1557,3 +1557,27 @@ data, not live Atlas records. Production build and GitHub CodeQL were not run
 locally; remote required checks and review must finish before merging. The
 account-deletion loop only runs while the backend is awake; hosting was not
 changed as part of these fixes.
+
+## 29. Follow the scanner path beyond names and emails
+
+After 754f826, PR #37 still had two CodeQL findings in diagnose.py. The user's
+expanded paths traced employee role text into the staff table and raw
+preferred_days_off entries into the warning line. Names and email checks alone
+did not cover those outputs. Do not dismiss a remaining alert or claim the
+remote check passed on the strength of unit tests.
+
+The report now gives equal roles equal report-local Role labels, without
+printing role text. Preferred-day output is drawn from the scheduler's fixed
+DAYS list, with stored preferences used only for membership checks. Warning
+checks use those same canonical days. Employee records, role-based scheduling
+and stored preferences are untouched. This is an output change, not a change
+to what the manager configured or to the solver's rules.
+
+A regression seeds distinct/shared private role strings and a malformed legacy
+preference/shift, checks that neither string is printed, and preserves normal
+Monday/Wednesday warnings and the stored inputs. It failed before the fix.
+All 14 CLI privacy tests now pass. Independently reintroducing either raw role
+output or the raw preference warning in memory made the regression fail again;
+no source files were changed by those negative controls. The full backend and
+frontend suites were not rerun for this diagnostic-only follow-up. GitHub
+CodeQL must rerun after a future push; it was not run or suppressed locally.

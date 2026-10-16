@@ -76,12 +76,14 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
 
     # Output-only labels: matching and solving still use the original records.
     names = {e["employee_id"]: f"Employee {i}" for i, e in enumerate(employees, 1)}
+    roles = dict.fromkeys(e.get("role") for e in employees)
+    role_labels = {role: f"Role {i}" for i, role in enumerate(roles, 1)}
     monday = datetime.strptime(week, "%Y-%m-%d").date()
     dates = {d: (monday + timedelta(days=i)).isoformat() for i, d in enumerate(DAYS)}
 
     # ---- shop -----------------------------------------------------------
     print(f"\n{'=' * 70}\nSHOP: selected shop\n{'=' * 70}")
-    print("Staff labels apply only to this report; personal names and free-text notes are omitted.")
+    print("Staff and role labels apply only to this report; names, role text and free-text notes are omitted.")
     for hours in shop.get("hours", []):
         state = "CLOSED" if hours.get("closed") else f"{hours['open']}-{hours['close']}"
         print(f"  {hours['day']}: {state}")
@@ -129,11 +131,11 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
 
     print(f"  {'name':16}{'role':18}{'cap/wk':>7}{'  preferred days off'}")
     for e in employees:
-        off = ",".join(e.get("preferred_days_off") or []) or "-"
+        off = ",".join(day for day in DAYS if day in (e.get("preferred_days_off") or [])) or "-"
         cap = avail.weekly_hour_cap(e, week)
         raw = float(e.get("max_weekly_hours") or 0)
         note = f"   (contract {raw:.0f}, lifted for summer break)" if cap != raw else ""
-        print(f"  {names[e['employee_id']]:16}{(e.get('role') or '?')[:17]:18}"
+        print(f"  {names[e['employee_id']]:16}{role_labels[e.get('role')]:18}"
               f"{cap:7.0f}  {off}{note}")
 
     # ---- demand ---------------------------------------------------------
@@ -227,7 +229,9 @@ async def run(email: str, week: str, dry_run: bool = False) -> None:
     # preferred days off honoured?
     overridden = 0
     for e in employees:
-        for day in e.get("preferred_days_off") or []:
+        for day in DAYS:
+            if day not in (e.get("preferred_days_off") or []):
+                continue
             shift = placed.get((e["employee_id"], day))
             if shift:
                 overridden += 1

@@ -106,6 +106,36 @@ def test_ownership_keeps_the_requested_analysis_without_printing_identity(record
     assert "1 approved weeks" in output and "mon 06:00" in output
 
 
+def test_diagnosis_labels_roles_and_only_emits_canonical_weekdays(records, capsys):
+    """Raw database strings must not escape through roles or preference warnings."""
+    script = importlib.import_module("ml.diagnose")
+    private_role = "private-role@example.com"
+    private_day = "private-day@example.com"
+    preferences = ["wed", "mon", private_day]
+
+    async def seed():
+        await db.employees.update_many({}, {"$set": {"role": private_role}})
+        await db.employees.update_one({"employee_id": "a"}, {"$set": {"preferred_days_off": preferences}})
+        await db.employees.insert_one({"employee_id": "c", "shop_id": "shop", "name": "Private Carol",
+                                       "role": "private-other-role@example.com", "max_weekly_hours": 40})
+        await db.rosters.insert_one({"shop_id": "shop", "week_start": "2026-10-05", "version": 1,
+                                     "shifts": [
+                                         {"employee_id": "a", "day": "mon", "start": "06:00", "end": "12:00"},
+                                         {"employee_id": "a", "day": "wed", "start": "06:00", "end": "12:00"},
+                                         # Legacy/corrupt records can bypass API validation.
+                                         {"employee_id": "a", "day": private_day},
+                                     ]})
+    asyncio.run(seed())
+    asyncio.run(script.run("private-owner@example.com", "2026-10-05"))
+    output = capsys.readouterr().out
+    assert "private-" not in output and "Private" not in output
+    assert output.count("Role 1") == 2 and output.count("Role 2") == 1
+    assert "mon,wed" in output
+    assert "WARN Employee 1 worked mon" in output and "WARN Employee 1 worked wed" in output
+    employee = asyncio.run(db.employees.find_one({"employee_id": "a"}))
+    assert employee["role"] == private_role and employee["preferred_days_off"] == preferences
+
+
 @pytest.mark.parametrize("who", ["Private Missing", "Private"])
 def test_ownership_lookup_errors_do_not_list_staff_or_echo_input(records, capsys, who):
     script = importlib.import_module("ml.who_owns")
