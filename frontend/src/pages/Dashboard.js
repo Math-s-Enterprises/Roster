@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, errorMessage, fmtHours, fmtMoney, mondayOf, ROSTER_GROUP_KEY } from "@/lib/api";
+import { api, errorMessage, fmtHours, fmtMoney, mondayOf, ROSTER_GROUP_KEY, announceShopChange } from "@/lib/api";
 import { toast } from "sonner";
 import { CheckCircle2, AlertCircle, Wand2, Sparkles } from "lucide-react";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -155,6 +155,7 @@ export default function Dashboard() {
     setFocusFoot(null);
   }, [focusFoot]);
   const [setup, setSetup] = useState(null);
+  const [setupOpen, setSetupOpen] = useState(null);
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
   const [confirmText, setConfirmText] = useState("");
@@ -272,11 +273,28 @@ export default function Dashboard() {
   };
 
   const setupComplete = setup?.complete;
+  const setupExpanded = setupOpen ?? !setupComplete;
+  const nextRequired = setup?.steps?.find(s => !s.done && !s.optional)?.id;
   const stepsLeft = setup ? Math.max(0, setup.total - setup.done) : 0;
   const outstanding = (setup?.steps || [])
-    .filter((s) => !s.done)
+    .filter((s) => !s.done && !s.optional)
     .map((s) => s.title || s.label || s.id)
     .filter(Boolean);
+
+  const reviewPerson = (person, task) => {
+    const employee = employees.find(e => e.employee_id === person.employee_id);
+    const currentGroup = shop?.current_department || shop?.primary_department || shop?.departments?.[0];
+    if (employee?.departments?.length && !employee.departments.includes(currentGroup)) {
+      localStorage.setItem(ROSTER_GROUP_KEY, employee.departments[0]);
+      announceShopChange();
+    }
+    navigate(`/employees/${encodeURIComponent(person.employee_id)}?setup=${task}`);
+  };
+  const openSetupStep = (step) => {
+    if (step.who?.length) return reviewPerson(step.who[0], step.id);
+    navigate(step.id === "shop" ? "/onboarding#shop-name"
+      : step.id === "team" ? "/employees?setup=team" : step.action.path);
+  };
 
   if (loading) {
     return <div className="db-page"><div className="db-empty">Loading…</div></div>;
@@ -326,14 +344,54 @@ export default function Dashboard() {
             </span>
             <span className="db-setup-rest">
               {setupComplete
-                ? `· ${employees.length} ${employees.length === 1 ? "person" : "people"}, shop hours and fixed shifts all in place`
+                ? `· ${setup.done} of ${setup.total} required steps complete`
                 : `· ${outstanding.join(", ")}`}
             </span>
           </div>
-          <button type="button" className="db-link" onClick={() => navigate("/onboarding")}>
-            {setupComplete ? "Review steps" : "Finish setup"}
+          <button type="button" className="db-link" aria-expanded={setupExpanded} aria-controls="db-setup-steps"
+            onClick={() => setSetupOpen(!setupExpanded)}>
+            {setupExpanded ? "Hide steps" : setupComplete ? "Review steps" : "Continue setup"}
           </button>
         </div>
+      )}
+
+      {!setup && <div className="db-setup" role="status">
+        <span>The setup checklist could not be loaded.</span>
+        <button type="button" className="db-link" onClick={load}>Retry checklist</button>
+      </div>}
+
+      {setup && (
+        <section id="db-setup-steps" className="db-setup-steps" hidden={!setupExpanded} aria-labelledby="db-setup-title">
+          <h2 id="db-setup-title" className="db-h2">Getting started</h2>
+          <p className="db-setup-progress">{setup.done} of {setup.total} required steps complete. Follow these in order; optional steps can be skipped.</p>
+          <ol className="db-checklist" role="list">
+            {(setup.steps || []).map((step, i) => (
+              <li key={step.id} data-testid={`setup-step-${step.id}`} data-next={step.id === nextRequired}>
+                <span className="db-step-number" aria-hidden="true">{step.done ? "✓" : i + 1}</span>
+                <div className="db-step-body">
+                  <div className="db-step-heading">
+                    <h3>{step.title}</h3>
+                    <span>{step.done ? "Complete" : step.id === nextRequired ? "Start here" : "To do"}{step.optional ? " · Optional" : ""}</span>
+                  </div>
+                  <p>{step.why}</p>
+                  <p className="db-step-detail">{step.detail}</p>
+                  <div className="db-setup-links">
+                    <button type="button" className="db-link" data-testid={`setup-go-${step.id}`}
+                      onClick={() => openSetupStep(step)}>{step.id === "roster" && !step.done ? "Try generating a roster" : step.action.label}</button>
+                    {step.id === "constraints" && <button type="button" className="db-link" onClick={() => navigate("/calendar")}>Add booked leave</button>}
+                    {!step.done && (step.who || []).map(person => (
+                      <button key={person.employee_id} type="button" className="db-link"
+                        data-testid={`setup-person-${step.id}-${person.employee_id}`}
+                        onClick={() => reviewPerson(person, step.id)}>
+                        Review {person.name}{step.id === "employment" ? "'s employment type" : "'s pay and age"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
       )}
 
       <div className="db-stats">

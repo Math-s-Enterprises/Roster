@@ -2905,6 +2905,20 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .db-setup-head { font-size: 15.5px; font-weight: 700; }
 .db-setup-head[data-state="todo"] { color: var(--t-warn); }
 .db-setup-rest { font-size: 15px; color: var(--t-muted); }
+.db-setup-steps { padding: 22px 28px; border-top: 1px solid var(--t-hairline); }
+.db-setup-progress { margin: 8px 0 18px; color: var(--t-muted); font-size: 14px; }
+.db-checklist { margin: 0; padding: 0; list-style: none; }
+.db-checklist > li { display: flex; gap: 14px; padding: 18px 0; border-top: 1px solid var(--t-hairline); }
+.db-step-number { flex: 0 0 28px; color: var(--t-muted); font-variant-numeric: tabular-nums; }
+.db-checklist > li[data-next="true"] .db-step-number { color: var(--t-accent); font-weight: 700; }
+.db-step-body { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.db-step-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; }
+.db-step-heading h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.db-step-heading span { color: var(--t-muted); font-size: 13px; }
+.db-step-body p { max-width: 80ch; margin: 6px 0; font-size: 14px; line-height: 1.6; color: var(--t-muted); }
+.db-step-body .db-step-detail { color: var(--t-body); }
+.db-setup-links { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.db-setup-links .db-link { min-height: 36px; text-align: left; }
 .db-link {
   border: 0; background: none; padding: 0;
   font-family: inherit; font-size: 14.5px; font-weight: 700;
@@ -3050,7 +3064,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 @media (max-width: 900px) {
   .db-h1 { font-size: 32px; }
-  .db-head, .db-setup, .db-forced, .db-note, .db-error, .db-danger-zone { padding-left: 18px; padding-right: 18px; }
+  .db-head, .db-setup, .db-setup-steps, .db-forced, .db-note, .db-error, .db-danger-zone { padding-left: 18px; padding-right: 18px; }
   .db-colhead-wrap, .db-listfoot, .db-empty { padding-left: 18px; padding-right: 18px; }
   .db-colhead, .db-rosterrow, .db-entry-btn { padding-left: 18px; padding-right: 18px; }
 }

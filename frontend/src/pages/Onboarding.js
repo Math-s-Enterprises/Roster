@@ -1,12 +1,14 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { api, errorMessage, DAY_LABELS, DAYS, announceShopChange } from "@/lib/api";
 import { toast } from "sonner";
 import RolesTable from "@/components/RolesTable";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ChevronRight, ChevronLeft, Check, Loader2, Plus, X } from "lucide-react";
 
 export default function Onboarding() {
+  const { hash } = useLocation();
+  const nameRef = useRef(null);
   const [step, setStep] = useState(0);
   const [shop, setShop] = useState(null);
   const [name, setName] = useState("");
@@ -101,6 +103,9 @@ export default function Onboarding() {
   );
 
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    if (shop && hash === "#shop-name") nameRef.current?.focus();
+  }, [shop, hash]);
 
   const addObserver = () => {
     const email = observerEmail.trim();
@@ -377,6 +382,7 @@ export default function Onboarding() {
                 <label className="ss-label" htmlFor="ss-name">Shop name</label>
                 <input
                   id="ss-name"
+                  ref={nameRef}
                   data-testid="input-shop-name"
                   className="ss-input"
                   style={{ maxWidth: 520 }}
@@ -874,7 +880,7 @@ export default function Onboarding() {
           <Section show={editing} title="Shop identity">
           <div className="space-y-4">
             <label className="text-xs ui-body">Shop name</label>
-            <input data-testid="input-shop-name" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-4 py-3 rounded-xl" />
+            <input ref={nameRef} data-testid="input-shop-name" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-4 py-3 rounded-xl" />
           </div>
           </Section>
         )}
