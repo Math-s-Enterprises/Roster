@@ -1657,3 +1657,27 @@ The preview initially omitted CRA's environment substitution; correcting that
 fixture required no app change. No real account/data was used. Full production
 build, full backend suite and live staging/production were not tested. No commit,
 push or deployment was performed for this follow-up.
+
+## 32. Keep the roster-group storage contract when addressing CodeQL
+
+PR #39's CodeQL alert traced employee.departments[0] into localStorage in the
+onboarding review link. The attached autofix suggested storing the department's
+numeric index instead. Do not apply that suggestion in isolation: AppLayout and
+the API interceptor read this key as a group NAME, sent unchanged in the
+X-Roster-Group header. A number would silently select the wrong workspace.
+
+The review link now selects its stored value from shop.departments, using
+employee memberships only to find a matching configured group. It keeps the
+current group when already valid, ignores unconfigured membership strings,
+finds a configured alternative after an invalid membership, and does not switch
+when group configuration or employee memberships are absent. Existing navigation
+and the group-change event remain unchanged. No alert suppression or encryption
+workaround was added, and the storage/header format is unchanged.
+
+The expanded regression had three failures before the fix. All 42 frontend
+tests pass afterwards. Bypassing the configured-group selection and no-switch
+guard in memory made all six group cases fail; no source file was changed by
+the sabotage. git diff --check passes. Browser/live-site checks, a production
+build and the backend suite were not rerun for this frontend-only follow-up.
+GitHub CodeQL was not run locally: it must rescan after the user's push before
+this alert can be claimed resolved. Do not dismiss it based on unit tests.

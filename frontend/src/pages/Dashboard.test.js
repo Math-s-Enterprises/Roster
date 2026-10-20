@@ -183,19 +183,29 @@ test("a checklist load failure is visible and retry restores the real steps", as
   expect(host.textContent).not.toContain("could not be loaded");
 });
 
-test("a named setup task selects that employee's roster group before navigating", async () => {
+test.each([
+  [["Deli"], ["Shop Floor", "Deli"], "Deli"],
+  [["unconfigured-private-value"], ["Shop Floor", "Deli"], null],
+  [["unconfigured-private-value", "Deli"], ["Shop Floor", "Deli"], "Deli"],
+  [["Shop Floor", "Deli"], ["Shop Floor", "Deli"], null],
+  [["Deli"], undefined, null],
+  [undefined, ["Shop Floor", "Deli"], null],
+])("a named setup task switches only to a configured group (memberships=%j, groups=%j)", async (departments, groups, target) => {
   withSetup({ complete: false, done: 0, total: 6, steps: setupSteps });
   const get = api.get.getMockImplementation();
   api.get.mockImplementation(path => path === "/employees"
-    ? Promise.resolve({ data: [{ employee_id: "jane", departments: ["Deli"] }] }) : get(path));
+    ? Promise.resolve({ data: [{ employee_id: "jane", departments }] })
+    : path === "/shop" ? Promise.resolve({ data: { name: "Test shop", current_department: "Shop Floor", departments: groups } })
+      : get(path));
   const { ROSTER_GROUP_KEY, SHOP_CHANGED } = require("@/lib/api");
   const changed = jest.fn();
   window.addEventListener(SHOP_CHANGED, changed);
+  localStorage.setItem(ROSTER_GROUP_KEY, "Shop Floor");
   try {
     await act(async () => root.render(<Dashboard />));
     await act(async () => host.querySelector('[data-testid="setup-person-details-jane"]').click());
-    expect(localStorage.getItem(ROSTER_GROUP_KEY)).toBe("Deli");
-    expect(changed).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem(ROSTER_GROUP_KEY)).toBe(target || "Shop Floor");
+    expect(changed).toHaveBeenCalledTimes(target ? 1 : 0);
     expect(mockNavigate).toHaveBeenLastCalledWith("/employees/jane?setup=details");
   } finally {
     window.removeEventListener(SHOP_CHANGED, changed);

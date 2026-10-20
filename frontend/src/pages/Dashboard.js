@@ -284,8 +284,9 @@ export default function Dashboard() {
   const reviewPerson = (person, task) => {
     const employee = employees.find(e => e.employee_id === person.employee_id);
     const currentGroup = shop?.current_department || shop?.primary_department || shop?.departments?.[0];
-    if (employee?.departments?.length && !employee.departments.includes(currentGroup)) {
-      localStorage.setItem(ROSTER_GROUP_KEY, employee.departments[0]);
+    const targetGroup = shop?.departments?.find(group => employee?.departments?.includes(group));
+    if (targetGroup && !employee.departments.includes(currentGroup)) {
+      localStorage.setItem(ROSTER_GROUP_KEY, targetGroup);
       announceShopChange();
     }
     navigate(`/employees/${encodeURIComponent(person.employee_id)}?setup=${task}`);
