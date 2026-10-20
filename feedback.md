@@ -1618,3 +1618,66 @@ enables confirmation, and Escape restores focus to reset. No console errors.
 The browser used mocked API responses, never the local Docker backend (which
 can point to real Atlas data). Full production build, backend suite and live
 staging checks were not run. No commit, push or deployment was performed.
+
+## 31. Keep the getting-started checklist when redesigning the dashboard
+
+The user reported that Review steps now opened Shop Settings instead of expanding
+the ordered onboarding checklist. Imported staff's missing pay/age and employment
+type reminders had vanished too. Git history still contained GettingStarted, and
+/setup-status still returned all seven steps, their explanations, completion,
+actions and named `who` records. The dashboard redesign retained only its summary
+and replaced the expansion with a generic /onboarding link. The data had not gone.
+
+Restore the workflow, not a second definition of readiness. The dashboard renders
+the server's ordered steps and live progress, expands unfinished setup by default,
+and keeps completed setup reachable through Review steps. Hide steps collapses it.
+The next required step is labelled Start here; optional fixed shifts/leave remain
+visible but do not enter the required count or displace the next required task.
+The final unfinished step offers Try generating a roster. An unavailable checklist
+has a visible retry instead of disappearing silently.
+
+Named reminders open that employee's existing edit form, focusing hourly pay,
+contract pay or employment type as appropriate. Add people opens the new-person
+form. The relevant roster group is selected before navigating to somebody outside
+the current group, using the existing group-change event. A deep link is consumed
+once so closing or saving does not reopen the editor. The shop setup link focuses
+the name field in either the initial wizard or the existing settings screen.
+No automatic saves, completion flags, scheduler changes or database migration.
+
+Verification: all 37 frontend tests pass, including 12 new onboarding cases; all
+12 existing backend TestSetupStatus tests pass. Removing checklist rendering,
+employee deep-link handling and name focusing in an isolated process made all
+12 new cases fail while the prior 25 still passed. No source files were changed
+by that sabotage. CSS variable checks and git diff --check pass. Real React
+pages with mocked API responses passed browser checks for expanding completed
+setup, the named hourly-pay and employment forms, shop-name focus, and adding a
+person. All seven steps fit without overlap/overflow at 320, 375, 768 and 1440px.
+There were no console errors after the isolated preview was configured correctly.
+The preview initially omitted CRA's environment substitution; correcting that
+fixture required no app change. No real account/data was used. Full production
+build, full backend suite and live staging/production were not tested. No commit,
+push or deployment was performed for this follow-up.
+
+## 32. Keep the roster-group storage contract when addressing CodeQL
+
+PR #39's CodeQL alert traced employee.departments[0] into localStorage in the
+onboarding review link. The attached autofix suggested storing the department's
+numeric index instead. Do not apply that suggestion in isolation: AppLayout and
+the API interceptor read this key as a group NAME, sent unchanged in the
+X-Roster-Group header. A number would silently select the wrong workspace.
+
+The review link now selects its stored value from shop.departments, using
+employee memberships only to find a matching configured group. It keeps the
+current group when already valid, ignores unconfigured membership strings,
+finds a configured alternative after an invalid membership, and does not switch
+when group configuration or employee memberships are absent. Existing navigation
+and the group-change event remain unchanged. No alert suppression or encryption
+workaround was added, and the storage/header format is unchanged.
+
+The expanded regression had three failures before the fix. All 42 frontend
+tests pass afterwards. Bypassing the configured-group selection and no-switch
+guard in memory made all six group cases fail; no source file was changed by
+the sabotage. git diff --check passes. Browser/live-site checks, a production
+build and the backend suite were not rerun for this frontend-only follow-up.
+GitHub CodeQL was not run locally: it must rescan after the user's push before
+this alert can be claimed resolved. Do not dismiss it based on unit tests.

@@ -2,10 +2,13 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import fs from "fs";
 import Employees, { DeleteEmployeeDialog } from "./Employees";
+const mockSetupParams = new URLSearchParams();
+const mockEmployeeParams = { employeeId: "martin" };
 
 jest.mock("react-router-dom", () => ({
   useNavigate: () => () => {},
-  useParams: () => ({ employeeId: "martin" }),
+  useParams: () => mockEmployeeParams,
+  useSearchParams: () => [mockSetupParams, jest.fn()],
 }), { virtual: true });
 jest.mock("@/lib/api", () => ({
   api: { get: jest.fn(), put: jest.fn() },
@@ -25,6 +28,8 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.appendChild(host);
   root = createRoot(host);
   jest.clearAllMocks();
+  mockSetupParams.delete("setup");
+  mockEmployeeParams.employeeId = "martin";
 });
 afterEach(async () => {
   await act(async () => root.unmount()); host.remove();
@@ -79,4 +84,55 @@ test("inactive action persists status, separates leavers and allows reactivation
   expect(employee.is_active).toBe(true);
   expect(host.querySelector('[data-testid="employee-card-martin"]')).not.toBeNull();
   expect(host.querySelector('[data-testid="employee-card-leaver"]')).toBeNull();
+});
+
+test.each(["details", "employment"])("setup %s opens the named employee's existing form without saving", async task => {
+  mockSetupParams.set("setup", task);
+  const employee = { employee_id: "martin", name: "Martin", role: "Crew", age: 25,
+    hourly_rate: 13, max_weekly_hours: 40, departments: ["Shop Floor"], is_active: true };
+  api.get.mockImplementation(path => Promise.resolve({ data: path === "/employees" ? [employee]
+    : path === "/shop" ? { departments: ["Shop Floor"] } : path === "/shop/hierarchy" ? { hierarchy: ["Crew"] } : [] }));
+  await act(async () => root.render(<Employees />));
+  const dialog = host.querySelector('[role="dialog"]');
+  expect(dialog).not.toBeNull();
+  expect(dialog.querySelector('[data-testid="emp-name"]').value).toBe("Martin");
+  if (task === "details") expect(document.activeElement).toBe(dialog.querySelector('[data-testid="emp-rate"]'));
+  else {
+    const types = dialog.querySelectorAll('[name="employment_type"]');
+    expect(types.length).toBeGreaterThan(0);
+    expect(document.activeElement).toBe(dialog.querySelector('[name="employment_type"]:checked'));
+  }
+  expect(api.put).not.toHaveBeenCalled();
+  await click(dialog.querySelector('[aria-label="Close dialog"]'));
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () => root.render(<Employees />));
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+});
+
+test("the add-people setup action opens a new form, not an existing employee", async () => {
+  mockSetupParams.set("setup", "team");
+  mockEmployeeParams.employeeId = undefined;
+  api.get.mockImplementation(path => Promise.resolve({ data: path === "/employees" ? []
+    : path === "/shop" ? { departments: ["Deli"], current_department: "Deli" }
+      : path === "/shop/hierarchy" ? {} : [] }));
+  await act(async () => root.render(<Employees />));
+  expect(host.querySelector('[role="dialog"] h2').textContent).toBe("New employee");
+  const name = host.querySelector('[data-testid="emp-name"]');
+  expect(name.value).toBe("");
+  expect(document.activeElement).toBe(name);
+  expect(host.querySelector('[data-testid="emp-department-Deli"]').getAttribute("aria-pressed")).toBe("true");
+  expect(api.put).not.toHaveBeenCalled();
+});
+
+test.each(["weekly", ""])("pay review opens the contract pay field, not an hourly rate (period=%s)", async period => {
+  mockSetupParams.set("setup", "details");
+  api.get.mockImplementation(path => Promise.resolve({ data: path === "/employees" ? [{
+    employee_id: "martin", name: "Martin", role: "Crew", departments: ["Shop Floor"],
+    max_weekly_hours: 40, employment_type: "full_time_contract", contract_pay_period: period,
+  }] : path === "/shop" ? { departments: ["Shop Floor"] }
+    : path === "/shop/hierarchy" ? { hierarchy: ["Crew"] } : [] }));
+  await act(async () => root.render(<Employees />));
+  expect(host.querySelector('[data-testid="emp-rate"]')).toBeNull();
+  expect(document.activeElement).toBe(host.querySelector(`[data-testid="${period ? "emp-salary" : "emp-pay-weekly"}"]`));
+  expect(api.put).not.toHaveBeenCalled();
 });

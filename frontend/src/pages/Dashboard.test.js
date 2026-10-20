@@ -105,3 +105,110 @@ test("activity expansion preserves navigation, counts and keyboard focus", async
   expect(status.tabIndex).toBe(-1);
   expect(status.textContent).toBe("Approved");
 });
+
+const setupSteps = [
+  { id: "shop", title: "Set up your shop", action: { label: "Open setup", path: "/onboarding" } },
+  { id: "history", title: "Import past rosters", action: { label: "Import rosters", path: "/import" } },
+  { id: "team", title: "Add anyone the import missed", action: { label: "Add people", path: "/employees" } },
+  { id: "details", title: "Check pay and ages", detail: "Jane still on placeholder pay and age",
+    who: [{ employee_id: "jane", name: "Jane" }], action: { label: "Review team", path: "/employees" } },
+  { id: "employment", title: "Set employment types", detail: "Jane without a type",
+    who: [{ employee_id: "jane", name: "Jane" }], action: { label: "Set types", path: "/employees" } },
+  { id: "constraints", title: "Fixed shifts and booked leave", optional: true,
+    action: { label: "Add fixed shifts", path: "/fixed-shifts" } },
+  { id: "roster", title: "Generate and approve a week", action: { label: "Open roster", path: "/roster" } },
+].map(s => ({ why: "Explain why this step matters.", detail: "Not done", done: false, ...s }));
+
+function withSetup(setup) {
+  const get = api.get.getMockImplementation();
+  api.get.mockImplementation(path => path === "/setup-status" ? Promise.resolve({ data: setup }) : get(path));
+}
+
+test("Review steps expands all seven completed steps without leaving the dashboard", async () => {
+  withSetup({ complete: true, done: 6, total: 6, steps: setupSteps.map(s => ({ ...s, done: true, who: [] })) });
+  await act(async () => root.render(<Dashboard />));
+  const review = button("Review steps");
+  expect(review.getAttribute("aria-expanded")).toBe("false");
+  expect(host.querySelector("#db-setup-steps").hidden).toBe(true);
+  await act(async () => review.click());
+  expect(mockNavigate).not.toHaveBeenCalled();
+  expect(review.getAttribute("aria-expanded")).toBe("true");
+  const steps = host.querySelectorAll("#db-setup-steps li");
+  expect(steps).toHaveLength(7);
+  expect(steps[6].textContent).toContain("Generate and approve a week");
+  expect(host.querySelector("#db-setup-steps").textContent).toContain("6 of 6 required steps complete");
+  await act(async () => review.click());
+  expect(host.querySelector("#db-setup-steps").hidden).toBe(true);
+});
+
+test("unfinished setup shows ordered guidance, named employee tasks and precise destinations", async () => {
+  withSetup({ complete: false, done: 0, total: 6, steps: setupSteps });
+  await act(async () => root.render(<Dashboard />));
+  expect(host.querySelector("#db-setup-steps").hidden).toBe(false);
+  expect(host.querySelectorAll("#db-setup-steps li")).toHaveLength(7);
+  expect(host.querySelector('[data-testid="setup-step-shop"]').textContent).toContain("Start here");
+  expect(host.textContent).toContain("Jane still on placeholder pay and age");
+  expect(host.textContent).toContain("Jane without a type");
+  for (const [id, path] of [["shop", "/onboarding#shop-name"], ["team", "/employees?setup=team"],
+    ["history", "/import"], ["roster", "/roster"]]) {
+    await act(async () => host.querySelector(`[data-testid="setup-go-${id}"]`).click());
+    expect(mockNavigate).toHaveBeenLastCalledWith(path);
+  }
+  await act(async () => host.querySelector('[data-testid="setup-person-details-jane"]').click());
+  expect(mockNavigate).toHaveBeenLastCalledWith("/employees/jane?setup=details");
+  await act(async () => host.querySelector('[data-testid="setup-person-employment-jane"]').click());
+  expect(mockNavigate).toHaveBeenLastCalledWith("/employees/jane?setup=employment");
+  expect(api.post).not.toHaveBeenCalled();
+});
+
+test("optional tasks do not take priority over generating a roster", async () => {
+  withSetup({ complete: false, done: 5, total: 6,
+    steps: setupSteps.map(s => ({ ...s, done: !["constraints", "roster"].includes(s.id) })) });
+  await act(async () => root.render(<Dashboard />));
+  expect(host.querySelector('[data-testid="setup-step-roster"]').textContent).toContain("Start here");
+  expect(host.querySelector('[data-testid="setup-step-constraints"]').textContent).not.toContain("Start here");
+  expect(host.querySelector('[data-testid="setup-step-constraints"]').textContent).toContain("Optional");
+  expect(host.querySelector(".db-setup-rest").textContent).toBe("· Generate and approve a week");
+});
+
+test("a checklist load failure is visible and retry restores the real steps", async () => {
+  const get = api.get.getMockImplementation();
+  api.get.mockImplementation(path => path === "/setup-status" ? Promise.reject(new Error("Offline")) : get(path));
+  await act(async () => root.render(<Dashboard />));
+  expect(host.textContent).toContain("The setup checklist could not be loaded");
+  expect(button("Review steps")).toBeUndefined();
+  withSetup({ complete: false, done: 0, total: 6, steps: setupSteps });
+  await act(async () => button("Retry checklist").click());
+  expect(host.querySelectorAll("#db-setup-steps li")).toHaveLength(7);
+  expect(host.textContent).not.toContain("could not be loaded");
+});
+
+test.each([
+  [["Deli"], ["Shop Floor", "Deli"], "Deli"],
+  [["unconfigured-private-value"], ["Shop Floor", "Deli"], null],
+  [["unconfigured-private-value", "Deli"], ["Shop Floor", "Deli"], "Deli"],
+  [["Shop Floor", "Deli"], ["Shop Floor", "Deli"], null],
+  [["Deli"], undefined, null],
+  [undefined, ["Shop Floor", "Deli"], null],
+])("a named setup task switches only to a configured group (memberships=%j, groups=%j)", async (departments, groups, target) => {
+  withSetup({ complete: false, done: 0, total: 6, steps: setupSteps });
+  const get = api.get.getMockImplementation();
+  api.get.mockImplementation(path => path === "/employees"
+    ? Promise.resolve({ data: [{ employee_id: "jane", departments }] })
+    : path === "/shop" ? Promise.resolve({ data: { name: "Test shop", current_department: "Shop Floor", departments: groups } })
+      : get(path));
+  const { ROSTER_GROUP_KEY, SHOP_CHANGED } = require("@/lib/api");
+  const changed = jest.fn();
+  window.addEventListener(SHOP_CHANGED, changed);
+  localStorage.setItem(ROSTER_GROUP_KEY, "Shop Floor");
+  try {
+    await act(async () => root.render(<Dashboard />));
+    await act(async () => host.querySelector('[data-testid="setup-person-details-jane"]').click());
+    expect(localStorage.getItem(ROSTER_GROUP_KEY)).toBe(target || "Shop Floor");
+    expect(changed).toHaveBeenCalledTimes(target ? 1 : 0);
+    expect(mockNavigate).toHaveBeenLastCalledWith("/employees/jane?setup=details");
+  } finally {
+    window.removeEventListener(SHOP_CHANGED, changed);
+    localStorage.removeItem(ROSTER_GROUP_KEY);
+  }
+});

@@ -3,13 +3,15 @@ import { createRoot } from "react-dom/client";
 import fs from "fs";
 import Onboarding from "./Onboarding";
 
-jest.mock("react-router-dom", () => ({ useNavigate: () => () => {} }), { virtual: true });
+const mockLocation = { hash: "" };
+jest.mock("react-router-dom", () => ({ useNavigate: () => () => {}, useLocation: () => mockLocation }), { virtual: true });
 jest.mock("@/lib/api", () => ({
   api: { get: jest.fn(), put: jest.fn() },
   errorMessage: () => "",
   DAY_LABELS: {}, DAYS: [], announceShopChange: jest.fn(),
 }), { virtual: true });
 const { api } = require("@/lib/api");
+beforeEach(() => { mockLocation.hash = ""; });
 
 test("roster group removal requires app confirmation and Cancel preserves the group", async () => {
   global.IS_REACT_ACT_ENVIRONMENT = true;
@@ -103,4 +105,18 @@ test("first-run setup keeps the shared supervisory switch and saves an empty sel
     await act(async () => root.unmount());
     host.remove();
   }
+});
+
+test.each([true, false])("the shop setup link focuses the name field after loading (already onboarded=%s)", async onboarded => {
+  global.IS_REACT_ACT_ENVIRONMENT = true;
+  mockLocation.hash = "#shop-name";
+  api.get.mockImplementation(path => Promise.resolve({ data: path === "/shop"
+    ? { onboarded, name: "Test shop", hours: [], min_shift_hours: 4, max_shift_hours: 9, departments: ["Shop Floor"] }
+    : { hierarchy: ["Crew"], supervisory: [], supervisory_roles: [] } }));
+  const host = document.createElement("div"); document.body.appendChild(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<Onboarding />));
+    expect(document.activeElement).toBe(host.querySelector('[data-testid="input-shop-name"]'));
+  } finally { await act(async () => root.unmount()); host.remove(); }
 });

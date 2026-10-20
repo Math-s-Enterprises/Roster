@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, errorMessage, fmtMoney, CURRENCY, DAY_SHORT, DAY_LABELS, DAYS, shiftHours } from "@/lib/api";
 import { toast } from "sonner";
 import ContactImportPanel from "@/components/ContactImportPanel";
@@ -304,6 +304,10 @@ function availabilitySummary(employee) {
 export default function Employees() {
   const { employeeId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const setupTask = searchParams.get("setup");
+  const setupRequest = useRef(null);
+  const editFormRef = useRef(null);
 
   const [emps, setEmps] = useState([]);
   const [supervisory, setSupervisory] = useState([]);
@@ -445,14 +449,40 @@ export default function Employees() {
     [emps, employeeId],
   );
 
+  useEffect(() => {
+    if (loading || !["team", "details", "employment"].includes(setupTask)) return;
+    // A deep link opens once; saving or closing must not reopen the editor.
+    const request = `${setupTask}:${employeeId || "new"}`;
+    if (setupRequest.current === request) return;
+    if (setupTask === "team" && !employeeId) {
+      setForm({ ...emptyForm, departments: [shop?.current_department || shop?.departments?.[0] || "Shop Floor"] });
+      setModal("new");
+    } else if (selected) {
+      setForm(toForm(selected));
+      setModal("edit");
+    } else return;
+    setupRequest.current = request;
+  }, [loading, setupTask, employeeId, selected, shop]);
+
+  useEffect(() => {
+    if (!modal) return;
+    const field = selector => editFormRef.current?.querySelector(selector);
+    const target = setupTask === "team" ? field('[data-testid="emp-name"]')
+      : setupTask === "details" ? field('[data-testid="emp-rate"]')
+        || (field('[data-testid="contract-pay"] input:checked')
+          ? field('[data-testid="emp-salary"]') : field('[data-testid="emp-pay-weekly"]'))
+      : setupTask === "employment" ? field('[name="employment_type"]:checked') || field('[name="employment_type"]') : null;
+    target?.focus();
+  }, [modal, setupTask]);
+
   // Land on somebody rather than an empty pane, and recover if the person
   // in the URL has been deleted or filtered away.
   useEffect(() => {
-    if (loading || flat.length === 0) return;
+    if (loading || flat.length === 0 || setupTask === "team") return;
     if (!employeeId || !emps.some((e) => e.employee_id === employeeId)) {
       navigate(`/employees/${flat[0].employee_id}`, { replace: true });
     }
-  }, [loading, employeeId, emps, flat, navigate]);
+  }, [loading, employeeId, emps, flat, navigate, setupTask]);
 
   const select = (id) => navigate(`/employees/${id}`);
 
@@ -970,7 +1000,7 @@ export default function Employees() {
       </p>
       {modal && (
         <Modal onClose={() => setModal(null)}>
-          <form onSubmit={submit} className="space-y-4">
+          <form ref={editFormRef} onSubmit={submit} className="space-y-4">
             <h2 className="text-2xl font-light mb-4">
               {modal === "edit" ? "Edit" : "New"} employee
             </h2>
@@ -1187,7 +1217,7 @@ export default function Employees() {
               title="Employment type"
               subtitle="How this person's hours are governed"
               testId="section-employment"
-              defaultOpen={form.employment_type === "full_time_contract"}
+              defaultOpen={setupTask === "employment" || form.employment_type === "full_time_contract"}
               openSignal={payFocus}
               icon={GraduationCap}
               badge={EMPLOYMENT_TYPES.find((t) => t.key === form.employment_type)?.label}
