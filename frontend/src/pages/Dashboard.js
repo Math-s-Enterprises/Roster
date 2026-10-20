@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, errorMessage, fmtHours, fmtMoney, mondayOf, ROSTER_GROUP_KEY } from "@/lib/api";
 import { toast } from "sonner";
 import { CheckCircle2, AlertCircle, Wand2, Sparkles } from "lucide-react";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 /**
  * Dashboard - shop home (handoff: Dashboard).
@@ -254,7 +255,7 @@ export default function Dashboard() {
   };
 
   const resetAll = async () => {
-    if (confirmText !== "RESET") return;
+    if (confirmText !== "RESET") return false;
     setResetting(true);
     try {
       await api.post("/dev/reset");
@@ -264,6 +265,7 @@ export default function Dashboard() {
       await load();
     } catch (err) {
       toast.error(errorMessage(err, "Could not reset the shop"));
+      return false;
     } finally {
       setResetting(false);
     }
@@ -300,18 +302,6 @@ export default function Dashboard() {
               <Sparkles size={15} strokeWidth={1.8} /> Load demo team
             </button>
           )}
-          <button
-            type="button"
-            data-testid="btn-reset"
-            className="db-btn db-btn-danger"
-            onClick={() => { setConfirmText(""); setConfirmOpen(true); }}
-            aria-describedby="db-reset-desc"
-          >
-            Reset all data
-          </button>
-          <span id="db-reset-desc" className="sr-only">
-            Permanently deletes every employee, roster and rule in this shop.
-          </span>
           <button
             type="button"
             data-testid="btn-generate-roster"
@@ -572,56 +562,42 @@ export default function Dashboard() {
       <p className="db-note">
         <strong>Generate roster</strong> builds a draft for the next week with no roster yet
         {nextOpenWeek ? `, currently the week of ${fmtWeek(nextOpenWeek)}` : ""}. It never overwrites an
-        approved roster: reopening one starts a new version and says so.{" "}
-        <strong>Reset all data cannot be undone</strong>, it deletes every employee, roster, rule and
-        fixed shift in this shop, and there is no copy kept.
+        approved roster: reopening one starts a new version and says so.
       </p>
 
+      <details className="db-danger-zone">
+        <summary>Advanced shop actions</summary>
+        <p id="db-reset-desc">
+          Reset permanently deletes this shop's employees, rosters, rules and fixed shifts,
+          and resets shop hours and setup. It cannot be undone and no copy is kept.
+        </p>
+        <button
+          type="button"
+          data-testid="btn-reset"
+          className="db-link db-reset-link"
+          onClick={() => { setConfirmText(""); setConfirmOpen(true); }}
+          aria-describedby="db-reset-desc"
+        >
+          Reset all data
+        </button>
+      </details>
+
       {confirmOpen && (
-        <div className="db-scrim" onClick={() => !resetting && setConfirmOpen(false)}>
-          <div
-            className="db-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Reset all data"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2>Reset all data</h2>
-            <p>
-              This deletes <strong>every employee, roster, rule and fixed shift</strong> in{" "}
-              {shop?.name || "this shop"}. It cannot be undone and no copy is kept.
-            </p>
-            <label className="db-setup-rest" htmlFor="db-confirm">
-              Type RESET to confirm
-            </label>
-            <input
-              id="db-confirm"
-              value={confirmText}
-              onChange={(e) => setConfirmText(e.target.value)}
-              placeholder="RESET"
-              autoComplete="off"
-              style={{ marginTop: 8 }}
-            />
-            <div className="db-dialog-acts">
-              <button
-                type="button"
-                className="db-btn db-btn-danger"
-                disabled={confirmText !== "RESET" || resetting}
-                onClick={resetAll}
-              >
-                {resetting ? "Resetting…" : "Reset everything"}
-              </button>
-              <button
-                type="button"
-                className="db-link db-link-mute"
-                disabled={resetting}
-                onClick={() => setConfirmOpen(false)}
-              >
-                Cancel
-              </button>
-            </div>
+        <ConfirmDialog
+          title="Reset all data"
+          description={`This permanently deletes every employee, roster, rule and fixed shift in ${shop?.name || "this shop"}, and resets shop hours and setup. It cannot be undone and no copy is kept.`}
+          confirmLabel="Reset everything"
+          confirmDisabled={confirmText !== "RESET"}
+          busy={resetting}
+          onClose={() => setConfirmOpen(false)}
+          onConfirm={resetAll}
+        >
+          <div className="mb-6">
+            <label className="block text-sm ui-muted mb-2" htmlFor="db-confirm">Type RESET to confirm</label>
+            <input id="db-confirm" value={confirmText} onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="RESET" autoComplete="off" disabled={resetting} />
           </div>
-        </div>
+        </ConfirmDialog>
       )}
     </div>
   );

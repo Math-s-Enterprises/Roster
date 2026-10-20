@@ -1581,3 +1581,40 @@ output or the raw preference warning in memory made the regression fail again;
 no source files were changed by those negative controls. The full backend and
 frontend suites were not rerun for this diagnostic-only follow-up. GitHub
 CodeQL must rerun after a future push; it was not run or suppressed locally.
+
+## 30. Dashboard usability: verify the geometry, not the audit's guesses
+
+The user asked to implement six usability suggestions without redesigning the
+app. A browser fixture rendering the real Dashboard and stylesheet reproduced
+inline version/approval text spilling across numeric columns. The column edges
+themselves already matched exactly. Normal activity entries did not overlap,
+but an unbroken long entry escaped its 515px column to 2704px. At a 1024px
+viewport, the sidebar and numeric tracks left the roster title zero width.
+
+Roster title/subtitle are now separate blocks, long titles remain readable by
+wrapping, and the dashboard stacks its columns below 1280px. Activity text and
+timestamp occupy separate grid rows with natural height and long-word wrapping.
+Approved is plain status text, not another outlined control. Existing primary,
+secondary and text actions are retained rather than inventing a new button system;
+the unused dashboard danger-button style and custom reset-dialog styles are gone.
+
+Reset moved away from Generate into collapsed Advanced shop actions. It reuses
+ConfirmDialog, still requires exact RESET, blocks duplicate submissions, keeps
+the dialog open on request failure and reloads data after success. The warning
+also mentions the shop-hours/setup reset. ConfirmDialog accepts an optional
+disabled-confirm flag (default false for existing callers) and restores focus
+to the connected opener. Radix supplies modal focus containment and Escape.
+No endpoint, data model, scheduler, live account or database was changed.
+
+Verification: all 25 frontend tests pass, including three new dashboard tests;
+CSS variable checks pass (112 definitions), and git diff --check is clean.
+Each new regression was independently made to fail by an in-memory mutation:
+removing confirmation disabling, removing focus restoration, or misrouting a
+roster activity entry. Source files were never altered by these sabotages.
+Browser layout assertions pass at 320, 375, 768, 1024, 1280, 1440 and 1920px,
+including long titles/messages, equal header/row column edges and no overflow.
+Keyboard checks confirm Cancel receives focus, Tab stays in the dialog, RESET
+enables confirmation, and Escape restores focus to reset. No console errors.
+The browser used mocked API responses, never the local Docker backend (which
+can point to real Atlas data). Full production build, backend suite and live
+staging checks were not run. No commit, push or deployment was performed.
