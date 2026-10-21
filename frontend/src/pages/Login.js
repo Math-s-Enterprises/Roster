@@ -13,6 +13,9 @@ import {
 import "@/styles/login-guard.css";
 import { LOGIN } from "@/constants/testIds/auth";
 
+// Seconds between confirmation emails. The server keeps the same gap, so this only makes the button honest.
+const RESEND_AFTER = 60;
+
 /**
  * Sign in (handoff: Sign in, doodle background).
  *
@@ -83,7 +86,7 @@ const Arrow = () => (
 );
 
 export default function Login() {
-  const { login, signup, loginWithGoogle, providers } = useAuth();
+  const { login, signup, resendVerification, loginWithGoogle, providers } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const passwordRef = useRef(null);
@@ -99,6 +102,21 @@ export default function Login() {
   const [status, setStatus] = useState("idle"); // idle | submitting | error
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
+
+  // After sign-up no account exists yet. This is the address the confirmation link went to (null
+  // while the form shows), how long the link lasts, and the state of "send it again".
+  const [sentTo, setSentTo] = useState(null);
+  const [sentHours, setSentHours] = useState(24);
+  const [resendWait, setResendWait] = useState(0);
+  const [resending, setResending] = useState(false);
+  const [resendNote, setResendNote] = useState(null);
+  const [resendError, setResendError] = useState(null);
+  // Count the seconds down until "send it again" works.
+  useEffect(() => {
+    if (resendWait <= 0) return undefined;
+    const timer = setTimeout(() => setResendWait((n) => n - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendWait]);
 
   // The pop-up after the 3rd and 5th wrong password: null, or { failures, email }.
   const [resetPrompt, setResetPrompt] = useState(null);
@@ -139,6 +157,7 @@ export default function Login() {
     setStatus("idle");
     setError(null);
     setFieldErrors({});
+    setSentTo(null);
   };
 
   const validate = () => {
@@ -167,12 +186,23 @@ export default function Login() {
     setError(null);
     try {
       if (isSignup) {
-        await signup({
+        const result = await signup({
           email: form.email.trim(),
           password: form.password,
           name: form.name.trim(),
           shop_name: form.shopName.trim(),
         });
+        // With email confirmation on, no account exists yet: the person has to click the link we
+        // emailed first. Show them where to look, instead of signing them in.
+        if (result?.verification_sent) {
+          setSentTo(result.email || form.email.trim());
+          setSentHours(result.expires_in_hours || 24);
+          setResendWait(RESEND_AFTER);
+          setResendNote(null);
+          setResendError(null);
+          setStatus("idle");
+          return;
+        }
       } else {
         await login(form.email.trim(), form.password, form.keepSignedIn);
         clearGuard(form.email);
@@ -212,6 +242,29 @@ export default function Login() {
       setStatus("error");
       setError(errorMessage(err, "Google sign-in did not work. Try your email and password."));
     }
+  };
+
+  const resend = async () => {
+    if (!sentTo) return;
+    setResending(true);
+    setResendNote(null);
+    setResendError(null);
+    try {
+      await resendVerification(sentTo);
+      setResendNote(`We sent another link to ${sentTo}. The earlier one no longer works.`);
+      setResendWait(RESEND_AFTER);
+    } catch (err) {
+      setResendError(errorMessage(err, "Could not send the email. Please try again in a minute."));
+      if (err?.response?.status === 429) setResendWait(RESEND_AFTER);
+    } finally {
+      setResending(false);
+    }
+  };
+
+  /** Back to the form with everything still typed in, to fix the address. */
+  const changeEmail = () => {
+    setSentTo(null);
+    requestAnimationFrame(() => emailRef.current?.focus());
   };
 
   const barRight = isSignup ? (
@@ -254,6 +307,38 @@ export default function Login() {
         </p>
       </section>
 
+      {sentTo && isSignup ? (
+        <div className="si-card" data-testid="signup-sent">
+          <h2 className="si-h2">Check your email</h2>
+          <p className="si-form-ok" role="status">
+            We sent a confirmation link to <strong>{sentTo}</strong>. Click it to confirm this address and
+            create your account. The link works for {sentHours} hours.
+          </p>
+          <p className="si-card-sub" style={{ marginTop: 14 }}>
+            Nothing is created until you do. Nothing there? Check your spam folder, or make sure the
+            address is right.
+          </p>
+          {resendNote && <p className="si-form-ok" role="status" data-testid="signup-resent">{resendNote}</p>}
+          {resendError && <p className="si-form-error" role="alert" data-testid="signup-resend-error">{resendError}</p>}
+          <button
+            type="button" data-testid="signup-resend" className="si-cta"
+            onClick={resend} disabled={resending || resendWait > 0} aria-busy={resending}
+          >
+            {resending ? (
+              <>
+                <span className="si-spinner" aria-hidden="true" />
+                <span className="sr-only">Sending the email</span>
+              </>
+            ) : resendWait > 0 ? `Send it again in ${resendWait}s` : "Send it again"}
+          </button>
+          <p className="si-note">
+            Wrong address?{" "}
+            <button type="button" data-testid="signup-change-email" className="si-link" onClick={changeEmail}>
+              Use a different email
+            </button>
+          </p>
+        </div>
+      ) : (
       <form className="si-card" onSubmit={submit} noValidate>
         <h2 className="si-h2">{isSignup ? "Create your shop" : "Sign in to your shop"}</h2>
         {isSignup && (
@@ -424,6 +509,7 @@ export default function Login() {
 
         <LegalNote signup={isSignup} />
       </form>
+      )}
 
       <div className="si-chips">
         {CONTENT.capabilities.map((c) => (
