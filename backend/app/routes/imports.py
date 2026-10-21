@@ -88,8 +88,8 @@ async def upload_roster_file(
     department: Optional[str] = Form(None),
     week_start: Optional[str] = Form(
         None,
-        description="Monday to assign to any week the file itself does not date. "
-                    "Needed for CSV exports and photos.",
+        description="Selected week for a photo or one-page PDF; overrides the read date. "
+                    "For other files, assigns dates to undated weeks only.",
     ),
     scope: ShopScope = CurrentScope,
 ):

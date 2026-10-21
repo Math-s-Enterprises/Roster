@@ -1681,3 +1681,43 @@ the sabotage. git diff --check passes. Browser/live-site checks, a production
 build and the backend suite were not rerun for this frontend-only follow-up.
 GitHub CodeQL was not run locally: it must rescan after the user's push before
 this alert can be claimed resolved. Do not dismiss it based on unit tests.
+
+## 33. A selected photo-import week wins over an AI date
+
+On staging, the user selected 26 October 2026 for a roster photo, but the preview
+showed 20 January 2025. The frontend sent week_start correctly; the backend only
+used it for undated weeks and accepted the model's guessed date first. The same
+test crop contained eight shifts, but only five were read, and nine cells were
+reported unreadable. An earlier larger image failed with a raw JSON comma error.
+The raw staging model responses were not available, so the exact reason for the
+three missing shifts or the earlier malformed JSON was not established.
+
+For one image or one-page PDF, an explicitly selected week now takes priority
+before the OCR date is interpreted, and is normalised to Monday. Dated workbook,
+CSV and multi-page PDF weeks keep their dates; the existing fallback still dates
+undated weeks. Invalid selected dates fail before an API call. The field's helper
+text and endpoint description explain that distinction.
+
+Image reading now uses the existing Anthropic structured-output mechanism with
+a Pydantic roster schema, validates the returned JSON locally, and allows 8192
+output tokens instead of 4096. The shared completion helper refuses truncated or
+refused structured responses rather than treating them as finished data. The OCR
+prompt asks for every row/day, normalised times without bracketed hour totals,
+and no guessed month or year. Existing absence parsing handles OFF/bank-holiday
+notes, and missing working times become unreadable cells rather than vanishing.
+Nothing invents missing shifts or removes the human review step. A bad PDF page
+does not discard successfully read pages. No database migration is needed.
+
+Before the fix, the initial regression run had 11 failures and 3 preservation
+cases passed. The initial focused importer/rule-parser run passed all 112 cases
+afterwards. Regression coverage includes preview through commit with eight mocked
+shifts on the selected week, exact shift times, absence handling, invalid response
+shapes, truncation, bad selected dates, and preservation of dated multi-week files.
+Further checks cover undated photos and partial PDF failures. These are mocked
+provider responses, not proof that the live model reads all eight pictured shifts.
+The full backend run passed 1236 tests with one existing expected failure. Three
+additional cases were added after that run started; the complete image-import
+file then passed all 17 tests separately. git diff --check passes. The frontend
+change is helper text only; no production build or browser test was run. No keys
+were read, no external model calls made, and no commit, push or deploy was
+performed. Live OCR accuracy must still be checked after deploying to staging.

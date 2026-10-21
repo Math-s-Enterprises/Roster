@@ -161,7 +161,8 @@ def _pdf_to_images(data: bytes) -> List[bytes]:
 
 
 async def _read_images(
-    images: List[bytes], known_names: List[str], year: int
+    images: List[bytes], known_names: List[str], year: int,
+    *, week_start: Optional[str] = None,
 ) -> Tuple[List[ParsedWeek], List[str]]:
     """OCR each image into a week. One bad page does not lose the others."""
     weeks: List[ParsedWeek] = []
@@ -171,6 +172,11 @@ async def _read_images(
         label = f"page {index}" if len(images) > 1 else "image"
         try:
             parsed = await llm.ocr_roster_bytes(image, known_names)
+            # A selected week identifies one image, not every week in a PDF.
+            week = _week_from_ocr(
+                parsed, label, year,
+                week_start=week_start if len(images) == 1 else None,
+            )
         except llm.LLMUnavailable:
             raise
         except Exception as exc:
@@ -178,7 +184,6 @@ async def _read_images(
             notes.append(f"{label}: could not be read ({str(exc)[:120]})")
             continue
 
-        week = _week_from_ocr(parsed, label, year)
         if week.shifts:
             weeks.append(week)
         else:
@@ -187,23 +192,27 @@ async def _read_images(
     return weeks, notes
 
 
-def _week_from_ocr(parsed: Dict[str, Any], label: str, year: int) -> ParsedWeek:
+def _week_from_ocr(
+    parsed: Dict[str, Any], label: str, year: int,
+    *, week_start: Optional[str] = None,
+) -> ParsedWeek:
     """Reshape the model's JSON into the same structure a spreadsheet gives.
 
     Everything downstream - preview, review, commit - then works identically
     regardless of where the data came from.
     """
     from app.services.roster_import import (
-        ParsedShift, normalise_name, parse_shift_cell, parse_week_ending,
+        ParsedAbsence, ParsedShift, normalise_name, parse_absence,
+        parse_shift_cell, parse_week_ending,
     )
 
+    raw_week = week_start or parsed.get("week_start")
     week = ParsedWeek(
         sheet_name=label,
-        week_ending_label=parsed.get("week_start"),
+        week_ending_label=raw_week,
         week_start=None,
     )
 
-    raw_week = parsed.get("week_start")
     if raw_week:
         # The model is asked for the Monday directly, so this is a plain date
         # rather than the week-ending convention used by sheet names.
@@ -217,6 +226,8 @@ def _week_from_ocr(parsed: Dict[str, Any], label: str, year: int) -> ParsedWeek:
             if parsed_date:
                 week.week_start = parsed_date.isoformat()
 
+    if week_start and week.week_start != parsed.get("week_start"):
+        week.warnings.append(f"Using your selected week beginning {week.week_start}.")
     if not week.week_start:
         week.warnings.append(
             f"{label}: could not determine which week this is, set it before importing."
@@ -228,19 +239,21 @@ def _week_from_ocr(parsed: Dict[str, Any], label: str, year: int) -> ParsedWeek:
         if not name or day not in ("mon", "tue", "wed", "thu", "fri", "sat", "sun"):
             continue
 
-        start, end = entry.get("start"), entry.get("end")
-        if not (start and end):
+        week.employees.setdefault(name, entry.get("role"))
+        absence = parse_absence(entry.get("note") or "")
+        if absence:
+            week.absences.append(ParsedAbsence(name, entry.get("role"), day, absence))
             continue
 
-        shift = parse_shift_cell(f"{start}-{end}")
+        start, end = entry.get("start"), entry.get("end")
+        shift = parse_shift_cell(f"{start}-{end}") if start and end else None
         if not shift:
             week.unparsed_cells.append({
                 "employee_name": name, "day": day,
-                "value": f"{start}-{end}", "reason": "unreadable times",
+                "value": f"{start or '?'}-{end or '?'}", "reason": "unreadable times",
             })
             continue
 
-        week.employees.setdefault(name, entry.get("role"))
         week.shifts.append(ParsedShift(
             employee_name=name,
             role=entry.get("role"),
@@ -299,8 +312,8 @@ async def parse_upload(
 ) -> ImportResult:
     """Parse any supported roster file into weeks ready for review.
 
-    `week_start` dates any week the file itself doesn't identify - needed for
-    CSV exports and photos, which rarely carry the week in the filename.
+    `week_start` overrides the read date for a single image or one-page PDF.
+    For spreadsheets, CSVs and multi-page PDFs it dates undated weeks only.
     """
     if not data:
         raise UnsupportedFile("That file is empty.")
@@ -309,6 +322,12 @@ async def parse_upload(
             f"That file is {len(data) // 1024 // 1024}MB; the limit is "
             f"{MAX_UPLOAD_BYTES // 1024 // 1024}MB."
         )
+
+    if week_start:
+        try:
+            datetime.strptime(week_start, "%Y-%m-%d")
+        except ValueError:
+            raise UnsupportedFile("Choose a valid week beginning date (YYYY-MM-DD).") from None
 
     kind = detect_kind(filename, content_type)
     known_names = known_names or []
@@ -324,7 +343,7 @@ async def parse_upload(
         return ImportResult(weeks=_apply_week_start_fallback(weeks, week_start), kind=kind)
 
     images = _pdf_to_images(data) if kind == "pdf" else [data]
-    weeks, notes = await _read_images(images, known_names, year)
+    weeks, notes = await _read_images(images, known_names, year, week_start=week_start)
     weeks = _apply_week_start_fallback(weeks, week_start)
     return ImportResult(
         weeks=weeks,

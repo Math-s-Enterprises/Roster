@@ -17,9 +17,10 @@ import base64
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import httpx
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app import config
 from app.services.rule_parser import validate_constraint
@@ -79,6 +80,12 @@ async def _complete(
         messages=[{"role": "user", "content": content}],
         **options,
     )
+    if output_schema and getattr(message, "stop_reason", None) == "max_tokens":
+        raise ValueError(
+            "AI response was cut short. Try a smaller roster image or use Excel/CSV."
+        )
+    if output_schema and getattr(message, "stop_reason", None) == "refusal":
+        raise ValueError("AI declined to read this content. Try another file or use Excel/CSV.")
     return "".join(block.text for block in message.content if block.type == "text")
 
 
@@ -120,13 +127,35 @@ async def summarise_roster(
 # ---------------------------------------------------------------------------
 # 2. Roster OCR
 # ---------------------------------------------------------------------------
+class _OCRShift(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    employee_name: str
+    day: Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    start: Optional[str]
+    end: Optional[str]
+    role: Optional[str]
+    note: str
+
+
+class _OCRRoster(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    week_start: Optional[str]
+    shifts: List[_OCRShift]
+
+
 _OCR_SYSTEM = (
-    "You extract weekly retail rosters from images. Return STRICT JSON only, no prose. "
-    'Schema: {"week_start":"YYYY-MM-DD (the Monday)","shifts":[{"employee_name":"...",'
-    '"day":"mon|tue|wed|thu|fri|sat|sun","start":"HH:MM","end":"HH:MM","role":"...",'
-    '"note":"holiday|sick|off|"}]}. '
-    "Use 24-hour times. Match names to the known employee list where possible; "
-    "otherwise reproduce the name as shown."
+    "Extract the weekly roster from the image using the supplied JSON schema. "
+    "Read every employee row across all seven day columns, including repeated shifts. "
+    "Normalise shift times to 24-hour HH:MM, excluding bracketed hour totals. "
+    "A cell such as 06.00-16.00 (10) means start 06:00 and end 16:00. "
+    "For OFF, holiday, b/hol, sick or unavailable cells, put that code in note "
+    "and use null start/end; use an empty note for a working shift. "
+    "Never invent unreadable times; leave them null for review. "
+    "Set week_start to the Monday as YYYY-MM-DD only when the image establishes "
+    "the full date, including month and year. Otherwise use null; never guess. "
+    "Match names to known employees where possible; otherwise preserve the written name."
 )
 
 _MEDIA_TYPES = {
@@ -178,8 +207,16 @@ async def ocr_roster_bytes(
             ),
         },
     ]
-    raw = await _complete(_OCR_SYSTEM, content, max_tokens=4096)
-    return _extract_json(raw)
+    raw = await _complete(
+        _OCR_SYSTEM, content, max_tokens=8192,
+        output_schema=_OCRRoster.model_json_schema(),
+    )
+    try:
+        return _OCRRoster.model_validate_json(raw).model_dump()
+    except ValidationError:
+        raise ValueError(
+            "AI did not return a valid roster. Try another image or use Excel/CSV."
+        ) from None
 
 
 # ---------------------------------------------------------------------------
