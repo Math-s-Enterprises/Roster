@@ -191,9 +191,8 @@ export default function ImportRosters() {
       const form = new FormData();
       form.append("file", file);
       if (department) form.append("department", department);
-      // Multi-sheet workbooks name their own weeks; a CSV export or a photo
-      // of the wall sheet usually carries no date at all, so this dates
-      // anything the file leaves undated.
+      // The backend gives this date priority for a single image/page;
+      // multi-week files retain their own dates.
       if (weekHint) form.append("week_start", weekHint);
       const [{ data }, staff] = await Promise.all([
         api.post("/imports", form, { headers: { "Content-Type": "multipart/form-data" } }),
@@ -379,8 +378,8 @@ export default function ImportRosters() {
               </div>
 
               <p className="im-drop-note">
-                Set the week for a CSV or photo, which rarely say which week they cover. Excel files
-                with dated sheet names work without it.
+                Your selected week takes priority for a photo or one-page PDF.
+                For CSVs and multi-week files, it fills in missing dates only.
               </p>
             </>
           )}
