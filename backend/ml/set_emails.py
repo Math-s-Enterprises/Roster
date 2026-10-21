@@ -48,6 +48,7 @@ from typing import Any, Dict, List
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import db                                          # noqa: E402
+from redact import mailbox, person, place  # noqa: E402
 from app.services import availability as avail              # noqa: E402
 
 # Same shape check the readiness report uses. Loose on purpose: rejecting a
@@ -163,7 +164,7 @@ async def run(account: str, csv_path: str, commit: bool, replace: bool) -> None:
     # avoids a second round trip to the readiness report.
     named = {_key(e.get("name", "")) for e, _, _ in planned}
     still_missing = [
-        e.get("name", "?") for e in employees
+        person(e.get("name", "?")) for e in employees
         if not (e.get("email") or "").strip() and _key(e.get("name", "")) not in named
     ]
     if still_missing:

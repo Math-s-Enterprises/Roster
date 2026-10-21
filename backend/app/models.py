@@ -67,6 +67,14 @@ class ResetPasswordReq(BaseModel):
     password: str = Field(min_length=8, description="At least 8 characters.")
 
 
+class VerifyEmailReq(BaseModel):
+    token: str
+
+
+class ResendVerificationReq(BaseModel):
+    email: EmailStr
+
+
 # ---------------------------------------------------------------------------
 # Shop
 # ---------------------------------------------------------------------------

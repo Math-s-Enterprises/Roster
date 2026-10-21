@@ -2,7 +2,7 @@
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pymongo.errors import DuplicateKeyError
@@ -13,8 +13,10 @@ from app.models import (
     ForgotPasswordReq,
     GoogleAuthReq,
     LoginReq,
+    ResendVerificationReq,
     ResetPasswordReq,
     SignupReq,
+    VerifyEmailReq,
 )
 from app.security import (
     create_access_token,
@@ -26,7 +28,7 @@ from app.security import (
 )
 from app.services import account_deletion, google_auth
 from app.services.auth_rate_limit import check_auth_rate_limit
-from app.services.mailer import send_password_reset_email
+from app.services.mailer import send_password_reset_email, send_verification_email
 from app.services.shop_service import ensure_shop
 
 log = logging.getLogger("roster.auth")
@@ -55,15 +57,19 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@router.post("/signup", status_code=status.HTTP_201_CREATED)
-async def signup(payload: SignupReq):
+async def _register(email: str, name: str, password_hash: str, shop_name: Optional[str]) -> Dict[str, Any]:
+    """Create the account and its shop, and sign the person in.
+
+    Used when an address has been confirmed from the emailed link, and straight away where
+    confirmation is switched off (tests, and a local setup with no email service).
+    """
     user_id = f"user_{uuid.uuid4().hex[:12]}"
     document = {
         "user_id": user_id,
-        "email": payload.email.lower(),
-        "name": payload.name,
-        "password_hash": hash_password(payload.password),
-        "shop_name": payload.shop_name,
+        "email": email,
+        "name": name,
+        "password_hash": password_hash,
+        "shop_name": shop_name,
         "pro": False,
         "created_at": _now(),
     }
@@ -75,20 +81,151 @@ async def signup(payload: SignupReq):
         # "does this email exist?" lookup would not be atomic - two
         # simultaneous signups could both pass it - so we let the database
         # arbitrate and translate its error.
-        existing = await db.users.find_one(
-            {"email": payload.email.lower()}, {"_id": 0, "deletion_scheduled_for": 1},
-        )
-        if existing and existing.get("deletion_scheduled_for"):
-            # Not "already registered": that would leave somebody who just deleted their
-            # account, and came straight back, with no idea what to do.
-            raise HTTPException(status.HTTP_409_CONFLICT, account_deletion.pending_message(existing))
-        raise HTTPException(status.HTTP_409_CONFLICT, "That email is already registered")
+        raise _already_registered(await db.users.find_one(
+            {"email": email}, {"_id": 0, "deletion_scheduled_for": 1},
+        ))
 
     await ensure_shop(document)
     return {
         "token": create_access_token(user_id, document.get("token_version", 0)),
         "user": _public_user(document),
     }
+
+
+def _already_registered(existing: Optional[Dict[str, Any]]) -> HTTPException:
+    if existing and existing.get("deletion_scheduled_for"):
+        # Not "already registered": that would leave somebody who just deleted their
+        # account, and came straight back, with no idea what to do.
+        return HTTPException(status.HTTP_409_CONFLICT, account_deletion.pending_message(existing))
+    return HTTPException(status.HTTP_409_CONFLICT, "That email is already registered")
+
+
+def _verify_link(token: str) -> str:
+    return f"{config.FRONTEND_URL}/verify-email?token={token}"
+
+
+def _too_soon(record: Optional[Dict[str, Any]]) -> bool:
+    """True if a confirmation email for this sign-up went out less than a minute ago."""
+    sent = (record or {}).get("last_sent_at")
+    if not isinstance(sent, datetime):
+        return False
+    if sent.tzinfo is None:
+        sent = sent.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - sent).total_seconds() < config.EMAIL_VERIFY_RESEND_SECONDS
+
+
+def _wait_a_minute() -> HTTPException:
+    return HTTPException(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        "We have just sent you an email. Please wait a minute before asking for another.",
+        headers={"Retry-After": str(config.EMAIL_VERIFY_RESEND_SECONDS)},
+    )
+
+
+def _could_not_send() -> HTTPException:
+    return HTTPException(
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "We could not send the confirmation email just now. Please check the address is correct "
+        "and try again in a few minutes.",
+    )
+
+
+async def _send_confirmation(email: str, name: str) -> Dict[str, Any]:
+    """Email a fresh link. Returns the record to store, or raises 503 if the email did not go."""
+    token = generate_reset_token()
+    now = datetime.now(timezone.utc)
+    error = await send_verification_email(
+        email, name, _verify_link(token), config.EMAIL_VERIFY_EXPIRY_HOURS,
+    )
+    if error:
+        # The reason is already logged by the mailer (the provider's status, never the address).
+        raise _could_not_send()
+    return {
+        "token_hash": hash_reset_token(token),
+        "expires_at": now + timedelta(hours=config.EMAIL_VERIFY_EXPIRY_HOURS),
+        "last_sent_at": now,
+    }
+
+
+def _verification_sent(email: str) -> Dict[str, Any]:
+    return {"verification_sent": True, "email": email, "expires_in_hours": config.EMAIL_VERIFY_EXPIRY_HOURS}
+
+
+async def _begin_email_verification(payload: SignupReq) -> Dict[str, Any]:
+    """Sign-up step one: keep the details for a day and email a link. No account exists yet."""
+    email = payload.email.lower()
+    existing = await db.users.find_one({"email": email}, {"_id": 0, "deletion_scheduled_for": 1})
+    if existing is not None:      # (an ordinary user comes back as an empty record, which is falsy)
+        raise _already_registered(existing)
+
+    pending = await db.email_verifications.find_one({"email": email}, {"_id": 0, "last_sent_at": 1})
+    if _too_soon(pending):
+        raise _wait_a_minute()
+
+    sent = await _send_confirmation(email, payload.name)
+    await db.email_verifications.replace_one(
+        {"email": email},
+        {
+            **sent,
+            "email": email,
+            "name": payload.name,
+            "password_hash": hash_password(payload.password),
+            "shop_name": payload.shop_name,
+            "created_at": _now(),
+        },
+        upsert=True,
+    )
+    return _verification_sent(email)
+
+
+@router.post("/signup", status_code=status.HTTP_201_CREATED)
+async def signup(payload: SignupReq, response: Response):
+    if config.EMAIL_VERIFICATION_REQUIRED:
+        # 202, not 201: nothing has been created yet. The account appears when the link is clicked.
+        response.status_code = status.HTTP_202_ACCEPTED
+        return await _begin_email_verification(payload)
+    return await _register(
+        payload.email.lower(), payload.name, hash_password(payload.password), payload.shop_name,
+    )
+
+
+@router.post("/verify-email", status_code=status.HTTP_201_CREATED)
+async def verify_email(payload: VerifyEmailReq):
+    """Sign-up step two: the emailed link was clicked. Create the account and sign the person in."""
+    record = await db.email_verifications.find_one({"token_hash": hash_reset_token(payload.token)}, {"_id": 0})
+    if not record or not _reset_is_live(record):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "That link is not valid any more. If you already confirmed your email, sign in. "
+            "Otherwise please sign up again to get a new link.",
+        )
+    # Deleted before the account is made, so the same link used twice (a double click, or an
+    # email scanner that opens links) can only ever create one account.
+    removed = await db.email_verifications.delete_one({"token_hash": record["token_hash"]})
+    if removed.deleted_count == 0:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "That link has already been used. If you confirmed your email, sign in.",
+        )
+    return await _register(record["email"], record["name"], record["password_hash"], record.get("shop_name"))
+
+
+@router.post("/resend-verification")
+async def resend_verification(payload: ResendVerificationReq):
+    """Send the confirmation link again for a sign-up that is still waiting. The old link stops working."""
+    email = payload.email.lower()
+    record = await db.email_verifications.find_one({"email": email}, {"_id": 0})
+    if not record or not _reset_is_live(record):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "That sign-up has expired. Please fill in the form again.",
+        )
+    if _too_soon(record):
+        raise _wait_a_minute()
+
+    sent = await _send_confirmation(email, record.get("name", ""))
+    await db.email_verifications.update_one({"email": email}, {"$set": sent})
+    return _verification_sent(email)
 
 
 @router.post("/login")
@@ -219,7 +356,7 @@ async def forgot_password(payload: ForgotPasswordReq):
         user["email"], user.get("name", ""), reset_url, config.PASSWORD_RESET_EXPIRY_MINUTES,
     )
     if error:
-        log.warning("Password reset email to %s failed: %s", user["email"], error)
+        log.warning("Password reset email could not be sent; the email service logged why")
 
     return generic
 
