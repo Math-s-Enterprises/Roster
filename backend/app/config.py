@@ -101,6 +101,36 @@ PASSWORD_RESET_EXPIRY_MINUTES = int(_optional("PASSWORD_RESET_EXPIRY_MINUTES", "
 
 
 # ---------------------------------------------------------------------------
+# Email verification at sign-up. A new account is created only once the person clicks the link
+# we email them, which proves the address is real and theirs.
+#
+# On by default in production and wherever an email service is configured; off in tests and in a
+# local setup with no email service, so the app still runs without one. Set
+# EMAIL_VERIFICATION_REQUIRED to true or false to force it either way.
+#
+# NOTE for going live: Resend's default sender (onboarding@resend.dev) can only deliver to the
+# Resend account owner's own inbox. To send to anyone else, verify a domain in Resend and set
+# EMAIL_FROM to an address on it. Until then, verification emails to real people will be refused.
+# ---------------------------------------------------------------------------
+def _verification_default(is_production: bool, email_enabled: bool, env: str) -> bool:
+    return (is_production or email_enabled) and env != "test"
+
+
+def _flag(name: str, default: bool) -> bool:
+    raw = _optional(name).lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    return default
+
+
+EMAIL_VERIFICATION_REQUIRED = _flag("EMAIL_VERIFICATION_REQUIRED", _verification_default(IS_PRODUCTION, EMAIL_ENABLED, ENV))
+EMAIL_VERIFY_EXPIRY_HOURS = int(_optional("EMAIL_VERIFY_EXPIRY_HOURS", "24"))
+EMAIL_VERIFY_RESEND_SECONDS = int(_optional("EMAIL_VERIFY_RESEND_SECONDS", "60"))
+
+
+# ---------------------------------------------------------------------------
 # OPTIONAL - Google sign-in
 # The client ID is public (it also ships to the browser). No client secret is
 # needed: we use Google Identity Services on the frontend to obtain an ID

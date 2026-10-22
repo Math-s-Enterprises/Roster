@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, errorMessage, refusalReasons, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, shiftHours, shiftPaidHours, dateForDay, fmtDayDate } from "@/lib/api";
+import { api, errorMessage, refusalReasons, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, shiftHours, shiftPaidHours, dateForDay, fmtDayDate, externalShiftsByCell } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import RosterPrintSheet from "@/components/RosterPrintSheet";
 import { Link, useSearchParams } from "react-router-dom";
@@ -501,11 +501,7 @@ export default function RosterView() {
     return m;
   }, [roster]);
 
-  const externalByCell = useMemo(() => Object.fromEntries(
-    (roster?.external_shifts || []).map((shift) => [
-      `${shift.employee_id}|${shift.day}`, shift,
-    ]),
-  ), [roster]);
+  const externalByCell = useMemo(() => externalShiftsByCell(roster?.external_shifts), [roster]);
 
   // Which cells the solver wants confirmed, keyed for O(1) lookup while
   // rendering the grid rather than scanning the list for every cell.
@@ -822,7 +818,7 @@ export default function RosterView() {
    *  to reopen it first. */
   const onCell = (s, employee, day, isLeaveCell) => {
     const external = externalByCell[`${employee.employee_id}|${day}`];
-    if (!s && external) {
+    if (!s && external && !external.continuation) {
       toast.error(
         `${employee.name} is already working in ${external.department} on ${DAY_LABELS[day]} `
         + `(${external.start}–${external.end}).`,
@@ -1365,7 +1361,7 @@ export default function RosterView() {
                           data-confirm={Boolean(confirm)}
                           aria-label={name}
                           title={external && !s
-                            ? `Already working in ${external.department}, cannot be rostered here`
+                            ? `Working in ${external.department}, ${external.start}–${external.end}${external.continuation ? "; later shifts are checked for overlap and rest" : ", cannot be rostered here"}`
                             : cellTitle(s, isLeaveCell, confirm)}
                           draggable={!!s && !isLeaveCell}
                           onDragStart={() => s && !isLeaveCell && setDragging(s)}

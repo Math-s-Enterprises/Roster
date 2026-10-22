@@ -218,6 +218,28 @@ export const DAY_LABELS = {
   fri: "Friday", sat: "Saturday", sun: "Sunday",
 };
 
+export function externalShiftsByCell(shifts = []) {
+  const cells = {};
+  const minutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
+  const clock = (value) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+  (shifts || []).forEach((shift) => {
+    if (!shift.start || !shift.end || !DAYS.includes(shift.day)) return;
+    const firstDay = DAYS.indexOf(shift.day) + (shift.week_offset || 0);
+    const start = firstDay * 1440 + minutes(shift.start);
+    let end = firstDay * 1440 + minutes(shift.end);
+    if (end <= start) end += 1440;
+    for (let day = Math.max(0, firstDay); day <= Math.min(6, Math.floor((end - 1) / 1440)); day++) {
+      const continuation = day !== firstDay;
+      cells[`${shift.employee_id}|${DAYS[day]}`] = {
+        ...shift, continuation,
+        start: continuation ? "00:00" : shift.start,
+        end: continuation ? clock(end - day * 1440) : shift.end,
+      };
+    }
+  });
+  return cells;
+}
+
 export function availabilityConflict(employee, day, start, end) {
   const availability = employee?.availability;
   if (!availability) return null;

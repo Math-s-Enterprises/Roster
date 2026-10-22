@@ -37,6 +37,8 @@ from app.services.scheduler import (
     shop_breaks_paid,
     shift_duration_minutes,
     shift_paid_hours,
+    shift_week_span,
+    shifts_overlap,
     solve_roster,
     violates_minor_curfew,
 )
@@ -102,29 +104,53 @@ async def _external_commitments(
     scope: ShopScope, week_start: str, department: str, *, exclude: str = "",
     candidates: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    """Latest visible shifts from every other department in this week."""
+    """Other-group work plus neighbouring weeks' boundary commitments."""
+    monday = date.fromisoformat(week_start)
+    weeks = [(monday + timedelta(days=offset)).isoformat() for offset in (-7, 0, 7)]
     if candidates is None:
-        candidates = await scope.rosters.find(
-            {"week_start": week_start, "archived": {"$ne": True}},
-            limit=500, sort=[("created_at", -1)],
-        )
-    latest: Dict[str, Dict[str, Any]] = {}
+        # A page of newer drafts must not hide an older group's commitment.
+        candidates = [r async for r in scope.rosters.stream({
+            "week_start": {"$in": weeks}, "archived": {"$ne": True},
+        }).sort("created_at", -1)]
+    latest = {}
     for roster in candidates:
         if roster.get("roster_id") == exclude:
             continue
-        other = department_service.roster_department(roster, scope.shop)
-        if other == department or other in latest:
+        source_week = roster.get("week_start")
+        if source_week not in weeks:
             continue
-        latest[other] = roster
+        other = department_service.roster_department(roster, scope.shop)
+        key = (source_week, other)
+        if (source_week == week_start and other == department) or key in latest:
+            continue
+        latest[key] = roster
 
-    return [
-        {**shift, "department": other, "roster_id": roster.get("roster_id")}
-        for other, roster in latest.items()
-        for shift in roster.get("shifts") or []
-        if shift.get("start") and shift.get("end")
-        and not (shift.get("paid_holiday") or shift.get("unpaid_holiday")
-                 or shift.get("sick"))
-    ]
+    commitments = []
+    rest = float(scope.shop.get("min_rest_hours") or 11) * 60
+    for (source_week, other), roster in latest.items():
+        offset = (date.fromisoformat(source_week) - monday).days
+        for shift in roster.get("shifts") or []:
+            if not (shift.get("start") and shift.get("end")) or any(
+                shift.get(flag) for flag in ("paid_holiday", "unpaid_holiday", "sick")
+            ):
+                continue
+            commitment = {
+                **shift, "department": other, "roster_id": roster.get("roster_id"),
+                "week_offset": offset,
+                "date": (date.fromisoformat(source_week) + timedelta(days=DAYS.index(shift["day"]))).isoformat(),
+            }
+            start, end = shift_week_span(commitment)
+            if not offset or (end > -rest and start < 8 * 1440 + rest):
+                # Sunday work may end on the following Monday, so look past day seven.
+                commitments.append(commitment)
+    return commitments
+
+
+def _commitment_clash(shift: Dict[str, Any], other: Dict[str, Any]) -> bool:
+    return shift.get("employee_id") == other.get("employee_id") and (
+        (not other.get("week_offset") and shift.get("day") == other.get("day"))
+        or shifts_overlap(shift, other)
+    )
 
 
 _EMPLOYEE_RULES = {
@@ -184,6 +210,8 @@ def _with_current_break_setting(
     for shift in external:
         hours = shift_paid_hours(shift, breaks_paid=breaks_paid)
         shift["paid_hours"] = round(hours, 2)
+        if shift.get("week_offset"):
+            continue
         employee_id = shift.get("employee_id")
         shop_week_hours[employee_id] = shop_week_hours.get(employee_id, 0.0) + hours
 
@@ -533,16 +561,17 @@ async def list_rosters(
         ]
     # One request-scoped read, not a remote query for every historical version.
     # Read all matching weeks before grouping; a global page limit could drop cover.
-    weeks = list({roster.get("week_start") for roster in rosters})
+    weeks = list({
+        (date.fromisoformat(roster["week_start"]) + timedelta(days=offset)).isoformat()
+        for roster in rosters for offset in (-7, 0, 7)
+    })
     by_week: Dict[str, List[Dict[str, Any]]] = {}
     if weeks:
         cursor = scope.rosters.stream({
             "week_start": {"$in": weeks}, "archived": {"$ne": True},
         }).sort("created_at", -1)
         async for candidate in cursor:
-            group = by_week.setdefault(candidate.get("week_start"), [])
-            if len(group) < 500:  # Preserve the existing per-week lookup ceiling.
-                group.append(candidate)
+            by_week.setdefault(candidate.get("week_start"), []).append(candidate)
     result = []
     for roster in rosters:
         department = department_service.roster_department(roster, scope.base_shop)
@@ -550,7 +579,11 @@ async def list_rosters(
         external = await _external_commitments(
             scope, roster.get("week_start"), department,
             exclude=roster.get("roster_id", ""),
-            candidates=by_week.get(roster.get("week_start"), []),
+            candidates=sorted([
+                candidate for offset in (-7, 0, 7)
+                for candidate in by_week.get((date.fromisoformat(roster["week_start"])
+                    + timedelta(days=offset)).isoformat(), [])
+            ], key=lambda r: r.get("created_at", ""), reverse=True),
         )
         result.append(_with_current_break_setting(
             roster, roster_shop, employees, external_shifts=external,
@@ -704,10 +737,6 @@ async def update_roster(
     external_shifts = await _external_commitments(
         scope, existing["week_start"], department, exclude=roster_id,
     )
-    external_by_person_day = {
-        (shift.get("employee_id"), shift.get("day")): shift
-        for shift in external_shifts
-    }
     employees = _department_employees(
         await scope.employees.find(limit=1000), department,
     )
@@ -716,19 +745,19 @@ async def update_roster(
     for shift in shifts:
         if shift.get("paid_holiday") or shift.get("unpaid_holiday") or shift.get("sick"):
             continue
-        other = external_by_person_day.get((shift.get("employee_id"), shift.get("day")))
+        other = next((other for other in external_shifts if _commitment_clash(shift, other)), None)
         if not other:
             continue
         employee = employees_by_id.get(shift.get("employee_id"), {})
         clashes.append(
             f"{employee.get('name', 'This employee')} is already working in "
-            f"{other.get('department')} on {shift.get('day')} "
+            f"{other.get('department')} on {other.get('date') or other.get('day')} "
             f"({other.get('start')}-{other.get('end')})."
         )
     if clashes:
         raise HTTPException(status.HTTP_409_CONFLICT, {
             "code": "other_department_shift",
-            "message": "This employee is already rostered in another group that day.",
+            "message": "This employee is already rostered in another group or overlapping shift.",
             "reasons": clashes,
         })
 
@@ -925,7 +954,9 @@ async def suggest_for_gap(
         if s.get("day") == day
     }
     taken.update(
-        s["employee_id"] for s in external_shifts if s.get("day") == day
+        s["employee_id"] for s in external_shifts
+        if _commitment_clash({"employee_id": s["employee_id"], "day": day,
+                              "start": start, "end": end}, s)
     )
 
     candidates = []
@@ -1409,8 +1440,7 @@ async def report_sick(
         )
         other = next((
             shift for shift in external
-            if shift.get("employee_id") == payload.cover_employee_id
-            and shift.get("day") == payload.day
+            if _commitment_clash({**original, "employee_id": payload.cover_employee_id}, shift)
         ), None)
         if other:
             raise HTTPException(status.HTTP_409_CONFLICT, {
@@ -1424,11 +1454,9 @@ async def report_sick(
         clash = [
             s for s in shifts
             if s.get("employee_id") == payload.cover_employee_id
-            and s.get("day") == payload.day
             and s.get("start") and s.get("end")
-            and sick_cover._overlaps(
-                original["start"], original["end"], s["start"], s["end"]
-            )
+            and not any(s.get(flag) for flag in ("sick", "paid_holiday", "unpaid_holiday"))
+            and shifts_overlap(original, s)
         ]
         if clash:
             raise HTTPException(status.HTTP_409_CONFLICT, {

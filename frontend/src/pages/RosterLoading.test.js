@@ -100,6 +100,22 @@ test("an unavailable approval audit never claims the week is ready", async () =>
   expect(host.textContent).not.toContain("this week is ready to approve");
 });
 
+test("the live roster grid shows last Sunday's Deli night on Monday, not Sunday", async () => {
+  api.get.mockImplementation(path => Promise.resolve({ data:
+    path === "/shop" ? { departments: ["Shop Floor", "Deli"] }
+      : path === "/employees" ? [{ employee_id: "one", name: "Employee", role: "Cashier", departments: ["Shop Floor", "Deli"] }]
+      : path === "/rosters" ? [{
+        roster_id: "draft", week_start: mockParams.get("week"), department: "Shop Floor", shifts: [],
+        external_shifts: [{ employee_id: "one", day: "sun", start: "22:00", end: "06:00", department: "Deli", week_offset: -7 }],
+      }]
+      : path.endsWith("/audit") ? { people: [] } : [] }));
+  await act(async () => root.render(<RosterView />));
+  const monday = host.querySelector('[data-testid="cell-one-mon"]');
+  expect(monday.textContent).toContain("Deli");
+  expect(monday.textContent).toContain("00:00–06:00");
+  expect(host.querySelector('[data-testid="cell-one-sun"]').textContent).not.toContain("Deli");
+});
+
 test("a previous roster's audit cannot give a newer week an all-clear", async () => {
   let finishOldAudit;
   const oldAudit = new Promise(resolve => { finishOldAudit = resolve; });

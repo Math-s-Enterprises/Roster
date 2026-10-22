@@ -8,6 +8,7 @@ import AppLayout from "@/components/AppLayout";
 import Login from "@/pages/Login";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
+import VerifyEmail from "@/pages/VerifyEmail";
 import Dashboard from "@/pages/Dashboard";
 import Onboarding from "@/pages/Onboarding";
 import Employees from "@/pages/Employees";
@@ -80,6 +81,8 @@ export default function App() {
               </PublicOnly>
             }
           />
+          {/* Not PublicOnly: the link must work even if someone else is signed in on this browser. */}
+          <Route path="/verify-email" element={<VerifyEmail />} />
           <Route
             path="/"
             element={

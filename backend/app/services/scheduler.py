@@ -99,6 +99,19 @@ def to_minutes(hhmm: str) -> int:
     return int(hours) * 60 + int(minutes)
 
 
+def shift_week_span(shift: Dict[str, Any]) -> Tuple[int, int]:
+    """Real interval relative to this Monday, including adjacent-week context."""
+    start = (DAYS.index(shift["day"]) + shift.get("week_offset", 0)) * 1440
+    start += to_minutes(shift["start"])
+    return start, start + shift_duration_minutes(shift["start"], shift["end"])
+
+
+def shifts_overlap(first: Dict[str, Any], second: Dict[str, Any]) -> bool:
+    a0, a1 = shift_week_span(first)
+    b0, b1 = shift_week_span(second)
+    return a0 < b1 and b0 < a1
+
+
 def covers_closing(start: str, end: str, close_m: int) -> bool:
     """Whether a shift covers the trading day's closing boundary.
 
@@ -1331,17 +1344,16 @@ class _RosterBuilder:
                 continue
             # Same-day entries are prevented elsewhere; rest is about the gap
             # between working days.
-            if shift.get("day") == day:
+            if shift.get("day") == day and not shift.get("week_offset"):
                 continue
-            other_start, other_end = self._week_span(
-                shift["day"], shift["start"], shift["end"]
-            )
+            other_start, other_end = shift_week_span(shift)
             if new_start >= other_end:
                 gap = new_start - other_end
             elif other_start >= new_end:
                 gap = other_start - new_end
             else:
-                continue                      # overlapping; caught elsewhere
+                # Different starting days can still overlap across midnight.
+                return 0.0
             if gap < required:
                 return gap / 60
         return None
@@ -2242,7 +2254,7 @@ class _RosterBuilder:
     def _apply_external_commitments(self, day: str, assigned_today: Set[str]) -> None:
         """Reserve people already working in another department this day."""
         for shift in self.external_shifts:
-            if shift.get("day") != day:
+            if shift.get("day") != day or shift.get("week_offset"):
                 continue
             employee_id = shift.get("employee_id")
             if employee_id not in self.employees_by_id or employee_id in assigned_today:
@@ -2258,6 +2270,8 @@ class _RosterBuilder:
     def _seed_external_hours(self) -> None:
         """Count other departments once, including days this group is closed."""
         for shift in self.external_shifts:
+            if shift.get("week_offset"):
+                continue  # Adjacent weeks constrain rest, not this week's hours/days.
             employee_id = shift.get("employee_id")
             if employee_id not in self.employees_by_id:
                 continue
