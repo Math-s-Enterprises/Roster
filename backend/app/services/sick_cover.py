@@ -45,6 +45,8 @@ from app.services.scheduler import (
     shop_breaks_paid,
     to_minutes,
     violates_minor_curfew,
+    shift_week_span,
+    shifts_overlap,
 )
 
 
@@ -114,6 +116,8 @@ def rank_cover(
     same_day: Dict[str, List[Dict[str, Any]]] = {}
 
     for shift in shifts:
+        if shift.get("week_offset"):
+            continue
         eid = shift.get("employee_id")
         if eid == absent_id and shift.get("day") == day:
             continue
@@ -135,6 +139,12 @@ def rank_cover(
     for employee in employees:
         eid = employee["employee_id"]
         if eid == absent_id or employee.get("past_staff"):
+            continue
+
+        candidate = {"employee_id": eid, "day": day, "start": start, "end": end}
+        if any(s.get("employee_id") == eid and s.get("start") and s.get("end")
+               and not any(s.get(flag) for flag in ("sick", "paid_holiday", "unpaid_holiday"))
+               and shifts_overlap(candidate, s) for s in shifts):
             continue
 
         blocked = _hard_block(
@@ -398,11 +408,11 @@ def _rest_gap(
     for shift in all_shifts:
         if shift.get("employee_id") != employee_id:
             continue
-        if shift.get("day") == day:
+        if shift.get("day") == day and not shift.get("week_offset"):
             continue
         if shift.get("sick") or shift.get("paid_holiday") or shift.get("unpaid_holiday"):
             continue
-        theirs = _week_span(shift.get("day"), shift.get("start"), shift.get("end"))
+        theirs = shift_week_span(shift) if shift.get("start") and shift.get("end") else None
         if not theirs:
             continue
         if mine[0] >= theirs[1]:

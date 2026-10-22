@@ -125,3 +125,86 @@ def test_previous_sunday_shifts_are_returned_without_other_shop_data(client):
         assert any(s['roster_id'] == 'previous' and s['week_offset'] == -7
                    for s in row['external_shifts']), row
         assert not any(s['roster_id'] == 'private' for s in row['external_shifts'])
+
+
+def test_many_draft_versions_cannot_hide_a_boundary_commitment(client, monkeypatch):
+    from app import db
+    from app.tenancy import ScopedCollection
+    headers, shop_id, eid, monday = _setup(client)
+    _store(shop_id, eid, 'previous', 'Deli', monday - timedelta(days=7), 'sun', '22:00', '06:00')
+    _store(shop_id, eid, 'current', 'Shop Floor', monday, 'mon', '00:00', '08:00')
+    asyncio.run(db.rosters.insert_many([{
+        'shop_id': shop_id, 'roster_id': f'draft-{index}', 'department': 'Shop Floor',
+        'week_start': monday.isoformat(), 'created_at': '9999-01-01', 'shifts': [],
+    } for index in range(501)]))
+    original_find = ScopedCollection.find
+
+    async def bounded_find(scope, extra=None, **kwargs):
+        rows = await original_find(scope, extra, **kwargs)
+        # mongomock's to_list ignores length; model the real Motor page limit.
+        return rows[:kwargs.get('limit', 100)]
+
+    monkeypatch.setattr(ScopedCollection, 'find', bounded_find)
+    audit = client.get('/api/rosters/current/audit', headers=headers).json()
+    assert any(b['rule'] == 'double_booked' for b in audit['blocking']), audit
+
+
+@pytest.mark.parametrize('start', ['06:00', '17:00'])
+def test_non_overlapping_boundary_shifts_are_not_hard_blocked(client, start):
+    headers, shop_id, eid, monday = _setup(client)
+    _store(shop_id, eid, 'other', 'Deli', monday - timedelta(days=7), 'sun', '22:00', '06:00')
+    _store(shop_id, eid, 'current', 'Shop Floor', monday, 'mon', start, '21:00' if start == '17:00' else '14:00')
+    audit = client.get('/api/rosters/current/audit', headers=headers).json()
+    assert not audit['blocking'], audit
+    response = client.post('/api/rosters/current/approve?acknowledge_gaps=true', headers=headers)
+    assert response.status_code == 200, response.text
+
+
+def test_previous_week_does_not_consume_hours_or_prevent_a_rested_later_shift(client):
+    headers, shop_id, eid, monday = _setup(client)
+    client.put(f'/api/employees/{eid}', json={
+        'name': 'Shared Person', 'email': None, 'role': 'Cashier', 'age': 30,
+        'hourly_rate': 15, 'max_weekly_hours': 8, 'departments': ['Shop Floor', 'Deli'],
+    }, headers=headers)
+    response = client.put('/api/shop', json={
+        'hours': [{'day': d, 'open': '17:00', 'close': '21:00', 'closed': d != 'mon'} for d in DAYS],
+        'min_shift_hours': 4, 'max_shift_hours': 8,
+    }, headers=headers)
+    assert response.status_code == 200, response.text
+    _store(shop_id, eid, 'other', 'Deli', monday - timedelta(days=7), 'sun', '22:00', '06:00')
+    result = client.post('/api/roster/generate', json={
+        'week_start': monday.isoformat(), 'department': 'Shop Floor',
+    }, headers=headers)
+    assert result.status_code == 200, result.text
+    assert [(s['day'], s['start'], s['end']) for s in result.json()['shifts']] == [('mon', '17:00', '21:00')]
+
+
+def test_overlap_guard_is_not_tied_to_this_year(client):
+    headers, shop_id, eid, _ = _setup(client)
+    anchor = date(date.today().year + 50, 1, 1)
+    monday = anchor + timedelta(days=(7 - anchor.weekday()) % 7)
+    _store(shop_id, eid, 'other', 'Deli', monday - timedelta(days=7), 'sun', '22:00', '06:00')
+    _store(shop_id, eid, 'current', 'Shop Floor', monday, 'mon', '00:00', '08:00')
+    response = client.post('/api/rosters/current/approve?acknowledge_gaps=true',
+                          json={'force': True, 'password': 'password123'}, headers=headers)
+    assert response.status_code == 409, response.text
+
+
+def test_sick_cover_cannot_bypass_a_previous_week_overnight_commitment(client):
+    headers, shop_id, eid, monday = _setup(client)
+    absent = client.post('/api/employees', json={
+        'name': 'Absent Person', 'role': 'Cashier', 'age': 30, 'hourly_rate': 15,
+        'max_weekly_hours': 40, 'departments': ['Shop Floor'],
+    }, headers=headers).json()['employee_id']
+    _store(shop_id, eid, 'other', 'Deli', monday - timedelta(days=7), 'sun', '22:00', '06:00')
+    _store(shop_id, absent, 'current', 'Shop Floor', monday, 'mon', '00:00', '08:00', approved=True)
+    options = client.get('/api/rosters/current/cover', params={
+        'employee_id': absent, 'day': 'mon',
+    }, headers=headers)
+    assert options.status_code == 200, options.text
+    assert eid not in [p['employee_id'] for p in options.json()['candidates']]
+    response = client.post('/api/rosters/current/sick', json={
+        'employee_id': absent, 'day': 'mon', 'cover_employee_id': eid,
+    }, headers=headers)
+    assert response.status_code == 409, response.text
+    assert 'Deli' in response.text

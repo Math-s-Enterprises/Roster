@@ -57,6 +57,7 @@ from app.services.scheduler import (
     shift_duration_minutes,
     shift_paid_hours,
     shift_span_hours,
+    shift_week_span,
     to_minutes,
 )
 
@@ -79,21 +80,6 @@ def _worked(shifts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         s for s in shifts
         if s.get("start") and s.get("end") and not _is_leave(s)
     ]
-
-
-def _week_minutes(day: str, hhmm: str) -> int:
-    """Minutes from Monday 00:00.
-
-    Clock time is not enough: a 23:30 Monday start and a 07:00 Tuesday finish
-    are seven and a half hours apart, not sixteen and a half backwards.
-    """
-    return DAYS.index(day) * 1440 + to_minutes(hhmm)
-
-
-def _span(shift: Dict[str, Any]) -> tuple:
-    start = _week_minutes(shift["day"], shift["start"])
-    length = shift_duration_minutes(shift["start"], shift["end"])
-    return start, start + length
 
 
 def _leave_dates(holidays: List[Dict[str, Any]]) -> Dict[str, set]:
@@ -362,7 +348,10 @@ def audit(
         if not employee:
             continue
 
-        theirs = sorted(theirs, key=lambda s: _span(s)[0])
+        neighbours = sorted(theirs, key=lambda s: shift_week_span(s)[0])
+        theirs = [s for s in neighbours if not s.get("week_offset")]
+        if not theirs:
+            continue
         name = employee.get("name", "Someone")
 
         # ---- hours against their own ceiling -----------------------------
@@ -442,14 +431,30 @@ def audit(
                     f"rostered {shift['start']}-{shift['end']}.")
 
         # ---- between shifts -------------------------------------------------
-        for earlier, later in zip(theirs, theirs[1:]):
-            _, ends = _span(earlier)
-            starts, _ = _span(later)
-            if starts < ends:
+        def where(shift):
+            group = f" in {shift['department']}" if shift.get("department") else ""
+            return f"{shift.get('date') or shift['day']}{group}"
+
+        # Check every overlap, including a long night spanning several shorter shifts.
+        for index, earlier in enumerate(neighbours):
+            _, ends = shift_week_span(earlier)
+            for later in neighbours[index + 1:]:
+                starts, _ = shift_week_span(later)
+                if starts >= ends:
+                    break
+                if earlier.get("week_offset") and later.get("week_offset"):
+                    continue
                 add(employee, "double_booked",
                     f"{name} is rostered {earlier['start']}-{earlier['end']} on "
-                    f"{earlier['day']} and {later['start']}-{later['end']} on "
-                    f"{later['day']}, those overlap.")
+                    f"{where(earlier)} and {later['start']}-{later['end']} on "
+                    f"{where(later)}, those overlap.")
+
+        for earlier, later in zip(neighbours, neighbours[1:]):
+            if earlier.get("week_offset") and later.get("week_offset"):
+                continue
+            _, ends = shift_week_span(earlier)
+            starts, _ = shift_week_span(later)
+            if starts < ends:
                 continue
             rest = (starts - ends) / 60
             # A gap under an hour is a break in one long stint, not a
@@ -457,12 +462,13 @@ def audit(
             # is not about it.
             if 1.0 <= rest < min_rest:
                 add(employee, "rest_gap",
-                    f"{name} finishes {earlier['end']} on {earlier['day']} and "
-                    f"starts {later['start']} on {later['day']}, {rest:.1f}h "
+                    f"{name} finishes {earlier['end']} on {where(earlier)} and "
+                    f"starts {later['start']} on {where(later)}, {rest:.1f}h "
                     f"off, under the {min_rest:g}h between shifts.")
 
     found.extend(closing_role_breaches(
-        shifts, shop=shop, employees=employees, ai_rules=ai_rules,
+        [s for s in shifts if not s.get("week_offset")],
+        shop=shop, employees=employees, ai_rules=ai_rules,
         week_start=week_start, holidays=holidays,
     ))
 
@@ -513,7 +519,7 @@ def under_contract(
     worked_span: Dict[str, float] = {}
     for shift in shifts:
         employee_id = shift.get("employee_id")
-        if not employee_id:
+        if not employee_id or shift.get("week_offset"):
             continue
         if shift.get("paid_holiday"):
             # A holiday day stands in for the shift it replaced, so it counts

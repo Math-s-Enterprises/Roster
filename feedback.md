@@ -1721,3 +1721,34 @@ file then passed all 17 tests separately. git diff --check passes. The frontend
 change is helper text only; no production build or browser test was run. No keys
 were read, no external model calls made, and no commit, push or deploy was
 performed. Live OCR accuracy must still be checked after deploying to staging.
+
+## 34. Double-booking is an interval, not a weekday or a calendar week
+
+A shared employee could receive Deli Monday 22:00-06:00 and Shop Floor
+Tuesday 00:00-08:00. The solver skipped actual overlaps in its rest check,
+assuming another guard handled them. Approval caught that same-week overlap,
+but missed the previous Sunday's night because external commitments only
+loaded the exact week. Both failures were reproduced with mock shop records.
+
+Commitments now retain their calendar offset and include relevant neighbouring
+weeks. One interval helper is shared by generation, validation, approval and
+sick-cover checks. Adjacent weeks constrain overlap/rest but do not consume the
+current week's hours, days or contract balance, and never count as coverage.
+Safety lookups stream all versions so a page of newer drafts cannot hide an
+older group's commitment. The mock ignores to_list length, so the many-version
+regression explicitly models Motor's real page limit.
+
+The grid and print sheet place overnight continuations in the actual affected
+day, not the same-named weekday of the wrong week. A continuation does not
+prevent opening the editor for a later shift; the server checks its actual
+times. Genuine overlaps remain non-overridable, including password approval
+and sick replacement. No existing rosters are rewritten or deleted.
+
+Tests compute future Mondays at runtime, include a date fifty years ahead,
+both week boundaries, manual refusals, non-overlaps, shared weekly accounting,
+tenant isolation, version counts, sick cover and actual grid/print rendering.
+In-memory removal of either backend safeguard made its regression fail;
+removing the display projection made all five display regressions fail.
+See docs/CROSS_GROUP_OVERNIGHT_TDD.md for commands, results and verification
+limits. Existing image-import edits are preserved separately. Nothing is pushed
+or deployed automatically.

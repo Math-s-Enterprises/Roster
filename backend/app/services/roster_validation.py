@@ -37,10 +37,10 @@ from app.services.scheduler import (
     MINOR_AGE,
     MIN_REST_HOURS,
     paid_hours,
-    to_minutes,
     shift_duration_minutes,
     shop_breaks_paid,
     violates_minor_curfew,
+    shift_week_span,
 )
 
 
@@ -52,18 +52,6 @@ class Verdict:
     @property
     def ok(self) -> bool:
         return not self.blocking
-
-
-def _week_span(day: str, start: str, end: str) -> Optional[tuple]:
-    """A shift as minutes from Monday 00:00, so days compare correctly."""
-    if day not in DAYS or not (start and end):
-        return None
-    base = DAYS.index(day) * 24 * 60
-    first = base + to_minutes(start)
-    last = base + to_minutes(end)
-    if last <= first:                     # finishes after midnight
-        last += 24 * 60
-    return first, last
 
 
 def _rest_breach(
@@ -78,7 +66,7 @@ def _rest_breach(
     put and reasonably concluded the page needed refreshing (§11: two
     switches that can disagree is one too many).
     """
-    mine = _week_span(shift.get("day"), shift.get("start"), shift.get("end"))
+    mine = shift_week_span(shift) if shift.get("start") and shift.get("end") else None
     if not mine:
         return None
     required = min_rest * 60
@@ -90,9 +78,9 @@ def _rest_breach(
         # check and its own message. Rest is about the gap between working
         # days; reporting "1h rest" for a split shift would bury the real
         # problem under a confusing one.
-        if other.get("day") == shift.get("day"):
+        if other.get("day") == shift.get("day") and not other.get("week_offset"):
             continue
-        theirs = _week_span(other.get("day"), other.get("start"), other.get("end"))
+        theirs = shift_week_span(other) if other.get("start") and other.get("end") else None
         if not theirs:
             continue
         if mine[0] >= theirs[1]:
@@ -153,6 +141,8 @@ def validate_shifts(
 ) -> Verdict:
     """Check a proposed week of shifts against the same rules the solver uses."""
     verdict = Verdict()
+    neighbours = shifts
+    shifts = [s for s in shifts if not s.get("week_offset")]
     by_id = {e["employee_id"]: e for e in employees}
     blocked_dates = _leave_dates(holidays or [])
     shift_history = avail.build_shift_history(history_rosters or [])
@@ -229,7 +219,7 @@ def validate_shifts(
         # in real time: a night finishing 07:00 Tuesday and a 17:00 Tuesday
         # start is a ten-hour turnaround, not a thirty-four hour one.
         rest = _rest_breach(
-            shift, [s for s in shifts if s is not shift], employee_id,
+            shift, [s for s in neighbours if s is not shift], employee_id,
             min_rest,
         )
         if rest is not None:
