@@ -67,6 +67,9 @@ export function AuthProvider({ children }) {
   const signup = useCallback(
     async (payload) => {
       const { data } = await api.post("/auth/signup", payload);
+      // With email confirmation on, nothing exists yet: the server has emailed a link, and the
+      // account (and the sign-in) only happen when it is clicked. See verifyEmail below.
+      if (data.verification_sent) return data;
       // A new shop opens in light mode. Only here, and only once the account
       // exists - a failed sign-up must not change anyone's saved preference.
       try {
@@ -95,6 +98,26 @@ export function AuthProvider({ children }) {
     [],
   );
 
+  // The confirmation link was clicked. This is where the account is really made, so it does what
+  // sign-up used to do: a new shop opens in light mode, and the person is signed in.
+  const verifyEmail = useCallback(
+    async (token) => {
+      const { data } = await api.post("/auth/verify-email", { token });
+      try {
+        localStorage.setItem("roster_theme", "light");
+      } catch {
+        /* storage unavailable (private mode) - nothing to set */
+      }
+      return completeSignIn(data);
+    },
+    [completeSignIn],
+  );
+
+  const resendVerification = useCallback(
+    async (email) => (await api.post("/auth/resend-verification", { email })).data,
+    [],
+  );
+
   const resetPassword = useCallback(
     async (token, password) =>
       (await api.post("/auth/reset-password", { token, password })).data,
@@ -114,9 +137,12 @@ export function AuthProvider({ children }) {
   const value = useMemo(
     () => ({
       user, loading, providers, login, signup, loginWithGoogle, logout, refresh, setUser,
-      forgotPassword, resetPassword,
+      forgotPassword, resetPassword, verifyEmail, resendVerification,
     }),
-    [user, loading, providers, login, signup, loginWithGoogle, logout, refresh, forgotPassword, resetPassword],
+    [
+      user, loading, providers, login, signup, loginWithGoogle, logout, refresh,
+      forgotPassword, resetPassword, verifyEmail, resendVerification,
+    ],
   );
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;

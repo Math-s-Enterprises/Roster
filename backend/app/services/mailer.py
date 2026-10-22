@@ -409,6 +409,57 @@ async def send_password_reset_email(to: str, name: str, reset_url: str, expiry_m
         )
 
 
+def render_verification_email(name: str, verify_url: str, expiry_hours: int) -> str:
+    """Build the HTML for the email that confirms a new sign-up.
+
+    `verify_url` is our own link (FRONTEND_URL + a server-generated token), never user-supplied, so
+    it does not need escaping. The name does.
+    """
+    safe_name = html.escape(name or "there")
+    return f"""<div style="background:#05050A;padding:32px;font-family:Arial,Helvetica,sans-serif;color:#ffffff;">
+  <table width="100%" style="max-width:560px;margin:auto;background:#0A0B10;border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden;">
+    <tr><td style="padding:24px 24px 8px 24px;">
+      <div style="color:#00E5FF;font-size:22px;font-weight:700;">Roster</div>
+    </td></tr>
+    <tr><td style="padding:16px 24px;color:#ffffff;">
+      <p style="margin:0 0 8px 0;">Hi {safe_name},</p>
+      <p style="margin:0 0 16px 0;">Thanks for signing up. Please confirm that this is your email address to
+      create your account. This link works for {expiry_hours} hours and can only be used once.</p>
+      <p style="margin:0 0 24px 0;">
+        <a href="{verify_url}" style="display:inline-block;background:#00E5FF;color:#05050A;
+           font-weight:700;text-decoration:none;padding:12px 24px;border-radius:999px;">
+          Confirm my email
+        </a>
+      </p>
+      <p style="margin:0;color:#a1a1aa;font-size:13px;">
+        If you didn't sign up for Roster, you can safely ignore this email and nothing will be created.
+      </p>
+    </td></tr>
+    <tr><td style="padding:0 24px 24px 24px;color:#71717A;font-size:12px;">Sent via Roster</td></tr>
+  </table>
+</div>"""
+
+
+async def send_verification_email(to: str, name: str, verify_url: str, expiry_hours: int) -> Optional[str]:
+    """Send one sign-up confirmation email. Returns None on success, or an error string.
+
+    Unlike a password reset, the caller must NOT pretend this worked when it did not: the person
+    cannot finish signing up without it, so a failure is reported to them.
+    """
+    if not enabled:
+        log.warning("Sign-up confirmation email was not sent because email is not configured.")
+        return "Email is not configured (RESEND_API_KEY is unset)."
+
+    async with httpx.AsyncClient(timeout=30) as http:
+        return await _send_one(
+            http,
+            asyncio.Semaphore(_MAX_CONCURRENT_SENDS),
+            to,
+            "Confirm your email for Roster",
+            render_verification_email(name, verify_url, expiry_hours),
+        )
+
+
 async def send_shop_roster(
     shop_name: str,
     week_start: str,
