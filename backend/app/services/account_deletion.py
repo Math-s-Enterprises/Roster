@@ -81,7 +81,9 @@ SHOPS = "shops"      # found by owner_id
 USERS = "users"
 # Shared security data, not owned by an individual account.
 # Keep it accounted for, but do not erase it with a user's account.
-NON_ACCOUNT_COLLECTIONS = ("auth_rate_limits",)
+NON_ACCOUNT_COLLECTIONS = ("auth_rate_limits", "email_verifications")
+# (email_verifications holds sign-ups still waiting for their emailed link. There is no account
+# yet, so there is nothing to erase with one, and each record deletes itself within 24 hours.)
 
 # Every collection in db.py must be accounted for. A test compares this to db.py itself.
 ERASURE_PLAN = (
@@ -187,7 +189,7 @@ async def cancel_billing(user_id: str) -> List[str]:
                 if made:
                     cancel(made)
     except error as exc:
-        log.error("Could not cancel billing while deleting account %s: %s", user_id, exc)
+        log.error("Could not cancel billing while closing an account: %s", exc)
         raise BillingCleanupFailed(
             "We could not cancel your subscription with our payment provider, so your account "
             "has not been deleted. Please try again in a few minutes."
@@ -281,8 +283,8 @@ async def request_deletion(user: Dict[str, Any]) -> datetime:
         },
     )
     await db.user_sessions.delete_many({"user_id": user_id})
-    # The user id is a random token, not personal data. No email or name is logged.
-    log.info("Closed account %s; erasure scheduled for %s", user_id, scheduled.isoformat())
+    # No id, email or name is logged: log files outlive the account, which is meant to be erased for good.
+    log.info("Closed an account; erasure scheduled for %s", scheduled.isoformat())
     return scheduled
 
 
@@ -300,7 +302,7 @@ async def restore_if_pending(user: Dict[str, Any], now: Optional[datetime] = Non
     if due is not None and due <= (now or _now()):
         raise AccountExpired()
     await db.users.update_one({"user_id": user["user_id"]}, {"$unset": {field: "" for field in PENDING_FIELDS}})
-    log.info("Account %s signed back in; deletion cancelled", user["user_id"])
+    log.info("An account signed back in; its deletion was cancelled")
     return {k: v for k, v in user.items() if k not in PENDING_FIELDS}, True
 
 
@@ -320,9 +322,9 @@ async def purge_due(now: Optional[datetime] = None) -> List[str]:
         try:
             counts = await erase(user)
         except Exception:  # noqa: BLE001 - one bad account must not stop the rest
-            log.exception("Could not erase account %s; it will be tried again", user["user_id"])
+            log.exception("Could not erase an account; it will be tried again")
             continue
-        log.info("Erased account %s: %s", user["user_id"], counts)
+        log.info("Erased an account: %s", counts)
         erased.append(user["user_id"])
     return erased
 

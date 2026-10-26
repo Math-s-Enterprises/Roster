@@ -26,6 +26,7 @@ db = client[config.DB_NAME]
 users = db.users
 user_sessions = db.user_sessions
 password_resets = db.password_resets
+email_verifications = db.email_verifications
 auth_rate_limits = db.auth_rate_limits
 shops = db.shops
 employees = db.employees
@@ -138,6 +139,12 @@ async def ensure_indexes() -> None:
     # sessions do, so a stale or already-used request row never lingers.
     await password_resets.create_index("token_hash", unique=True, name="uniq_reset_token_hash")
     await password_resets.create_index("expires_at", expireAfterSeconds=0, name="ttl_password_resets")
+
+    # Sign-ups waiting for their emailed link: one per address, found by the link's hash, and gone
+    # on their own once the link has expired.
+    await email_verifications.create_index("email", unique=True, name="uniq_verify_email")
+    await email_verifications.create_index("token_hash", unique=True, name="uniq_verify_token_hash")
+    await email_verifications.create_index("expires_at", expireAfterSeconds=0, name="ttl_email_verifications")
 
     await payment_transactions.create_index("session_id", unique=True, name="uniq_stripe_session")
 

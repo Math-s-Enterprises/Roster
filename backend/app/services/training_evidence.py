@@ -164,7 +164,7 @@ def generation_context(shop, employees, holidays, fixed_shifts, rules, history, 
         "department": department,
         "locked_shifts": [select(s, SHIFT_FIELDS) for s in locked_shifts],
         "external_shifts": [
-            select(s, SHIFT_FIELDS | {"department", "roster_id"})
+            select(s, SHIFT_FIELDS | {"department", "roster_id", "week_offset", "date"})
             for s in (external_shifts or [])
         ],
         "preference_weights": deepcopy(weights or {}),

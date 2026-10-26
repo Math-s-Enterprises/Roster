@@ -22,7 +22,7 @@
  * runs over rather than printing something nobody can use.
  */
 import React from "react";
-import { DAYS, DAY_SHORT, dateForDay, fmtDayDate, shiftPaidHours } from "@/lib/api";
+import { DAYS, DAY_SHORT, dateForDay, fmtDayDate, shiftPaidHours, externalShiftsByCell } from "@/lib/api";
 
 // A4 landscape, 10mm margins, minus the header block. What is left for rows.
 const USABLE_MM_PER_PAGE = 152;
@@ -31,12 +31,13 @@ const MIN_ROW_MM = 3.2;   // below this it cannot be read from across a room
 
 export default function RosterPrintSheet({ roster, employees, shop, pages = 1 }) {
   if (!roster) return null;
+  const externalCells = externalShiftsByCell(roster.external_shifts);
 
   // Only people who are actually on this week. Somebody inactive, or simply
   // not rostered, is a blank row taking up height that the rows which matter
   // need in order to stay readable.
   const onRoster = new Set(
-    [...(roster.shifts || []), ...(roster.external_shifts || [])].map((s) => s.employee_id),
+    [...(roster.shifts || []), ...Object.values(externalCells)].map((s) => s.employee_id),
   );
   const listed = employees.filter((e) => onRoster.has(e.employee_id));
 
@@ -60,9 +61,10 @@ export default function RosterPrintSheet({ roster, employees, shop, pages = 1 })
   (roster.shifts || []).forEach((shift) => {
     (byPerson[shift.employee_id] = byPerson[shift.employee_id] || {})[shift.day] = shift;
   });
-  (roster.external_shifts || []).forEach((shift) => {
+  Object.entries(externalCells).forEach(([key, shift]) => {
     const mine = (byPerson[shift.employee_id] = byPerson[shift.employee_id] || {});
-    if (!mine[shift.day]) mine[shift.day] = { ...shift, external: true };
+    const day = key.split("|").pop();
+    if (!mine[day]) mine[day] = { ...shift, external: true };
   });
 
   // One row per person, one per role heading, one for the day header.
@@ -119,8 +121,9 @@ export default function RosterPrintSheet({ roster, employees, shop, pages = 1 })
               </tr>
               {group.people.map((employee) => {
                 const mine = byPerson[employee.employee_id] || {};
-                const hours = roster.shop_week_hours?.[employee.employee_id] ?? Object.values(mine)
-                  .filter((s) => s.start && s.end
+                const hours = roster.shop_week_hours?.[employee.employee_id] ?? [
+                  ...(roster.shifts || []), ...(roster.external_shifts || []),
+                ].filter((s) => s.employee_id === employee.employee_id && !s.week_offset && s.start && s.end
                     && !s.paid_holiday && !s.unpaid_holiday && !s.sick)
                   .reduce((total, s) => total + shiftPaidHours(
                     s, !!shop?.breaks_are_paid,
