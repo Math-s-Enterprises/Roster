@@ -21,10 +21,8 @@ import { api, errorMessage } from "@/lib/api";
  * Uploading is not a single step here. The file is parsed into a preview,
  * the manager confirms which weeks to take and maps each name on the sheet
  * to a real employee - or marks them past staff - and only then is it
- * committed. The handoff describes upload as one action and says nothing
- * about that stage, so the Review screen is kept exactly as it was rather
- * than rebuilt from a spec that does not cover it. Without the name mapping
- * an import silently invents employees.
+ * committed. The review uses the import theme while retaining explicit
+ * employee and role choices; an import must not silently invent either.
  *
  * The removed-weeks list is kept for the same reason: imported weeks are
  * stored as approved past weeks, which the app otherwise refuses to reopen,
@@ -135,12 +133,15 @@ export default function ImportRosters() {
     caps.image ? IMAGE_TYPES : "",
   ].filter(Boolean).join(",");
 
-  const reasons = Object.values(caps.reasons || {});
-  const unavailable = [caps.pdf ? null : "PDF", caps.image ? null : "photo"].filter(Boolean);
+  const unavailable = [caps.pdf ? null : "PDF", caps.image ? null : "photos"].filter(Boolean);
+  const availableFormats = new Intl.ListFormat("en").format([
+    "Excel", "CSV", ...(caps.pdf ? ["PDF"] : []), ...(caps.image ? ["photos"] : []),
+  ]);
 
   const [committed, setCommitted] = useState(0);
   const [weeks, setWeeks] = useState([]);
   const [mapping, setMapping] = useState({});
+  const [roleMapping, setRoleMapping] = useState({});
   const [employees, setEmployees] = useState([]);
 
   const [summary, setSummary] = useState(null);
@@ -151,21 +152,18 @@ export default function ImportRosters() {
   }, [committed, department]);
 
   const reset = () => {
-    setPreview(null); setWeeks([]); setMapping({});
+    setPreview(null); setWeeks([]); setMapping({}); setRoleMapping({});
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  /**
-   * Reject a format this server cannot read with the reason the server gave,
-   * rather than a generic "unsupported file" the manager cannot act on.
-   */
+  /** Availability is useful to customers; server setup instructions are not. */
   const rejectReason = (file) => {
     const name = file.name.toLowerCase();
     if (/\.pdf$/.test(name) && !caps.pdf) {
-      return caps.reasons?.pdf || "PDF reading is not set up on this server.";
+      return "PDF uploads are currently unavailable. Use Excel or CSV.";
     }
     if (/\.(png|jpe?g|webp|gif|bmp|heic)$/.test(name) && !caps.image) {
-      return caps.reasons?.image || "Photo reading is not set up on this server.";
+      return "Photo uploads are currently unavailable. Use Excel or CSV.";
     }
     if (!/\.(xlsx|xlsm|xltx|xls|csv|tsv|pdf|png|jpe?g|webp|gif|bmp|heic)$/.test(name)) {
       return "That file type cannot be read, use a spreadsheet or CSV.";
@@ -212,8 +210,14 @@ export default function ImportRosters() {
           data.people.map((p) => [p.name, p.matched_employee_id || ""]),
         ),
       );
+      const roles = data.role_options || shop?.role_hierarchy || [];
+      setRoleMapping(Object.fromEntries(data.people.map((p) => [p.name,
+        !p.role ? "" : roles.includes(p.role) ? p.role : null,
+      ])));
     } catch (err) {
-      toast.error(errorMessage(err, "Could not read that file"));
+      toast.error(err.response?.status === 503
+        ? "This file format is currently unavailable. Use Excel or CSV."
+        : errorMessage(err, "Could not read that file"));
     } finally {
       setBusy(false);
       setReading("");
@@ -237,6 +241,13 @@ export default function ImportRosters() {
         week_starts: weeks,
         employee_map: employeeMap,
         past_staff: pastStaff,
+        role_map: Object.fromEntries(Object.entries(roleMapping)
+          .filter(([name, role]) => {
+            const employee = employees.find((e) => e.employee_id === mapping[name]);
+            return role !== null && mapping[name] !== PAST_STAFF &&
+              !(employee && (employee.departments || ["Shop Floor"])
+                .includes(preview.department || department));
+          })),
       });
       const kept = data.past_staff_kept?.length || 0;
       toast.success(
@@ -277,13 +288,17 @@ export default function ImportRosters() {
   // on top of one already waiting to be confirmed.
   if (preview) {
     return (
-      <div className="max-w-6xl">
+      <div className="im-page im-review">
         <Review
           preview={preview}
           weeks={weeks}
           setWeeks={setWeeks}
           mapping={mapping}
           setMapping={setMapping}
+          roleMapping={roleMapping}
+          setRoleMapping={setRoleMapping}
+          roleOptions={preview.role_options || shop?.role_hierarchy || []}
+          department={preview.department || department}
           employees={employees}
           newPeople={newPeople}
           pastCount={pastPeople.length}
@@ -350,7 +365,7 @@ export default function ImportRosters() {
               <p className="im-drop-sub">
                 Excel · CSV{caps.pdf ? " · PDF" : ""}{caps.image ? " · photo" : ""}
                 {maxMb ? `, up to ${maxMb}MB` : ""}
-                {unavailable.length > 0 ? `. ${unavailable.join(" and ")} need server setup.` : ""}
+                {unavailable.length > 0 ? `. ${unavailable.join(" and ")} currently unavailable.` : ""}
               </p>
 
               <div className="im-drop-row">
@@ -421,26 +436,9 @@ export default function ImportRosters() {
       </div>
 
       <div className="im-formats">
-        {unavailable.length > 0 ? (
-          <>
-            <span className="im-tag">
-              {unavailable.length} format{unavailable.length === 1 ? "" : "s"} unavailable
-            </span>
-            <span className="im-formats-text">
-              {reasons.length > 0
-                ? reasons.join(" · ")
-                : `${unavailable.join(" and ")} need server setup.`}
-              {" "}Spreadsheets and CSV work regardless, they need no AI.
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="im-tag" data-tone="ok">All formats ready</span>
-            <span className="im-formats-text">
-              Spreadsheet, CSV, PDF and photo can all be read.
-            </span>
-          </>
-        )}
+        <span className="im-formats-text">Available: {availableFormats}.
+          {unavailable.length > 0 && <> Currently unavailable: {unavailable.join(" and ")}.</>}
+        </span>
       </div>
 
       <ImportedWeeks
@@ -788,209 +786,238 @@ const Hint = ({ icon: Icon, title, children, available = true }) => (
 );
 
 function Review({
-  preview, weeks, setWeeks, mapping, setMapping, employees,
+  preview, weeks, setWeeks, mapping, setMapping, roleMapping, setRoleMapping,
+  roleOptions, department, employees,
   newPeople, pastCount, pastShifts, selectedShifts, busy, onCancel, onCommit,
 }) {
   const Icon = KIND_ICON[preview.kind] || FileSpreadsheet;
   const s = preview.summary;
+  const dates = preview.date_selection;
+  const roleFor = (employee) => employee.department_roles?.[department] ?? employee.role ?? "";
+  const employeeFor = (p) => employees.find((e) => e.employee_id === mapping[p.name]);
+  const keepsRole = (p) => {
+    const employee = employeeFor(p);
+    return employee && (employee.departments || ["Shop Floor"]).includes(department);
+  };
+  const unresolvedRoles = preview.people.filter((p) =>
+    mapping[p.name] !== PAST_STAFF && !keepsRole(p) && roleMapping[p.name] == null);
 
   const toggleWeek = (w) =>
     setWeeks((prev) => (prev.includes(w) ? prev.filter((x) => x !== w) : [...prev, w]));
 
   return (
-    <div className="space-y-6">
-      <div className="glass rounded-2xl p-6 flex items-start justify-between gap-4">
-        <div className="flex items-start gap-4">
-          <Icon size={22} className="text-cyan-400 mt-1" />
-          <div>
-            <div className="font-medium">{preview.filename}</div>
-            <div className="text-xs ui-muted mt-1">
-              {s.weeks} week{s.weeks === 1 ? "" : "s"} · {s.shifts} shifts ·{" "}
-              {s.employees} people · {s.date_range[0]} → {s.date_range[1]}
-              {preview.pages ? ` · ${preview.pages} page(s)` : ""}
-            </div>
-          </div>
+    <div className="im-review-content">
+      <header className="im-head">
+        <div>
+          <div className="im-eyebrow">IMPORT REVIEW</div>
+          <h1 className="im-h1">Review your import</h1>
+          <p className="im-sub">Choose the weeks and match your people. Nothing is added until you confirm.</p>
         </div>
-        <button onClick={onCancel} className="ui-faint ui-hover-ink p-1">
-          <X size={18} />
+        <button onClick={onCancel} disabled={busy} className="im-btn im-btn-2">
+          <X size={16} aria-hidden="true" /> Choose another file
         </button>
-      </div>
+      </header>
 
-      {/* A model's reading of a picture is a guess; a parsed spreadsheet is
-          not. The distinction decides how hard the user should look. */}
-      {preview.needs_review && (
-        <div className="rounded-2xl p-5 ui-warn-surface border ui-warn-line">
-          <div className="flex items-center gap-2 ui-warn mb-2">
-            <AlertTriangle size={16} />
-            <span className="text-sm font-medium">Read from a {preview.kind}, check it</span>
+      <section className="im-review-file" aria-label="File summary">
+        <div className="im-review-file-heading">
+          <Icon size={26} aria-hidden="true" />
+          <div>
+            <h2>{preview.filename}</h2>
+            <p>
+              <time dateTime={s.date_range[0]}>{s.date_range[0]}</time>
+              <span aria-hidden="true"> → </span>
+              <time dateTime={s.date_range[1]}>{s.date_range[1]}</time>
+              {preview.pages > 0 && (
+                <span> · {preview.pages} {preview.kind === "spreadsheet"
+                  ? (preview.pages === 1 ? "worksheet" : "worksheets")
+                  : (preview.pages === 1 ? "page" : "pages")} read</span>
+              )}
+            </p>
           </div>
-          <p className="text-xs ui-body leading-relaxed">
-            Times and names were read from an image, so mistakes are possible. Check the
-            preview below before importing, this becomes the history the AI learns from.
-          </p>
         </div>
+        <dl className="im-review-stats">
+          <div><dt>Weeks found</dt><dd>{s.weeks.toLocaleString()}</dd></div>
+          <div><dt>Shifts found</dt><dd>{s.shifts.toLocaleString()}</dd></div>
+          <div><dt>People found</dt><dd>{s.employees.toLocaleString()}</dd></div>
+        </dl>
+      </section>
+
+      {dates && (
+        <section className="im-review-alert" aria-label="Import dates" role="status">
+          <Calendar size={20} aria-hidden="true" />
+          <div>
+            <h2>{dates.selected_weeks.length === 0 ? "Your selected date was not used"
+              : dates.file_weeks.length > 0 ? "Selected date used for undated weeks"
+              : "Using your selected week beginning " + dates.selected_weeks[0]}</h2>
+            <p>
+              {dates.selected_weeks.length === 0
+                ? <>The file already contains dates, so its dates were kept. Selected week: {dates.requested}.</>
+                : <>Weeks dated from your selection: {dates.selected_weeks.join(", ")}.
+                    {dates.file_weeks.length > 0 && <> Existing file dates were kept: {dates.file_weeks.join(", ")}.</>}</>}
+            </p>
+          </div>
+        </section>
+      )}
+
+      {preview.needs_review && (
+        <section className="im-review-alert" aria-label="Check the image reading">
+          <AlertTriangle size={20} aria-hidden="true" />
+          <div>
+            <h2>Check the {preview.kind === "pdf" ? "PDF" : "image"} reading</h2>
+            <p>Times and names were read from an image, so mistakes are possible. Check them before importing: this becomes the history the AI learns from.</p>
+          </div>
+        </section>
       )}
 
       {preview.notes?.length > 0 && (
-        <div className="glass rounded-2xl p-5">
-          <div className="text-xs ui-body mb-2">Notes</div>
-          <ul className="text-xs ui-body space-y-1">
-            {preview.notes.map((n, i) => <li key={i}>• {n}</li>)}
-          </ul>
-        </div>
+        <section className="im-review-notes" aria-label="Import notes">
+          <h2>Notes from this file</h2>
+          <ul>{preview.notes.map((note, i) => <li key={i}>{note}</li>)}</ul>
+        </section>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="glass rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-medium text-sm">Weeks to import</h2>
+      <div className="im-review-columns">
+        <section className="im-review-panel" aria-labelledby="import-weeks-heading">
+          <div className="im-review-panel-heading">
+            <div>
+              <h2 id="import-weeks-heading">Weeks to import</h2>
+              <p>{weeks.length} of {preview.weeks.length} selected</p>
+            </div>
             <button
-              onClick={() =>
-                setWeeks(
-                  weeks.length === preview.weeks.length
-                    ? []
-                    : preview.weeks.map((w) => w.week_start),
-                )
-              }
-              className="text-[10px] px-2 py-1 rounded-full glass-solid ui-body"
+              disabled={busy}
+              onClick={() => setWeeks(weeks.length === preview.weeks.length
+                ? [] : preview.weeks.map((w) => w.week_start))}
+              className="im-link im-review-select-all"
             >
-              {weeks.length === preview.weeks.length ? "None" : "All"}
+              {weeks.length === preview.weeks.length ? "Deselect all" : "Select all"}
             </button>
           </div>
-
-          <div className="space-y-1.5 max-h-96 overflow-y-auto scroll-thin">
-            {preview.weeks.map((w) => {
-              const on = weeks.includes(w.week_start);
-              return (
-                <label
-                  key={w.week_start}
-                  className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer ${
-                    on ? "ui-surface" : "ui-hover"
-                  }`}
-                >
+          <div className="im-review-list" tabIndex={0} role="region" aria-label="Available weeks">
+            {preview.weeks.map((w) => (
+              <div key={w.week_start} className="im-review-week" data-selected={weeks.includes(w.week_start)}>
+                <label className="im-review-week-choice">
                   <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={() => toggleWeek(w.week_start)}
-                    className="mt-0.5"
+                    type="checkbox" checked={weeks.includes(w.week_start)}
+                    disabled={busy} onChange={() => toggleWeek(w.week_start)}
+                    aria-label={"Import week beginning " + w.week_start}
                   />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-xs">{w.week_start}</span>
-                      <span className="text-[10px] ui-faint">{w.shifts} shifts</span>
-                      {w.already_imported && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded ui-surface ui-muted border ui-line">
-                          already imported
-                        </span>
-                      )}
-                      {w.warnings?.length > 0 && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded ui-warn-surface ui-warn border ui-warn-line">
-                          {w.warnings.length} warning{w.warnings.length === 1 ? "" : "s"}
-                        </span>
-                      )}
-                    </div>
-                    {w.sheet_name && (
-                      <div className="text-[10px] ui-faint truncate">{w.sheet_name}</div>
-                    )}
-                    {w.warnings?.slice(0, 2).map((warning, i) => (
-                      <div key={i} className="text-[10px] ui-warn mt-0.5">{warning}</div>
-                    ))}
-                  </div>
+                  <span className="im-review-week-body">
+                    <span className="im-review-week-title">
+                      <time dateTime={w.week_start}>{w.week_start}</time>
+                      <span>{w.shifts} shifts</span>
+                    </span>
+                    {w.sheet_name && <span className="im-review-sheet">{w.sheet_name}</span>}
+                    {w.already_imported && <span className="im-review-badge">Already imported</span>}
+                  </span>
                 </label>
-              );
-            })}
+                {w.warnings?.length > 0 && (
+                  <details className="im-review-warnings" open>
+                    <summary>{w.warnings.length} warning{w.warnings.length === 1 ? "" : "s"} to review</summary>
+                    <ul>{w.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul>
+                  </details>
+                )}
+              </div>
+            ))}
           </div>
-        </div>
+        </section>
 
-        <div className="glass rounded-2xl p-6">
-          <h2 className="font-medium text-sm mb-1">People found</h2>
-          <p className="text-[11px] ui-muted mb-4">
-            Match each name to someone you already have, or leave as “Create new”.
-            For anyone who has left, choose <em>No longer works here</em>, their
-            shifts stay in the history so the staffing levels stay right, but they
-            are never rostered and never appear in your staff list.
-          </p>
-
-          <div className="space-y-2 max-h-96 overflow-y-auto scroll-thin">
-            {preview.people.map((p) => {
-              const choice = mapping[p.name] ?? "";
-              return (
-                <div key={p.name} className="flex items-center gap-2">
-                  <div className="w-32 shrink-0">
-                    <div className="text-xs truncate">{p.name}</div>
-                    <div className="text-[10px] ui-faint truncate">
-                      {p.role} · {p.shifts} shifts
-                    </div>
-                    {/* Only when the sheet and your role list disagree. The
-                        title is kept as written and sorts last until you
-                        position it in Settings - worth seeing now. */}
-                    {p.role_in_file && p.role_in_file !== p.role && (
-                      <div className="text-[10px] truncate" style={{ color: "var(--warn)" }}>
-                        sheet says “{p.role_in_file}”
-                      </div>
-                    )}
-                  </div>
-                  <select
-                    data-testid={`map-${p.name}`}
-                    value={choice}
-                    onChange={(e) =>
-                      setMapping((prev) => ({ ...prev, [p.name]: e.target.value }))
-                    }
-                    className="flex-1 px-2 py-1.5 rounded-lg text-xs"
-                    style={choice === PAST_STAFF ? { color: "var(--ink-mute)" } : undefined}
-                  >
-                    <option value="">➕ Create new employee</option>
-                    <option value={PAST_STAFF}>🚫 No longer works here</option>
-                    {employees.map((e) => (
-                      <option key={e.employee_id} value={e.employee_id}>
-                        {e.name}, {(e.departments || ["Shop Floor"]).join(", ")}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              );
-            })}
+        <section className="im-review-panel" aria-labelledby="import-people-heading">
+          <div className="im-review-panel-heading">
+            <div>
+              <h2 id="import-people-heading">People found</h2>
+              <p>Match existing staff, create a new employee, or choose “No longer works here”. Choose new staff roles from Shop Settings; existing staff keep their role.</p>
+            </div>
           </div>
-
+          <div className="im-review-list" tabIndex={0} role="region" aria-label="People to match">
+            {preview.people.map((p, index) => (
+              <div key={p.name} className="im-review-person">
+                <label htmlFor={"import-map-" + index}>
+                  <span className="im-review-person-name">{p.name}</span>
+                  <span className="im-review-person-meta">{p.shifts} shifts</span>
+                  <span className="im-review-person-meta">{p.role_in_file
+                    ? <>Role in file: <strong>{p.role_in_file}</strong></>
+                    : "No role in file"}</span>
+                  <span className="im-review-field-label">Match employee</span>
+                </label>
+                <select
+                  id={"import-map-" + index}
+                  data-testid={"map-" + p.name}
+                  value={mapping[p.name] ?? ""}
+                  disabled={busy}
+                  onChange={(e) => setMapping((prev) => ({ ...prev, [p.name]: e.target.value }))}
+                  className="im-review-match"
+                >
+                  <option value="">Create new employee</option>
+                  <option value={PAST_STAFF}>No longer works here</option>
+                  {employees.map((e) => (
+                    <option key={e.employee_id} value={e.employee_id}>
+                      {e.name}{roleFor(e) ? " — " + roleFor(e) : ""}
+                    </option>
+                  ))}
+                </select>
+                {employeeFor(p) && (
+                  <span className="im-review-person-meta">Roster groups: {(employeeFor(p).departments || ["Shop Floor"]).join(", ")}</span>
+                )}
+                {keepsRole(p) ? (
+                  <p className="im-review-kept-role">Keeping existing role: <strong>{roleFor(employeeFor(p)) || "No role"}</strong></p>
+                ) : mapping[p.name] !== PAST_STAFF ? (
+                  <>
+                    <label className="im-review-field-label" htmlFor={"import-role-" + index}>Import role{department ? " in " + department : ""}</label>
+                    <select id={"import-role-" + index} className="im-review-match"
+                      value={roleMapping[p.name] ?? "__choose_role__"} disabled={busy}
+                      aria-invalid={roleMapping[p.name] == null}
+                      onChange={(e) => setRoleMapping((prev) => ({ ...prev, [p.name]: e.target.value }))}>
+                      <option value="__choose_role__" disabled>Choose a role from Shop Settings</option>
+                      <option value="">No role</option>
+                      {roleOptions.map((role) => <option key={role} value={role}>{role}</option>)}
+                    </select>
+                    {roleMapping[p.name] == null && <span className="im-review-role-note">The file’s role does not match Shop Settings. Choose its role, or choose No role.</span>}
+                  </>
+                ) : <span className="im-review-person-meta">Past staff: history only; not added to active staff.</span>}
+              </div>
+            ))}
+          </div>
           {pastCount > 0 && (
-            <p className="text-[11px] mt-3" style={{ color: "var(--ink-mute-2)" }}>
+            <p className="im-review-past">
               {pastCount} {pastCount === 1 ? "person" : "people"} marked as left,
-              keeping {pastShifts} shift{pastShifts === 1 ? "" : "s"} of history
-              without adding them to your staff.
+              keeping {pastShifts} shift{pastShifts === 1 ? "" : "s"} of history without adding them to your staff.
             </p>
           )}
-        </div>
+        </section>
       </div>
 
       {s.unreadable_cells > 0 && (
-        <div className="glass rounded-2xl p-5 text-xs ui-body">
-          {s.unreadable_cells} cell{s.unreadable_cells === 1 ? "" : "s"} could not be read
-          and will be skipped, usually hours written without start and end times.
-        </div>
+        <section className="im-review-alert" aria-label="Unreadable cells">
+          <AlertTriangle size={20} aria-hidden="true" />
+          <div>
+            <h2>{s.unreadable_cells} cell{s.unreadable_cells === 1 ? "" : "s"} could not be read</h2>
+            <p>These will be skipped, usually because hours were written without start and end times.</p>
+          </div>
+        </section>
       )}
 
-      <div className="glass rounded-2xl p-6 flex items-center justify-between gap-4">
-        <div className="text-xs ui-body">
-          Importing <span className="text-cyan-400">{weeks.length}</span> week
-          {weeks.length === 1 ? "" : "s"} · {selectedShifts} shifts
-          {newPeople > 0 && <> · creating <span style={{ color: "var(--primary)" }}>{newPeople}</span> new employee{newPeople === 1 ? "" : "s"}</>}
-          {pastCount > 0 && <> · <span style={{ color: "var(--ink-mute)" }}>{pastCount}</span> kept as past staff</>}
+      <footer className="im-review-footer">
+        <div className="im-review-total" aria-live="polite">
+          <strong>{weeks.length} week{weeks.length === 1 ? "" : "s"} selected · {selectedShifts.toLocaleString()} shifts</strong>
+          <p>
+            {weeks.length === 0 ? "Select at least one week to continue." : "Ready to add to your roster history."}
+            {unresolvedRoles.length > 0 && <> Choose a role for {unresolvedRoles.length} {unresolvedRoles.length === 1 ? "person" : "people"} before importing.</>}
+            {weeks.length > 0 && newPeople > 0 && <> Creating {newPeople} new employee{newPeople === 1 ? "" : "s"}.</>}
+            {weeks.length > 0 && pastCount > 0 && <> {pastCount} kept as past staff.</>}
+          </p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={onCancel} className="btn btn-secondary">
-            Cancel
-          </button>
+        <div className="im-review-actions">
+          <button onClick={onCancel} disabled={busy} className="im-btn im-btn-2">Cancel</button>
           <button
             data-testid="btn-commit-import"
-            onClick={onCommit}
-            disabled={busy || weeks.length === 0}
-            className="btn btn-primary"
+            onClick={onCommit} disabled={busy || weeks.length === 0 || unresolvedRoles.length > 0}
+            aria-busy={busy} className="im-btn im-btn-1"
           >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-            Import
+            {busy ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <CheckCircle2 size={16} aria-hidden="true" />}
+            {busy ? "Importing…" : "Import selected weeks"}
           </button>
         </div>
-      </div>
+      </footer>
     </div>
   );
 }

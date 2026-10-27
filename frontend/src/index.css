@@ -709,9 +709,9 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
    Theme tokens
    ------------------------------------------------------------------
    Every redesigned page reads these rather than literal hex, so the
-   whole app flips by setting data-theme on <html>. Dark is the default
-   and is exactly the palette the handoffs specified - the light values
-   are the same design inverted, not a different one.
+   whole app flips by setting data-theme on <html>. The base tokens are dark;
+   startup applies light unless the browser has a saved dark choice. The light
+   values are the same design inverted, not a different one.
 
    --t-onsurf is the channel triplet behind the translucent overlays on
    Fixed Shifts: white-on-dark becomes black-on-light at the same alpha.
@@ -3262,8 +3262,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
    ------------------------------------------------------------------
    Upload split with the drop target as hero, format line, then the
    imported weeks grouped by month. Scoped under .im-*.
-   The preview/commit review stage keeps its own styling - it is a
-   separate step the handoff does not cover.
+   The preview/commit review uses the same type scale and theme tokens.
    ------------------------------------------------------------------ */
 .im-page {
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
@@ -3377,6 +3376,82 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .im-link-mute { color: var(--t-muted); font-weight: 600; }
 
 /* Weeks table ------------------------------------------------------ */
+/* Review stays within the import theme, including all post-upload states. */
+.im-review-content { max-width: 1440px; margin: 0 auto; padding-bottom: 12px; }
+.im-review h1, .im-review h2 { font-family: inherit; color: var(--t-ink); }
+.im-review-file { margin: 0 28px 24px; border: 1px solid var(--t-hairline); border-radius: 10px; overflow: hidden; }
+.im-review-file-heading { display: flex; align-items: flex-start; gap: 16px; padding: 22px 24px; }
+.im-review-file-heading > svg { color: var(--t-accent); flex: none; margin-top: 3px; }
+.im-review-file-heading > div { min-width: 0; }
+.im-review-file-heading h2 { margin: 0; font-size: 20px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.im-review-file-heading p { margin: 6px 0 0; font-size: 14px; line-height: 1.6; color: var(--t-body2); }
+.im-review-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; background: var(--t-inset); border-top: 1px solid var(--t-hairline); }
+.im-review-stats > div { padding: 18px 24px 22px; min-width: 0; }
+.im-review-stats > div + div { border-left: 1px solid var(--t-hairline); }
+.im-review-stats dt { font-size: 14px; font-weight: 600; color: var(--t-body2); }
+.im-review-stats dd { margin: 6px 0 0; font-size: 36px; font-weight: 800; line-height: 1.15; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.im-review-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 24px; margin: 0 28px 24px; align-items: start; }
+.im-review-panel { min-width: 0; border: 1px solid var(--t-hairline); border-radius: 10px; overflow: hidden; }
+.im-review-panel-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 20px 22px; border-bottom: 1px solid var(--t-hairline); }
+.im-review-panel-heading h2, .im-review-notes h2 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -.025em; line-height: 1.3; }
+.im-review-panel-heading p { margin: 8px 0 0; font-size: 14px; line-height: 1.6; color: var(--t-body2); }
+.im-review-select-all { min-height: 40px; flex: none; }
+.im-review-list { max-height: 560px; overflow-y: auto; scrollbar-color: var(--t-offborder) var(--t-inset); scrollbar-width: thin; }
+.im-review-week { padding: 16px 20px; }
+.im-review-week + .im-review-week, .im-review-person + .im-review-person { border-top: 1px solid var(--t-hairline); }
+.im-review-week[data-selected="true"] { background: var(--t-hover); box-shadow: inset 3px 0 var(--t-accent); }
+.im-review-week-choice { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 12px; cursor: pointer; }
+.im-review-week-choice input { width: 20px; height: 20px; min-height: 20px; margin: 3px 0; padding: 0; accent-color: var(--t-accent); }
+.im-review-week-body { min-width: 0; }
+.im-review-week-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; font-size: 14px; color: var(--t-body2); }
+.im-review-week-title time { font-size: 16px; font-weight: 700; color: var(--t-ink); font-variant-numeric: tabular-nums; }
+.im-review-sheet { display: block; font-size: 14px; line-height: 1.6; margin-top: 4px; color: var(--t-body2); overflow-wrap: anywhere; }
+.im-review-badge { display: inline-block; margin-top: 8px; padding: 3px 8px; border: 1px solid var(--t-input); border-radius: 4px; font-size: 13px; font-weight: 600; color: var(--t-body2); background: var(--t-inset); }
+.im-review-warnings { margin: 6px 0 0 34px; color: var(--t-warn); font-size: 14px; line-height: 1.6; }
+.im-review-warnings summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
+.im-review-warnings ul { padding-left: 18px; margin: 6px 0 0; }
+.im-review-warnings li + li { margin-top: 8px; }
+.im-review-warnings li { overflow-wrap: anywhere; }
+.im-review-person { display: grid; gap: 10px; padding: 16px 20px; }
+.im-review-person label { min-width: 0; cursor: pointer; }
+.im-review-person-name { display: block; font-size: 16px; line-height: 1.5; font-weight: 700; overflow-wrap: anywhere; }
+.im-review-person-meta, .im-review-role-note { display: block; font-size: 14px; line-height: 1.6; color: var(--t-body2); overflow-wrap: anywhere; }
+.im-review-role-note { color: var(--t-warn); margin-top: 4px; }
+.im-review-field-label { display: block; font-size: 14px; line-height: 1.5; font-weight: 600; color: var(--t-body2); margin-top: 6px; }
+.im-review-kept-role { margin: 0; font-size: 14px; line-height: 1.6; color: var(--t-body2); }
+.im-review-match { width: 100%; min-width: 0; min-height: 44px; padding: 9px 12px; font-family: inherit; font-size: 15px; }
+.im-review-alert { display: flex; align-items: flex-start; gap: 14px; padding: 18px 22px; margin: 0 28px 24px; border: 1px solid var(--t-warn); border-radius: 8px; background: var(--t-warn-wash); color: var(--t-warn); }
+.im-review-alert > svg { flex: none; margin-top: 2px; }
+.im-review-alert h2 { margin: 0; font-size: 16px; font-weight: 700; line-height: 1.5; color: var(--t-warn); }
+.im-review-alert p { margin: 5px 0 0; font-size: 14px; line-height: 1.65; color: var(--t-body2); }
+.im-review-notes { margin: 0 28px 24px; padding: 20px 22px; border: 1px solid var(--t-hairline); border-radius: 8px; }
+.im-review-notes ul { margin: 12px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.65; color: var(--t-body2); }
+.im-review-past { margin: 0; padding: 16px 20px; border-top: 1px solid var(--t-hairline); background: var(--t-inset); font-size: 14px; line-height: 1.6; color: var(--t-body2); }
+.im-review-footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 20px 28px; background: var(--t-canvas); border-top: 1px solid var(--t-rule); }
+.im-review-total { min-width: 0; }
+.im-review-total strong { display: block; font-size: 17px; line-height: 1.5; font-weight: 700; font-variant-numeric: tabular-nums; }
+.im-review-total p { margin: 5px 0 0; font-size: 14px; line-height: 1.6; color: var(--t-body2); }
+.im-review-actions { display: flex; flex: none; gap: 10px; }
+@media (max-width: 1100px) {
+  .im-review-columns { grid-template-columns: minmax(0, 1fr); }
+  .im-review-list { max-height: 480px; }
+}
+@media (max-width: 600px) {
+  .im-review .im-head { padding: 22px 18px; }
+  .im-review-file, .im-review-columns, .im-review-alert, .im-review-notes { margin-left: 18px; margin-right: 18px; }
+  .im-review-file-heading { padding: 18px 16px; gap: 12px; }
+  .im-review-file-heading h2 { font-size: 18px; }
+  .im-review-stats > div { padding: 14px 12px 18px; }
+  .im-review-stats dt { font-size: 13px; }
+  .im-review-stats dd { font-size: clamp(22px, 6vw, 28px); }
+  .im-review-panel-heading { padding: 18px 16px; gap: 8px; }
+  .im-review-panel-heading h2 { font-size: 20px; }
+  .im-review-week, .im-review-person { padding: 14px 16px; }
+  .im-review-footer { padding: 16px 18px; flex-direction: column; align-items: stretch; }
+  .im-review-actions > button { flex: 1; justify-content: center; }
+  .im-review-actions > .im-btn { padding: 0 12px; font-size: 14px; }
+}
+
 .im-section {
   display: flex; align-items: flex-end; justify-content: space-between;
   flex-wrap: wrap; gap: 14px; padding: 24px 28px 0;

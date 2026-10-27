@@ -95,8 +95,8 @@ function Shell() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [counts, setCounts] = useState({});
-  // Dark is the default - it is the palette every handoff specified.
-  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || "dark");
+  // Light is the default; an existing dark choice survives sign-out and reload.
+  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light");
   const [rosterFlag, setRosterFlag] = useState(null);
   const [shop, setShop] = useState(null);
   const [department, setDepartment] = useState(

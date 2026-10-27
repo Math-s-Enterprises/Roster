@@ -2626,7 +2626,7 @@ class TestImportCapabilities:
         caps = client.get("/api/imports/capabilities", headers=auth(token)).json()
         assert caps["image"] is False
         assert caps["pdf"] is False, "a PDF still needs the model to read its pages"
-        assert "ANTHROPIC_API_KEY" in caps["reasons"]["llm"]
+        assert caps["reasons"]["llm"] == "Photo and PDF uploads are currently unavailable. Use Excel or CSV."
 
     def test_reasons_are_empty_when_everything_is_configured(self, client, monkeypatch):
         from app.services import llm

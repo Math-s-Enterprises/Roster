@@ -11,17 +11,19 @@ from tests.test_api import auth, register
 
 def roster_response(week_start="2025-01-20"):
     shifts = []
-    for name, days in (("Megan", ("tue", "wed", "thu", "sun")),
-                       ("John", ("wed", "thu", "fri", "sat"))):
+    for name, days in (("Megan", ("tue", "wed", "thu")),
+                       ("John", ("wed", "thu"))):
         for day in days:
             shifts.append({
                 "employee_name": name, "role": "Shop Floor", "day": day,
-                "start": "06:00", "end": "12:00" if day == "sun" else "16:00",
+                "start": "06:00", "end": "16:00",
                 "note": "",
             })
     for name, day, note in (("Megan", "mon", "b/hol"), ("John", "tue", "b/hol"),
                             ("Megan", "fri", "off"), ("Megan", "sat", "off"),
-                            ("John", "mon", "off"), ("John", "sun", "off")):
+                            ("Megan", "sun", "off"), ("John", "mon", "off"),
+                            ("John", "fri", "hol"), ("John", "sat", "hol"),
+                            ("John", "sun", "off")):
         shifts.append({
             "employee_name": name, "role": "Shop Floor", "day": day,
             "start": None, "end": None, "note": note,
@@ -54,16 +56,19 @@ def test_selected_week_overrides_an_image_date_through_preview_and_commit(client
     assert response.status_code == 201, response.text
     preview = response.json()
     assert preview["summary"]["date_range"] == ["2026-10-26", "2026-10-26"]
-    assert preview["summary"]["shifts"] == 8
+    assert preview["summary"]["shifts"] == 5
     assert preview["summary"]["unreadable_cells"] == 0
     assert preview["weeks"][0]["week_start"] == "2026-10-26"
     assert preview["needs_review"] is True
+    assert preview["date_selection"] == {
+        "requested": "2026-10-26", "selected_weeks": ["2026-10-26"], "file_weeks": [],
+    }
     response = client.post(f"/api/imports/{preview['import_id']}/commit", headers=headers,
                            json={"week_starts": ["2026-10-26"],
                                  "employee_map": {"Megan": "", "John": ""}})
     assert response.status_code == 200, response.text
     history = client.get("/api/imports/history", headers=headers).json()
-    assert [(w["week_start"], w["shifts"]) for w in history] == [("2026-10-26", 8)]
+    assert [(w["week_start"], w["shifts"]) for w in history] == [("2026-10-26", 5)]
 
 
 @pytest.mark.parametrize("image_date", [None, "2025-01-20"])
@@ -104,6 +109,35 @@ def test_dated_spreadsheet_weeks_are_not_overwritten(monkeypatch):
     assert [w.week_start for w in result.weeks] == ["2026-10-05", "2026-10-12"]
 
 
+@pytest.mark.parametrize("dates,selected_weeks,file_weeks", [
+    (["2026-10-05", "2026-10-12"], [], ["2026-10-05", "2026-10-12"]),
+    ([None, None], ["2026-10-26", "2026-11-02"], []),
+    (["2026-10-05", None], ["2026-10-26"], ["2026-10-05"]),
+])
+def test_preview_explains_selected_and_existing_dates_without_changing_assignment(
+    client, monkeypatch, dates, selected_weeks, file_weeks,
+):
+    weeks = [file_import._week_from_ocr(roster_response(value), f"sheet {i}", 2026)
+             for i, value in enumerate(dates)]
+    monkeypatch.setattr(file_import, "_read_spreadsheet", lambda *_: (weeks, len(weeks)))
+    response = client.post("/api/imports", headers=auth(register(client)),
+        files={"file": ("roster.xlsx", b"fixture", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data={"week_start": "2026-10-26"})
+    assert response.status_code == 201, response.text
+    assert response.json()["date_selection"] == {
+        "requested": "2026-10-26", "selected_weeks": selected_weeks, "file_weeks": file_weeks,
+    }
+    assert sorted(w["week_start"] for w in response.json()["weeks"]) == sorted(selected_weeks + file_weeks)
+
+
+def test_unavailable_photo_response_contains_no_configuration_instructions(client, monkeypatch):
+    monkeypatch.setattr(llm, "enabled", False)
+    response = client.post("/api/imports", headers=auth(register(client)),
+        files={"file": ("roster.png", b"fixture", "image/png")}, data={"week_start": "2026-10-26"})
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Photo and PDF uploads are currently unavailable. Use Excel or CSV."
+
+
 def test_image_reading_requests_a_schema_and_preserves_all_shift_times(monkeypatch):
     requests = stub_anthropic(monkeypatch, json.dumps(roster_response()))
     parsed = asyncio.run(llm.ocr_roster_bytes(b"test", ["Megan", "John"]))
@@ -113,14 +147,15 @@ def test_image_reading_requests_a_schema_and_preserves_all_shift_times(monkeypat
     week = file_import._week_from_ocr(parsed, "image", 2026)
     assert [(s.employee_name, s.day, s.start, s.end) for s in week.shifts] == [
         ("Megan", "tue", "06:00", "16:00"), ("Megan", "wed", "06:00", "16:00"),
-        ("Megan", "thu", "06:00", "16:00"), ("Megan", "sun", "06:00", "12:00"),
+        ("Megan", "thu", "06:00", "16:00"),
         ("John", "wed", "06:00", "16:00"), ("John", "thu", "06:00", "16:00"),
-        ("John", "fri", "06:00", "16:00"), ("John", "sat", "06:00", "16:00"),
     ]
     assert [(a.employee_name, a.day, a.kind) for a in week.absences] == [
         ("Megan", "mon", "bank_holiday"), ("John", "tue", "bank_holiday"),
         ("Megan", "fri", "off"), ("Megan", "sat", "off"),
-        ("John", "mon", "off"), ("John", "sun", "off"),
+        ("Megan", "sun", "off"), ("John", "mon", "off"),
+        ("John", "fri", "holiday"), ("John", "sat", "holiday"),
+        ("John", "sun", "off"),
     ]
     assert week.unparsed_cells == []
 
@@ -145,7 +180,7 @@ def test_missing_times_are_reported_and_not_invented():
     parsed = roster_response()
     parsed["shifts"][0]["end"] = None
     week = file_import._week_from_ocr(parsed, "image", 2026)
-    assert len(week.shifts) == 7
+    assert len(week.shifts) == 4
     assert [(c["employee_name"], c["day"]) for c in week.unparsed_cells] == [("Megan", "tue")]
 
 
@@ -178,5 +213,5 @@ def test_one_unreadable_pdf_page_does_not_lose_other_dated_weeks(monkeypatch):
         "roster.pdf", b"test", week_start="2026-10-26",
     ))
     assert [w.week_start for w in result.weeks] == ["2026-10-12"]
-    assert len(result.weeks[0].shifts) == 8
+    assert len(result.weeks[0].shifts) == 5
     assert result.notes == ["page 1: could not be read (AI did not return a valid roster.)"]

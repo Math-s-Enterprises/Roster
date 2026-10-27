@@ -48,6 +48,11 @@ class CommitRequest(BaseModel):
     )
     # name -> employee_id, or name -> "" to create a new employee
     employee_map: Dict[str, str] = Field(default_factory=dict)
+    role_map: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Reviewed job titles for new employees or new group memberships; "
+                    "use a configured role, or an empty string for no role.",
+    )
     skip_unmapped: bool = Field(
         True, description="Skip shifts whose employee is not mapped or created."
     )
@@ -60,17 +65,8 @@ class CommitRequest(BaseModel):
 
 
 def _map_role(raw: Optional[str], shop: Optional[Dict[str, Any]] = None) -> str:
-    """A sheet's job title, as this shop spells it.
-
-    Falls back to the bottom of the shop's ladder when the sheet says nothing
-    at all, rather than to a hardcoded "Floor Assistant" that a shop with
-    different job titles would never use.
-    """
-    matched = hierarchy.match_role(raw, shop)
-    if matched:
-        return matched
-    ladder = hierarchy.get_hierarchy(shop)
-    return ladder[-1] if ladder else "Floor Assistant"
+    """Resolve a written title without inventing one for a blank cell."""
+    return hierarchy.match_role(raw, shop)
 
 
 # Imported staff are created with no email, because a roster spreadsheet does
@@ -121,9 +117,10 @@ async def upload_roster_file(
     except file_import.UnsupportedFile as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
     except llm.LLMUnavailable as exc:
+        log.warning("Photo/PDF import unavailable: %s", exc)
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            f"Reading photos and PDFs needs AI to be configured. {exc}",
+            "Photo and PDF uploads are currently unavailable. Use Excel or CSV.",
         )
     except Exception as exc:
         log.exception("Import parse failed")
@@ -160,7 +157,8 @@ async def upload_roster_file(
             match = existing.get(name.strip().lower())
             people.setdefault(name, {
                 "name": name,
-                "role": _map_role(role, import_shop),
+                "role": (department_service.employee_for(match, department).get("role", "")
+                         if match else _map_role(role, import_shop)),
                 # Shown alongside so the manager can see when the sheet's
                 # wording and the shop's ladder disagree, before committing.
                 "role_in_file": (role or "").strip() or None,
@@ -199,6 +197,12 @@ async def upload_roster_file(
         "kind": result.kind,
         "department": department,
         "pages": result.pages,
+        "role_options": hierarchy.get_hierarchy(import_shop),
+        "date_selection": {
+            "requested": week_start,
+            "selected_weeks": [w.week_start for w in usable if w.date_from_selection],
+            "file_weeks": [w.week_start for w in usable if not w.date_from_selection],
+        } if week_start else None,
         # Photos and PDFs are a model's reading of a picture; spreadsheets are
         # parsed exactly. The UI uses this to decide how loudly to warn.
         "needs_review": result.needs_review,
@@ -258,11 +262,10 @@ async def import_capabilities():
         "image": llm.enabled,
         "reasons": {
             **({} if llm.enabled else {
-                "llm": "Reading photos and PDFs needs ANTHROPIC_API_KEY in backend/.env."
+                "llm": "Photo and PDF uploads are currently unavailable. Use Excel or CSV."
             }),
             **({} if pdf_renderer else {
-                "pdf_renderer": "PDF support needs the 'pymupdf' package. "
-                                "Run: pip install -r requirements.txt"
+                "pdf_renderer": "PDF uploads are currently unavailable. Use Excel or CSV."
             }),
         },
         "max_bytes": file_import.MAX_UPLOAD_BYTES,
@@ -374,7 +377,21 @@ async def commit_import(
                           or [department_service.DEFAULT_DEPARTMENT])
     }
 
-    async def add_membership(employee_id: str, raw_role: Optional[str] = None) -> None:
+    # Validate the entire review before changing any membership or creating staff.
+    configured_roles = hierarchy.get_hierarchy(import_shop)
+    for name, role in payload.role_map.items():
+        if role and role not in configured_roles:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {
+                "message": "Choose a role from Shop Settings, or choose No role.",
+                "reasons": [f"{name}: {role} is not a configured role for {department}."],
+            })
+    employee_ids = {e["employee_id"] for e in employee_records}
+    if any(chosen and chosen not in employee_ids for chosen in payload.employee_map.values()):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Choose an employee from this shop before importing.")
+
+    async def add_membership(employee_id: str, raw_role: Optional[str] = None,
+                             reviewed_role: Optional[str] = None) -> None:
         employee = next((e for e in employee_records
                          if e.get("employee_id") == employee_id), None)
         if not employee:
@@ -386,9 +403,13 @@ async def commit_import(
             changed = True
         department_roles = dict(employee.get("department_roles") or {})
         if department not in department_roles:
-            department_roles[department] = _map_role(
-                raw_role or employee.get("role"), import_shop,
-            )
+            # Existing members keep their title; only a new group gets a reviewed role.
+            if department in (employee.get("departments") or [department_service.DEFAULT_DEPARTMENT]):
+                department_roles[department] = employee.get("role", "")
+            elif reviewed_role is not None:
+                department_roles[department] = reviewed_role
+            else:
+                department_roles[department] = _map_role(raw_role or employee.get("role"), import_shop)
             changed = True
         if changed:
             await scope.employees.update_one(
@@ -427,34 +448,35 @@ async def commit_import(
             chosen = payload.employee_map.get(name)
             if chosen:
                 name_to_id[name] = chosen
-                await add_membership(chosen, roles.get(name) or entry.get("role"))
+                await add_membership(chosen, roles.get(name) or entry.get("role"),
+                                     payload.role_map.get(name))
                 continue
             match = existing.get(name.strip().lower())
             if match:
                 name_to_id[name] = match["employee_id"]
                 await add_membership(
                     match["employee_id"], roles.get(name) or entry.get("role"),
+                    payload.role_map.get(name),
                 )
                 continue
             is_leaver = name.strip().lower() in leavers
             if payload.skip_unmapped and not is_leaver and name not in payload.employee_map:
                 continue
             employee_id = f"emp_{uuid.uuid4().hex[:12]}"
+            role = payload.role_map.get(
+                name, _map_role(roles.get(name) or entry.get("role"), import_shop),
+            )
             await scope.employees.insert({
                 "employee_id": employee_id,
                 "name": name,
                 "email": None,
-                "role": _map_role(roles.get(name) or entry.get("role"), import_shop),
+                "role": role,
                 "age": DEFAULT_AGE,
                 "hourly_rate": DEFAULT_RATE,
                 "max_weekly_hours": DEFAULT_MAX_WEEKLY_HOURS,
                 "preferred_days_off": [],
                 "departments": [department],
-                "department_roles": {
-                    department: _map_role(
-                        roles.get(name) or entry.get("role"), import_shop,
-                    )
-                },
+                "department_roles": {department: role},
                 "imported": True,
                 "is_active": not is_leaver,
                 "past_staff": is_leaver,

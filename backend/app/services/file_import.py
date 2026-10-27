@@ -101,7 +101,17 @@ def detect_kind(filename: str, content_type: str = "") -> str:
 # Spreadsheets and CSV - deterministic
 # ---------------------------------------------------------------------------
 def _read_spreadsheet(data: bytes, year: int) -> Tuple[List[ParsedWeek], int]:
+    import olefile
     import openpyxl
+
+    # Encrypted OOXML is an OLE container, not the ZIP that openpyxl expects.
+    if data.startswith(olefile.MAGIC):
+        with olefile.OleFileIO(io.BytesIO(data)) as container:
+            if container.exists("EncryptionInfo") and container.exists("EncryptedPackage"):
+                raise UnsupportedFile(
+                    "This Excel file is password-protected. Open it in Excel, save a copy "
+                    "without password protection, then upload that copy."
+                )
 
     workbook = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
     sheets = [
@@ -226,6 +236,8 @@ def _week_from_ocr(
             if parsed_date:
                 week.week_start = parsed_date.isoformat()
 
+    if week_start and week.week_start:
+        week.date_from_selection = True
     if week_start and week.week_start != parsed.get("week_start"):
         week.warnings.append(f"Using your selected week beginning {week.week_start}.")
     if not week.week_start:
@@ -294,6 +306,7 @@ def _apply_week_start_fallback(
         if week.week_start or not week.shifts:
             continue
         week.week_start = cursor.isoformat()
+        week.date_from_selection = True
         week.warnings.append(
             f"No date in the file, assigned to the week beginning {cursor.isoformat()}."
         )
