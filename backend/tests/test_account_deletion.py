@@ -28,6 +28,16 @@ ALL = sorted(
 PASSWORD = "password123"
 
 
+def legacy_google_account(client, monkeypatch, profile):
+    """Accounts created before password setup still need their deletion path."""
+    run(db.users.insert_one({
+        "user_id": "legacy-google-user",
+        **{key: profile[key] for key in ("email", "name", "google_sub", "picture")},
+    }))
+    monkeypatch.setattr(google_auth, "verify_id_token", lambda _: dict(profile))
+    return client.post("/api/auth/google", json={"credential": "legacy-sign-in"})
+
+
 def run(coro):
     return asyncio.run(coro)
 
@@ -521,8 +531,7 @@ class TestComingBack:
 
     def test_google_sign_in_brings_it_back_too(self, client, monkeypatch):
         profile = {"email": "gina@gmail.com", "google_sub": "sub-gina", "name": "Gina G", "picture": ""}
-        monkeypatch.setattr(google_auth, "verify_id_token", lambda c: dict(profile))
-        first = client.post("/api/auth/google", json={"credential": "x"}).json()
+        first = legacy_google_account(client, monkeypatch, profile).json()
         assert "restored" not in first
         sent = client.post("/api/auth/delete-account", headers=auth(first["token"]),
                            json={"confirm_email": "gina@gmail.com", "google_credential": "fresh"})
@@ -533,8 +542,7 @@ class TestComingBack:
 
     def test_google_sign_in_after_the_date_is_refused(self, client, monkeypatch):
         profile = {"email": "gina@gmail.com", "google_sub": "sub-gina", "name": "Gina G", "picture": ""}
-        monkeypatch.setattr(google_auth, "verify_id_token", lambda c: dict(profile))
-        first = client.post("/api/auth/google", json={"credential": "x"}).json()
+        first = legacy_google_account(client, monkeypatch, profile).json()
         client.post("/api/auth/delete-account", headers=auth(first["token"]),
                     json={"confirm_email": "gina@gmail.com", "google_credential": "fresh"})
         user_id = [u for u in docs("users")][0]["user_id"]
@@ -716,13 +724,12 @@ class TestOtherAccountsAreUntouched:
 
 
 # --- accounts that sign in with Google -------------------------------------------------------
-class TestGoogleAccounts:
+class TestLegacyGoogleAccounts:
     PROFILE = {"email": "gina@gmail.com", "google_sub": "sub-gina", "name": "Gina G", "picture": "http://x/p.png"}
 
     @pytest.fixture()
     def gina(self, client, monkeypatch):
-        monkeypatch.setattr(google_auth, "verify_id_token", lambda credential: dict(self.PROFILE))
-        signed_in = client.post("/api/auth/google", json={"credential": "first-sign-in"})
+        signed_in = legacy_google_account(client, monkeypatch, self.PROFILE)
         assert signed_in.status_code == 200, signed_in.text
         return signed_in.json()["token"], signed_in.json()["user"]
 

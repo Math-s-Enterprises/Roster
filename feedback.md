@@ -1988,3 +1988,60 @@ browser, as before; cross-device preference sync was not requested or added.
 The backend suite was not repeated for this frontend-only change. Changes 1
 and 2 and unrelated existing edits are preserved. Nothing was committed,
 pushed or deployed; no live account was used for the theme tests.
+
+## 39. A first Google signup must choose a Roster password before an account exists
+
+The user requires new Google signups to create a password before entering the
+app. Existing accounts retain their sign-in behaviour, including legacy
+Google-only accounts; no migration or forced password reset was requested.
+Work starts from merged main (edc53ab) on codex/google-signup-password.
+
+The existing Google endpoint now returns password_required and the verified
+email for a new identity when no password was submitted. It creates no user,
+shop or app token at this point. Login shows the existing sign-in frame with
+password/confirmation and the normal business terms control. Submitting sends
+the Google credential again with the chosen password; Google verification runs
+again, and only then are the user, bcrypt hash, shop and app session created.
+The new field follows the existing eight-character minimum and rejects input
+that exceeds bcrypt's 72-byte bound, including multibyte text.
+
+This avoids provisional accounts, special JWT types, backend session gates or
+new endpoints. A refresh/cancel discards the in-memory credential and form;
+expired Google verification can be restarted with Back to sign in. Credentials
+and plaintext passwords are not saved in browser storage. The app token is
+saved only after signup succeeds. An existing account found during either
+step uses the existing safe linking rules and its password is never replaced
+by the new request. Database uniqueness and concurrent-signup handling remain
+in place. The requested return path remains the existing safe same-origin path.
+
+Nine new backend cases cover no partial writes/access before password setup,
+both later login methods, invalid/overlong passwords, re-verification after
+expiry, existing password preservation and an account appearing between steps.
+Before the fix eight cases failed and the existing-password preservation case
+passed. Legacy Google-only deletion fixtures now explicitly seed pre-existing
+accounts so those protections stay tested without creating new passwordless
+users through the API. Linking/takeover regressions still exercise the real
+new-account insert path by supplying a password.
+
+Five new login tests cover setup-before-navigation, terms/length/confirmation,
+pending submission and return path, existing accounts, error recovery and
+cancellation. A real AuthProvider regression proves the setup response leaves
+the user signed out with no app token, while completion stores only that token.
+The full local command passed: 1,346 backend cases, one skipped and one existing
+expected failure; all 78 frontend tests, CSS variables, all 19 leave-display
+cases and the strict production build passed.
+
+The actual Login, AuthProvider, password form and stylesheet were checked in
+the browser with fictional Google verification and mocked APIs. At 320, 375,
+768 and 1440px the page did not overflow; both password fields were labelled,
+50px high and the first was focused. Browser interactions checked mismatch,
+completion, existing sign-in, expired verification/fresh retry, cancel and
+refresh. No plaintext password or Google credential reached browser storage.
+After clearing old documentation-page CSP warnings, the fixture run reported
+no console errors. Screenshots and details are in the ignored local browse
+report folder for 2026-10-28-google-signup-password.
+
+No live Google OAuth, real account, email delivery or production deployment was
+tested. The backend and frontend must be released together because the first
+Google response can now request password setup instead of returning a token.
+No commit, push or deployment was performed for this change.

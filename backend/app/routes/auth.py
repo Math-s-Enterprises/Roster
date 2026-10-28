@@ -278,12 +278,16 @@ async def google_sign_in(payload: GoogleAuthReq):
         except account_deletion.AccountExpired:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "That account is no longer available.")
     else:
+        # Verify Google again on submission; an abandoned form creates no account.
+        if payload.password is None:
+            return {"password_required": True, "email": profile["email"]}
         user = {
             "user_id": f"user_{uuid.uuid4().hex[:12]}",
             "email": profile["email"],
             "name": profile["name"],
             "picture": profile["picture"],
             "google_sub": profile["google_sub"],
+            "password_hash": hash_password(payload.password),
             "pro": False,
             "created_at": _now(),
         }

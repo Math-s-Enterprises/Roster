@@ -72,7 +72,9 @@ def google(client, monkeypatch, **changes):
     profile = {'email': 'owner@example.com', 'name': 'Owner', 'picture': None,
                'google_sub': 'google-one', 'email_authoritative': False, **changes}
     monkeypatch.setattr(google_auth, 'verify_id_token', lambda _: profile)
-    return client.post('/api/auth/google', json={'credential': 'verified-by-test'})
+    return client.post('/api/auth/google', json={
+        'credential': 'verified-by-test', 'password': 'google-signup-password',
+    })
 
 
 def test_third_party_email_cannot_take_over_password_account(client, monkeypatch):
