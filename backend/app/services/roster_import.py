@@ -190,6 +190,7 @@ class ParsedWeek:
     events: List[Dict[str, str]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     unparsed_cells: List[Dict[str, str]] = field(default_factory=list)
+    date_from_selection: bool = False  # Preview-only provenance, not stored history.
 
     @property
     def is_usable(self) -> bool:

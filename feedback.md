@@ -1686,11 +1686,13 @@ this alert can be claimed resolved. Do not dismiss it based on unit tests.
 
 On staging, the user selected 26 October 2026 for a roster photo, but the preview
 showed 20 January 2025. The frontend sent week_start correctly; the backend only
-used it for undated weeks and accepted the model's guessed date first. The same
-test crop contained eight shifts, but only five were read, and nine cells were
-reported unreadable. An earlier larger image failed with a raw JSON comma error.
-The raw staging model responses were not available, so the exact reason for the
-three missing shifts or the earlier malformed JSON was not established.
+used it for undated weeks and accepted the model's guessed date first. The crop
+was initially misread by the assistant as eight shifts. Reopening the original
+image established that FIVE is correct: Megan works Tuesday to Thursday, John
+Wednesday and Thursday; the other nine cells are OFF or holiday/bank holiday.
+The earlier preview wrongly reported those nine cells as unreadable. An earlier
+larger image also failed with a raw JSON comma error; its exact cause was not
+established because the raw staging model response was not available.
 
 For one image or one-page PDF, an explicitly selected week now takes priority
 before the OCR date is interpreted, and is normalised to Monday. Dated workbook,
@@ -1710,17 +1712,22 @@ does not discard successfully read pages. No database migration is needed.
 
 Before the fix, the initial regression run had 11 failures and 3 preservation
 cases passed. The initial focused importer/rule-parser run passed all 112 cases
-afterwards. Regression coverage includes preview through commit with eight mocked
+afterwards. Regression coverage includes preview through commit with mocked
 shifts on the selected week, exact shift times, absence handling, invalid response
 shapes, truncation, bad selected dates, and preservation of dated multi-week files.
 Further checks cover undated photos and partial PDF failures. These are mocked
-provider responses, not proof that the live model reads all eight pictured shifts.
+provider responses, not proof of live model accuracy. The fixture was corrected
+to the original image's five shifts and nine absences after the assistant's
+miscount was discovered; the application logic did not need another change.
 The full backend run passed 1236 tests with one existing expected failure. Three
 additional cases were added after that run started; the complete image-import
 file then passed all 17 tests separately. git diff --check passes. The frontend
 change is helper text only; no production build or browser test was run. No keys
 were read, no external model calls made, and no commit, push or deploy was
-performed. Live OCR accuracy must still be checked after deploying to staging.
+performed during that implementation pass. A subsequent user screenshot shows
+the selected date 2026-10-26, five shifts and no unreadable-cell warning: those
+aspects now match the source image. Individual extracted times are not visible
+in that screenshot and still require checking.
 
 ## 34. Double-booking is an interval, not a weekday or a calendar week
 
@@ -1752,3 +1759,232 @@ removing the display projection made all five display regressions fail.
 See docs/CROSS_GROUP_OVERNIGHT_TDD.md for commands, results and verification
 limits. Existing image-import edits are preserved separately. Nothing is pushed
 or deployed automatically.
+
+## 35. A local check must fail honestly when hosted CI cannot run
+
+GitHub's screenshot reported that the job never started because the account
+was locked for a billing issue. That is not a failing code test. The user
+authorised one free local command before pushing, not a billing change,
+repository migration, disabled required checks or automatic push.
+
+`check-local.ps1` uses the existing Docker Compose backend/frontend containers
+and their installed dependencies. It runs the full isolated backend suite,
+the existing CSS and leave-display checks, frontend tests without watch mode,
+then a strict CI production build. Backend credentials/integration overrides
+are test-only process variables; no `.env` or app configuration is changed.
+It stops on the first failed stage, returns 1 on failure and 0 only after the
+whole check passes. It installs no hook and never pushes or deploys.
+
+The standard-library runner tests fake Docker in a child PowerShell process.
+They prove backend failure skips the frontend, frontend failure never reports
+success, and success requires both invocations using the absolute Compose path
+even when launched outside the checkout. All three pass. The real command
+also passed in C:/Users/anees/Roster: 1,313 backend tests passed, one skipped,
+one expected failure; all 48 frontend tests passed, CSS variables and all 19
+leave-display cases passed, and strict production compilation succeeded.
+The skipped/expected-failure cases are not claimed as passes. Existing import
+fixture edits were preserved. This does not run CodeQL, clear a billing hold,
+satisfy GitHub's required checks or verify a live deployment. Rebuild local
+containers after dependency changes before relying on their installed tools.
+
+## 36. Password-encrypted Excel needs recovery instructions, not a ZIP error
+
+A client reported a spreadsheet-format error. Render logs showed three Excel
+open failures on 23 October, all ending in `BadZipFile: File is not a zip file`
+inside openpyxl, before any roster rows were parsed. The original client file
+was not available; password encryption was suggested by the user, not proven
+from that generic exception alone. Unrelated layout limitations must not be
+presented as this failure's cause.
+
+The user authorised an upload notification. `_read_spreadsheet` now uses
+olefile to inspect actual compound-document directory entries and recognises
+the `EncryptionInfo` and `EncryptedPackage` streams of encrypted OOXML. The
+existing UnsupportedFile response and frontend error toast explain that the
+file is password-protected and ask for a copy saved without password protection.
+No password is requested, stored or decrypted by the app. Ordinary workbooks
+and files that restrict sheet/workbook editing remain readable. Corrupt files
+and containers lacking either encryption stream are not called encrypted.
+No new dialog or application API was needed. Rebuild/redeploy the backend to
+install the one declared format-reader dependency; nothing deploys automatically.
+
+The fixture is a genuine encrypted workbook containing fictional data only.
+It was generated once with a temporary encryption tool, and decryption was
+verified to return the original workbook bytes. That generator was removed
+from the local container and is not a runtime or test dependency. Before the
+fix, four encrypted-upload cases failed and seven preservation cases passed.
+Afterwards, all 97 focused import cases and both upload-page tests passed.
+Weakening detection to label any OLE container encrypted, in memory only,
+made both missing-stream regressions fail. Tests also prove failed uploads
+create no imports, history, employees or rosters, and the UI can retry with an
+unlocked copy. The client's original workbook and live deployment remain untested.
+
+The complete local check then passed: 1,324 backend tests passed, one skipped,
+one existing expected failure; all 50 frontend tests, CSS checks, all 19 leave
+display cases and the strict production build passed. No commit, push or
+deployment was performed. Prior local-check and image-import edits are preserved.
+
+## 37. Post-upload review is part of the import design, not a legacy exception
+
+The redesigned import landing page still opened an old review screen: tiny
+9-11px metadata, truncated names and roles, legacy glass panels and cyan totals.
+The user asked for readable light and dark themes while keeping the encrypted
+Excel notification as the first separate change.
+
+The review now uses the existing import font, spacing and shared theme tokens.
+File totals have separate Weeks/Shifts/People figures; the confirmation area
+reports only selected weeks and shifts. Names, roles and sheet names wrap.
+All per-week warnings are available in native expandable details outside the
+checkbox label, so opening a warning does not select a week. Spreadsheet source
+counts say worksheets; image/PDF counts say pages. Selects have visible labels,
+and busy controls are disabled. Selection, staff mapping, past-staff handling and
+the commit payload are preserved. No new dependency or API was introduced.
+
+Panels stack on narrow screens. The confirmation footer follows the content;
+a sticky version covered mobile rows during review and was removed. Scrollable
+lists remain keyboard focusable. Styles are scoped to this review and reuse
+the actual app palette rather than an outdated design reference.
+
+All 55 frontend tests across ten suites passed, together with the CSS-variable
+check, all 19 leave-display cases and the strict production build. After the
+final CSS-only footer adjustment, the seven import tests, CSS check and strict
+build passed again. Two in-memory negative controls independently removed the
+theme wrapper and empty-selection guard; each failed its intended assertion.
+
+Browser checks used the actual React page, layout and stylesheet with mocked
+APIs and fictional data: 30 weeks, 2,106 shifts and 31 people. Both themes were
+checked at 320, 375, 768, 1024, 1280, 1440 and 1920px. Checked text was at least
+13px, sampled contrast was at least 5.25:1 in light and 9.96:1 in dark, tested
+names/counts did not clip and the page did not overflow horizontally. Primary
+buttons and selects met 44px height. Real browser interactions checked warning
+expansion, selection totals, past-staff mapping and the enabled import action;
+no commit request or live backend call was made. No browser console errors
+were reported. Screenshots are under the ignored local browse report folder.
+
+The password-encrypted Excel change and previous unrelated working edits are
+preserved. Nothing was committed, pushed or deployed. Live client imports and
+the original client workbook were not tested by this design verification.
+
+The user then caught a remaining role problem and explicitly kept it within
+Change 2. Employee options were showing roster-group memberships (often all
+"Shop Floor") rather than job titles. Separately, `_map_role` fabricated the
+bottom role when a file had no title. Both paths are now corrected: employee
+choices show the actual group-specific job title, memberships are labelled
+separately, source titles are labelled Role in file, and a missing source title
+says No role in file. Blank imported titles now stay blank, including the
+restore path that shares the resolver. No existing staff records are migrated.
+
+The upload supplies the effective group's configured role options. New staff
+and new group memberships have a role selector; exact/configured alias matches
+can be preselected, while unfamiliar titles require a choice (including No
+role) before the UI enables import. An existing member keeps their saved role
+even when the file differs. The reviewed `role_map` is validated against the
+group's current settings before any employee or history writes; employee IDs
+are checked within the tenant too. Explicit No role remains distinct from an
+omitted role choice, especially when adding a group membership. Legacy API
+callers omitting role_map retain the existing verbatim-title behavior for
+unrecognised titles; the redesigned review requires their resolution. No
+guessed abbreviation dictionary or automatic retitling of existing staff was
+added. Deploy the backend and frontend together for these role choices.
+
+Nine new backend regressions cover missing titles, configured aliases,
+reviewed titles, blank choices, invalid choices/retry, existing roles,
+cross-group roles and tenant boundaries. The failing-before run demonstrated
+the missing-role fallback and ignored selections; a multi-group test fixture
+also needed to submit its group explicitly and was corrected. Four new UI
+regressions cover true job-title labels, absent titles, unknown-title
+resolution, existing matches and the new-group commit payload.
+
+The complete local check passed after this correction: 1,333 backend tests
+passed, one skipped and one existing expected failure; all 59 frontend tests,
+CSS variables, all 19 leave-display cases and the strict production build
+passed. The actual UI was checked again with fictional known, unknown and
+missing titles in both themes at seven widths from 320 to 1920px. All checks
+passed (minimum sampled contrast 5.25:1 light and 9.96:1 dark). Browser actions
+proved the unresolved role blocks import and choosing a configured role
+enables it; only the mocked upload was requested, with no console errors.
+Additional previews use the roles- filename prefix in the local report.
+Change 1 remains intact. Nothing was committed, pushed or deployed; the live
+client workbook and live employee data were not changed or tested.
+
+The user next reported the AI availability warning and the lost visible
+acknowledgement of a selected week. Read-only checks against the local running
+backend found no Anthropic key in either its environment or mounted .env;
+/api/health reported llm=false and /imports/capabilities reported image=false,
+pdf=false, spreadsheet=true and csv=true. Only key-present booleans were
+printed, never credentials. The capability warning already exists at HEAD;
+neither the AI requirement nor environment configuration was changed by
+Change 2. A supplied date cannot replace AI reading the image contents.
+
+The date path was intact: the upload still submits week_start, photos and
+one-page PDFs give it priority, undated file weeks use it as a fallback, and
+dated spreadsheet/multi-week entries keep their own dates. But the redesigned
+review had collapsed all warnings, hiding the acknowledgement. That UI change
+was a regression. Review warning details now open by default, restoring
+visibility without changing the parser or date-assignment rules. A new UI
+regression sets the actual date input, checks multipart week_start, verifies
+the acknowledgement is visible and checks the selected week in the commit
+payload. It failed before the one-line visibility fix and passes afterwards.
+All 60 frontend tests, the CSS check and strict production build passed.
+Targeted backend date, capability and encrypted-upload regressions also passed.
+No credential was changed, no paid AI call was made and no deployment was
+performed.
+
+Customer-facing import copy must describe availability, not configuration.
+The user explicitly rejected exposing API-key names, .env paths and package
+installation instructions in the product UI. The import page now lists only
+available and unavailable formats, independently of technical reasons an older
+backend might return. File-picker refusals and unavailable-upload responses
+use the same customer language. Backend capability and unavailable-reader
+responses also use customer copy; diagnostic details remain in server logs.
+Availability flags and the actual supported formats are unchanged.
+
+The date acknowledgement also needs to sit outside the scrolling week list.
+A preview-only flag records whether each parsed week's date was actually
+assigned from the manager's selection. It is not persisted in roster history
+and does not alter date assignment. The upload exposes that provenance only
+when a date was supplied, and the review shows a prominent notice below the
+file totals: selected date used, selected date not used because file dates
+already exist, or a mixture of assigned and retained dates. This avoids both
+hiding the warning and falsely saying a dated workbook was force-redated.
+Existing per-week warnings remain open by default.
+
+Before the fixes, four new/extended UI cases and five backend cases failed
+on the missing notice/provenance and exposed setup text. The focused import
+checks passed afterwards. Additional cases protect a partially available
+format list and a 503 from an older backend. Browser checks with fictional
+data confirmed no configuration instructions in visible text and the date
+notice above the week list in both themes at 320, 375, 1440 and 1920px.
+Checked contrast remained at least 5.25:1 light and 9.96:1 dark, with no page
+overflow or console errors. Only a mocked preview upload was sent. Screenshots
+use customer-formats and date-notice prefixes in the local browse report.
+No credentials, real client records or date-assignment rules were changed.
+
+The full local check passed: 1,337 backend tests passed, one skipped and one
+existing expected failure; all 65 frontend tests, CSS variables, 19 leave-run
+cases and the strict production build passed. No commit, push or deployment
+was performed. A fresh upload is required for an already-open review to receive
+the new date-provenance response. Live client workbooks remain untested.
+
+## 38. Light is the default; a saved theme is a preference, not a login reset
+
+The user requested light for a login with no prior choice, with dark retained
+after sign-out/sign-in once chosen. The existing browser-local roster_theme
+preference already survives logout. Startup and AppLayout independently fell
+back to dark, so both defaults now use light unless the stored choice is dark.
+Existing dark preferences are preserved. No backend setting, profile field,
+dependency, authentication behaviour or palette was added or changed.
+
+Seven regressions execute the real startup entry and the real AuthProvider /
+AppLayout with mocked APIs. They cover startup with no/light/dark preference,
+first password and Google sign-ins, choosing dark, logout, either sign-in
+method, app remount with session refresh, and returning to light. Before the
+fix, the three default-light cases failed and the four preference-preservation
+cases passed. The test router is mocked because the CRA Jest resolver does not
+resolve this installed router package's exports; auth and theme state are real.
+
+All 72 frontend tests across twelve suites, CSS variables, all 19 leave-display
+cases and the strict production build passed. The choice remains local to the
+browser, as before; cross-device preference sync was not requested or added.
+The backend suite was not repeated for this frontend-only change. Changes 1
+and 2 and unrelated existing edits are preserved. Nothing was committed,
+pushed or deployed; no live account was used for the theme tests.

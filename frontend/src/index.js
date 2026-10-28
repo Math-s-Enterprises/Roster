@@ -15,11 +15,11 @@ import App from "@/App";
  */
 (function applyStoredTheme() {
   try {
-    if (localStorage.getItem("roster_theme") === "light") {
+    if (localStorage.getItem("roster_theme") !== "dark") {
       document.documentElement.setAttribute("data-theme", "light");
-    }
+    } else document.documentElement.removeAttribute("data-theme");
   } catch {
-    /* storage unavailable (private mode) - dark is the default anyway */
+    document.documentElement.setAttribute("data-theme", "light");
   }
 })();
 

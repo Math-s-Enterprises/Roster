@@ -90,6 +90,38 @@ frontend/
 
 ## Tests and checks
 
+On Windows, with Docker Desktop and your existing Roster backend/frontend
+containers running, run this from the repository folder before pushing:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\check-local.ps1
+```
+
+It runs the full backend suite, CSS and leave-display checks, frontend tests
+without watch mode, and a strict production frontend build. The first failure
+stops the command with exit code 1; only a complete pass returns 0. Fix any
+failure and rerun before using your normal `git push` command. Nothing is
+pushed or deployed by this script, and no Git hook is installed.
+
+The command uses the dependencies already installed in your local containers.
+If you change `backend/requirements.txt` or `frontend/package.json`/`yarn.lock`,
+rebuild the affected development image/container first using your usual Docker
+setup. Test environment overrides apply only to the check processes: `.env`
+files and the running app configuration are unchanged. Backend API tests use
+the existing in-memory MongoDB fixtures; external integration keys are blank.
+The frontend build writes the usual `frontend/build` output.
+
+These checks do not run CodeQL, clear GitHub billing holds, or satisfy remote
+required checks. They also do not test the deployed website or live providers.
+
+The runner's failure/success handling has a dependency-free Windows self-test:
+
+```powershell
+python -m unittest discover -s scripts -p test_check_local.py
+```
+
+Individual checks are still available:
+
 ```bash
 cd backend && pytest                 # scheduling rules, API
 cd frontend && yarn test             # component tests
