@@ -56,6 +56,14 @@ class LoginReq(BaseModel):
 class GoogleAuthReq(BaseModel):
     """ID token issued by Google Identity Services in the browser."""
     credential: str
+    password: Optional[str] = Field(None, min_length=8, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def password_fits_bcrypt(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 72:
+            raise ValueError("Use a shorter password.")
+        return value
 
 
 class ForgotPasswordReq(BaseModel):

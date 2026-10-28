@@ -85,8 +85,12 @@ export function AuthProvider({ children }) {
   // `credential` is the ID token issued by Google Identity Services in the
   // browser. The backend verifies its signature before trusting it.
   const loginWithGoogle = useCallback(
-    async (credential) =>
-      completeSignIn((await api.post("/auth/google", { credential })).data),
+    async (credential, password) => {
+      const { data } = await api.post("/auth/google", {
+        credential, ...(password === undefined ? {} : { password }),
+      });
+      return data.password_required ? data : completeSignIn(data);
+    },
     [completeSignIn],
   );
 

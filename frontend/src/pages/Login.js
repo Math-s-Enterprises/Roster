@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { errorMessage } from "@/lib/api";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
+import GooglePasswordSetup from "@/components/GooglePasswordSetup";
 import AuthShell from "@/components/AuthShell";
 import { ConsentCheckbox, LegalNote } from "@/components/LegalConsent";
 import ResetPrompt from "@/components/ResetPrompt";
@@ -99,6 +100,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   // Ticked the Terms and Privacy box? "Create account" stays off until it is.
   const [agreed, setAgreed] = useState(false);
+  const [googleSetup, setGoogleSetup] = useState(null);
   const [status, setStatus] = useState("idle"); // idle | submitting | error
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -236,8 +238,12 @@ export default function Login() {
     setStatus("submitting");
     setError(null);
     try {
-      await loginWithGoogle(credential);
-      navigate(returnTo, { replace: true });
+      const result = await loginWithGoogle(credential);
+      if (result?.password_required) {
+        // Keep Google's credential in memory only until setup finishes or is cancelled.
+        setGoogleSetup({ credential, email: result.email });
+        setStatus("idle");
+      } else navigate(returnTo, { replace: true });
     } catch (err) {
       setStatus("error");
       setError(errorMessage(err, "Google sign-in did not work. Try your email and password."));
@@ -266,6 +272,15 @@ export default function Login() {
     setSentTo(null);
     requestAnimationFrame(() => emailRef.current?.focus());
   };
+
+  if (googleSetup) {
+    return <GooglePasswordSetup email={googleSetup.email} agreed={agreed} onAgreementChange={setAgreed}
+      onSubmit={async password => {
+        await loginWithGoogle(googleSetup.credential, password);
+        navigate(returnTo, { replace: true });
+      }}
+      onCancel={() => { setGoogleSetup(null); setStatus("idle"); setError(null); }} />;
+  }
 
   const barRight = isSignup ? (
     <>Have an account?{" "}
