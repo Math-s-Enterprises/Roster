@@ -2045,3 +2045,35 @@ No live Google OAuth, real account, email delivery or production deployment was
 tested. The backend and frontend must be released together because the first
 Google response can now request password setup instead of returning a token.
 No commit, push or deployment was performed for this change.
+
+## 40. Unknown links need a real page, not a silent dashboard redirect
+
+The user requested a custom 404 page. The top-level wildcard in App.js used
+to redirect every unknown URL to /. It now renders NotFound outside the
+authenticated layout, so both signed-out and signed-in visitors can see what
+went wrong without changing the address. Existing valid routes and their
+authentication gates are unchanged.
+
+The standalone page uses the existing Roster typography, icons and semantic
+theme tokens, with no dependency or theme preference writes. A recovery link
+leads signed-in users to the dashboard and signed-out users to sign-in; while
+the session loads it leads home. The page has one main heading, keyboard focus
+on arrival and a temporary document title that restores on leaving.
+
+Four real-router regressions cover both session states, nested missing URLs,
+recovery navigation, title/focus, light/dark preservation, loading and existing
+route protection. CRA's Jest resolver needs explicit CommonJS router and
+router/dom entries for the installed package exports; only this test uses
+those adapters. All 82 frontend tests, CSS token validation and the strict
+production build passed.
+
+Gstack checked the real local app at localhost:3000 with no account sign-in or
+record changes. Light/dark screenshots were inspected; 320, 375, 768 and
+desktop layouts did not overflow, the recovery action was 48px high, and
+direct-link refresh, sign-in recovery and browser Back worked. Signed-out
+auth/me 401 responses are existing session discovery, not a 404 page error.
+The backend suite was not rerun for this frontend-only change. This is a
+client-side missing-page view under the existing SPA fallback (HTTP 200),
+not a server status-code change. Hosted deep links were not checked.
+Work is on codex/custom-404 from merged main 045fc04. No commit, push or
+deployment was performed.

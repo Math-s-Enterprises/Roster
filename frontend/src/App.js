@@ -23,6 +23,7 @@ import HoursReport from "@/pages/HoursReport";
 import LearningReport from "@/pages/LearningReport";
 import Pricing from "@/pages/Pricing";
 import { PaymentCancel, PaymentSuccess } from "@/pages/PaymentResult";
+import NotFound from "@/pages/NotFound";
 
 /**
  * Gate for authenticated pages.
@@ -108,7 +109,7 @@ export default function App() {
             <Route path="payment/success" element={<PaymentSuccess />} />
             <Route path="payment/cancel" element={<PaymentCancel />} />
           </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
         <Toaster theme="dark" position="top-right" richColors />
       </BrowserRouter>
