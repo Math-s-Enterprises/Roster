@@ -2077,3 +2077,193 @@ client-side missing-page view under the existing SPA fallback (HTTP 200),
 not a server status-code change. Hosted deep links were not checked.
 Work is on codex/custom-404 from merged main 045fc04. No commit, push or
 deployment was performed.
+
+## 41. Hourly pay accepts cents, not only half-euro increments
+
+The customer could type 16.15 but Save was refused by native browser step
+validation, which offered 16 and 16.5 instead. The shared add/edit employee
+rate input used step=0.5. It now uses step=0.01 with the existing required
+and non-negative validation preserved. Contracted-hour increments are unchanged.
+The save payload and backend float field already support cents, so neither
+needed changing and no existing pay records were modified.
+
+A regression enters 16.15 into the real employee form, checks native validity,
+clicks Save and asserts the update API receives exactly 16.15. It failed with
+the original step mismatch and passed after the one-line fix. All 83 frontend
+tests and the strict production build passed. Backend tests and a live browser
+save were not repeated for this frontend-only attribute change. Work is on
+codex/hourly-rate-cents from merged main 94b6838. No commit, push or deployment
+was performed.
+
+## 42. Print only the roster, excluding app controls and extension hosts
+
+The user reported the mobile menu and a yellow Apollo browser-extension widget
+over the printed/downloaded grid. Apollo was identified by the user; its code
+is not part of this repository. The menu is a sibling of the sidebar, so
+hiding aside/nav did not suppress it when narrow print layout rules showed it.
+
+Print CSS now explicitly hides the mobile menu/backdrop, and, when a roster
+print sheet exists, suppresses all elements except that sheet, its descendants
+and its layout ancestors. This includes extension containers attached directly
+to body, inside the app root or inside the page, including iframe/shadow-DOM
+widgets via their host. Screen behavior and print behavior on pages without a
+roster sheet are preserved. No extension identifiers, scripts or new packages
+were added. A print-only white-paper correction replaces the theme-dependent
+strong color on wr-page: with backgrounds enabled the light theme had printed
+dark behind black table text, despite the existing white-paper comment.
+
+Two regressions apply the real print rules to the actual roster sheet, verify
+that menu/overlay hosts (including late insertion) disappear, preserve the
+sheet's ancestors/table/content and white background, and keep ordinary pages
+printable. Before the fix the overlay/menu case failed and the ordinary-page
+case passed. All 85 frontend tests, CSS token validation and the strict build
+passed with the pending hourly-pay fix preserved.
+
+Gstack checked a local fixture with the real component/styles and 25 fictional
+staff. Simulated fixed, nested, shadow-DOM and iframe extension hosts were
+visible on screen and absent in print. PDFs in both themes contained all 25
+staff, no app-menu/extension text, A4 landscape layout and the expected one
+or two pages. The actual PDF was rendered and visually inspected. Ordinary
+pages stayed visible and the mobile menu returned in screen media. No browser
+console errors were recorded. Evidence is in the ignored 2026-11-02-clean-print
+browse report; no real records, accounts or extension settings were changed.
+
+Actual Apollo was not installed into the test browser. A website cannot promise
+to defeat an extension that overrides print rules or injects inside the sheet;
+an extension may also overlay the PDF viewer without being embedded in the PDF.
+The broad isolation uses modern browser :has support; the explicit menu hiding
+does not depend on it. Backend checks were not repeated for this CSS-only fix.
+No commit, push or deployment was performed.
+
+## 43. Use the existing Roster wand as the browser tab icon
+
+The browser showed its globe fallback because public/index.html declared no
+favicon and public/ contained no icon asset. The existing AuthShell WandMark
+path is now reused as a small rounded terracotta SVG favicon, matching the
+app brand. index.html links it via PUBLIC_URL so CRA produces the correct
+asset URL for the configured deployment base. No new logo, dependency or
+theme preference behavior was added.
+
+The strict production build passed; built index.html points to /favicon.svg
+and the built SVG parses correctly. Gstack verified the icon link from a
+nested local route: HTTP 200, image/svg+xml and successful browser image
+decoding. The dev server ignores public-file watch changes in craco, so only
+the frontend container was restarted to refresh the HTML template. Backend
+and database were untouched. The prior 85-test suite was not repeated for
+this static HTML/SVG-only change. The two pending pay/print fixes remain
+intact; all three changes are local, uncommitted and undeployed. No new
+durable browser learning beyond the public-template restart was needed.
+
+## 44. A cookie banner must describe the storage we actually use
+
+The user requested a cookie banner as change 4, keeping all changes local for
+one later push. The current app sets no first-party cookies, stores sign-in
+and preferences in browser storage, and has no analytics/advertising tracker
+code. The existing Privacy Policy already explains this and discloses Google
+fonts/sign-in. A fake Accept all / Reject all control would imply optional
+tracking settings that do not exist, so this is an informational notice with
+Privacy Policy and Got it; it does not grant consent or alter signup terms.
+
+CookieBanner mounts once above the routes, so it covers public/authenticated
+pages, remembers only an acknowledgement in roster_cookie_notice, and leaves
+tokens, theme and login behavior alone. Failed storage reads show the notice;
+failed writes still allow dismissal until remount. It takes no focus on open.
+The existing LegalLink/LegalDialog opens the full policy in place and restores
+focus on close. New styles use existing semantic light/dark tokens and the
+no-print convention. The Privacy Policy now names this extra preference and
+its displayed update date/version have been advanced.
+
+Four component regressions exercise initial display, no session/theme changes,
+dismissal/remount persistence, real policy dialog/Escape/focus and blocked
+storage. Real App route tests also assert banner presence on public and
+authenticated missing paths. All 89 frontend tests, token checks and the
+strict production build passed; the previous three changes remain intact.
+
+Gstack checked the actual local app in light/dark at 320, 375, 768 and desktop
+widths, with no horizontal overflow. Got it was 44px high and the policy
+target 32px high. The policy opened without dismissing the notice; Escape
+returned focus. Dismissal survived navigation to login, refresh and a fresh
+missing path. Print emulation hid the banner. Local Google sign-in logged its
+existing origin-not-allowed/403 error; no Google configuration was changed and
+no sign-in or real records were used. Screenshots/report are in the ignored
+2026-11-02-cookie-notice browse folder. No new durable browser learning arose.
+
+Backend tests and legal compliance review were not part of this UI change.
+No tracking, consent manager or preference categories were added. All four
+changes remain uncommitted, unpushed and undeployed on the current branch.
+
+## 45. Replace the notice with consent that actually controls storage and scripts
+
+The user asked for a complete consent solution after learning that section 44
+was only an acknowledgement. This supersedes that notice and remains change 4
+in the current batch (pay, clean printing, favicon, consent); nothing is to be
+committed or pushed until the user finishes the batch.
+
+The audit classified sign-in tokens, login security counters, selected roster
+group and the consent decision as required. The roster group must remain: API
+requests use it to select the correct group. Optional purposes are separately
+remembered preferences, Google fonts and Google sign-in. No analytics,
+advertising, dummy toggles or new dependencies were introduced.
+
+cookieConsent.js stores a versioned decision with three explicit booleans and
+decision/expiry times for 180 days. Missing, malformed, future-dated, expired
+or obsolete choices default to off. The earlier Got it key is removed and
+never upgraded to consent. Blocked storage keeps a choice only for the current
+visit; a failed write attempts removal of older permission so withdrawal does
+not resurrect an older opt-in after reload. Expiry is checked in open tabs
+using bounded timers and changes synchronize through storage events.
+
+The initial banner gives Accept all and Reject all equal prominence, plus
+Cookie settings. All optional switches start off, with a separate Save choices.
+Settings remain available on every route, and Cancel never accepts anything.
+Opening settings focuses its heading; saving/cancelling returns focus. The
+existing in-place Privacy Policy dialog remains available. Both the banner
+and its persistent settings link use no-print. Semantic theme tokens are used.
+
+All theme, fixed-view and report-sort reads/writes use a consent-aware helper.
+Without preferences permission they work in memory for the current visit.
+Notifications likewise remain in memory and persist only after opting in.
+Rejection/expiry clears these optional copies from local/session storage,
+including each account's notification prefix, while preserving required and
+unrelated keys. Startup clears previously saved optional copies when there is
+no valid permission. The dark-theme persistence regressions now explicitly
+grant preferences; the first-sign-in default-light case expects no optional
+write. Authentication, shop records and selected group behavior are preserved.
+
+Both automatic Google font sources (public HTML and CSS import) were removed.
+ConsentServices mounts/removes the font stylesheet after the corresponding
+choice. GoogleSignInButton loads no SDK or iframe before its own permission.
+After rejection, an explicit Allow Google sign-in button describes the request
+and enables only that purpose; signup's existing disabled agreement gate still
+applies. Removing a script does not undo executed code, so withdrawing Google
+permission reloads any open app tab that has loaded the SDK. A prominent
+warning above the actions tells the user to save unfinished work first.
+Already-set Google-domain cookies cannot be removed by this site's JavaScript;
+the settings and policy say so. The Privacy Policy is now version 2.4, dated
+5 November 2026, and describes these purposes, controls and retention.
+
+All 105 frontend tests across 20 suites passed, including real preference and
+notification persistence, existing login/signup/routing, storage quota and
+blocked-storage failures, defaults/migration/expiry, live-tab expiry and
+cross-tab events, selective choices, disabled Google signup, SDK callback and
+withdrawal reload. Static checks prevent automatic Google tags from returning.
+CSS token validation, all 19 leave-run checks and the strict production build
+passed. No backend behavior changed or backend test run was required here.
+
+Gstack verified the actual local app: zero Google resource requests, script
+tags or font links before permission and after rejection/refresh; fonts-only
+permission loads no SDK; explicit Google permission leaves fonts/preferences
+off; withdrawal reload leaves no SDK/font requests. Real tabs synchronized
+font grant/rejection. Accept/Reject had equal dimensions/colors. All switches
+were unticked initially, focus and policy navigation worked, both themes and
+320/375/768/desktop layouts were usable without overflow, and print hid both
+controls. The warning and actions fit at 320x640 with a scrollable settings
+body. No account sign-in, real records, email, payments or external changes
+were made. Evidence is in the ignored 2026-11-05-cookie-consent report.
+
+The official DPC guidance and detailed PDF were read for default-off consent,
+equally prominent rejection, purpose-specific choices, withdrawal and asking
+again within six months. This is a working implementation for the services
+currently in this app, not a legal certification or support for future trackers
+automatically. Live Google-account sign-in and other browser engines were not
+tested. All four changes remain uncommitted, unpushed and undeployed.

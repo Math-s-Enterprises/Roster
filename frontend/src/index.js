@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "@/index.css";
 import App from "@/App";
+import { initializeConsent, readPreference } from "@/lib/cookieConsent";
 
 /**
  * Apply the stored theme before anything renders.
@@ -14,8 +15,9 @@ import App from "@/App";
  * there is no flash of the wrong theme on first paint.
  */
 (function applyStoredTheme() {
+  initializeConsent();
   try {
-    if (localStorage.getItem("roster_theme") !== "dark") {
+    if (readPreference("roster_theme") !== "dark") {
       document.documentElement.setAttribute("data-theme", "light");
     } else document.documentElement.removeAttribute("data-theme");
   } catch {

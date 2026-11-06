@@ -1052,7 +1052,7 @@ export default function Employees() {
                   straight into it; this line only reports what has been set. */}
               {form.employment_type !== "full_time_contract" ? (
                 <Field label={`Hourly rate (${CURRENCY})`}>
-                  <input data-testid="emp-rate" type="number" min={0} step="0.5" required value={form.hourly_rate}
+                  <input data-testid="emp-rate" type="number" min={0} step="0.01" required value={form.hourly_rate}
                     onChange={(e) => set({ hourly_rate: Number(e.target.value) })}
                     className="w-full px-3 py-2.5 rounded-lg font-mono" />
                 </Field>

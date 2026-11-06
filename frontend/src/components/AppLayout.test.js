@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import AppLayout from "./AppLayout";
 import { AuthProvider, useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
+import { initializeConsent, saveConsent } from "../lib/cookieConsent";
 
 jest.mock("react-router-dom", () => ({
   Outlet: () => null, NavLink: ({ children }) => <span>{children}</span>,
@@ -36,6 +37,7 @@ function Session() {
 beforeEach(() => {
   global.IS_REACT_ACT_ENVIRONMENT = true;
   localStorage.clear(); sessionStorage.clear();
+  initializeConsent();
   document.documentElement.removeAttribute("data-theme");
   jest.clearAllMocks();
   signedIn = false;
@@ -70,10 +72,11 @@ test.each(["password", "Google"])("a first %s sign-in opens in light mode", asyn
   await mount(); await signIn(method);
   expect(themeSwitch().getAttribute("aria-checked")).toBe("true");
   expect(document.documentElement.getAttribute("data-theme")).toBe("light");
-  expect(localStorage.getItem("roster_theme")).toBe("light");
+  expect(localStorage.getItem("roster_theme")).toBeNull();
 });
 
 test.each(["password", "Google"])("a chosen dark theme survives logout, %s sign-in and refresh", async method => {
+  saveConsent({ preferences: true });
   localStorage.setItem("roster_theme", "light");
   await mount(); await signIn();
   await act(async () => themeSwitch().click());

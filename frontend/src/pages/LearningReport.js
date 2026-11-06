@@ -34,6 +34,7 @@
  *    cannot express minmax. Same choice as the sibling pages.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { readPreference, writePreference } from "@/lib/cookieConsent";
 import { useNavigate } from "react-router-dom";
 import { api, errorMessage, DAY_LABELS, DAYS } from "@/lib/api";
 import { toast } from "sonner";
@@ -88,7 +89,7 @@ export default function LearningReport() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
-  const [sort, setSort] = useState(() => localStorage.getItem(SORT_KEY) || "most-repeated");
+  const [sort, setSort] = useState(() => readPreference(SORT_KEY) || "most-repeated");
   const [visible, setVisible] = useState(PAGE);
   const [confirming, setConfirming] = useState(null);
   const navigate = useNavigate();
@@ -103,7 +104,7 @@ export default function LearningReport() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const chooseSort = (key) => { setSort(key); localStorage.setItem(SORT_KEY, key); };
+  const chooseSort = (key) => { setSort(key); writePreference(SORT_KEY, key); };
 
   const patterns = useMemo(() => report?.patterns || [], [report]);
   const suggestions = useMemo(() => report?.suggestions || [], [report]);

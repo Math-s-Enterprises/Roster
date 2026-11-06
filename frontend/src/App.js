@@ -24,6 +24,8 @@ import LearningReport from "@/pages/LearningReport";
 import Pricing from "@/pages/Pricing";
 import { PaymentCancel, PaymentSuccess } from "@/pages/PaymentResult";
 import NotFound from "@/pages/NotFound";
+import CookieBanner from "@/components/CookieBanner";
+import ConsentServices from "@/components/ConsentServices";
 
 /**
  * Gate for authenticated pages.
@@ -111,6 +113,8 @@ export default function App() {
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
+        <CookieBanner />
+        <ConsentServices />
         <Toaster theme="dark" position="top-right" richColors />
       </BrowserRouter>
     </AuthProvider>

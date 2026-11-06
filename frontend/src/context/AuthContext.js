@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api, clearToken, setToken } from "@/lib/api";
+import { writePreference } from "@/lib/cookieConsent";
 
 const AuthCtx = createContext(null);
 
@@ -73,7 +74,7 @@ export function AuthProvider({ children }) {
       // A new shop opens in light mode. Only here, and only once the account
       // exists - a failed sign-up must not change anyone's saved preference.
       try {
-        localStorage.setItem("roster_theme", "light");
+        writePreference("roster_theme", "light");
       } catch {
         /* storage unavailable (private mode) - nothing to set */
       }
@@ -108,7 +109,7 @@ export function AuthProvider({ children }) {
     async (token) => {
       const { data } = await api.post("/auth/verify-email", { token });
       try {
-        localStorage.setItem("roster_theme", "light");
+        writePreference("roster_theme", "light");
       } catch {
         /* storage unavailable (private mode) - nothing to set */
       }

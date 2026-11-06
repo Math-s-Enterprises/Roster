@@ -30,8 +30,8 @@ import { LEGAL } from "@/components/legalDetails";
 // The version belongs to the wording, so it lives with it, and is not shown. It is
 // kept so that, when the app starts recording who accepted what, there is a version
 // to record. The date IS shown: both documents promise that it changes when they do.
-export const LEGAL_VERSION = "2.2";
-export const LEGAL_UPDATED = "15 October 2026";
+export const LEGAL_VERSION = "2.4";
+export const LEGAL_UPDATED = "5 November 2026";
 
 // The two details, trimmed. Empty means "not given yet": a visible blank is shown.
 const COMPANY = String(LEGAL.company || "").trim();
@@ -136,15 +136,31 @@ const PRIVACY = [
         <p><strong>On your device</strong></p>
         <ul>
           <li>
-            We set no cookies of our own. Your browser keeps a few settings for Roster: your sign-in,
-            colour theme, last roster group, display choices, your last 20 notifications (which can
-            name staff) and a short count of wrong passwords typed for an email address (up to 15
-            minutes). These stay on your device.
+            We use browser storage rather than setting cookies of our own. Required storage keeps
+            your requested sign-in session, selected roster group, cookie choices and a short count
+            of wrong passwords typed for an email address (up to 15 minutes). These stay on your device.
+            Rejecting optional features does not sign you out or delete your shop records.
           </li>
           <li>
-            When Roster loads, your browser asks Google for fonts, so Google can see your IP address.
-            The sign-in screen also loads Google’s sign-in button.
+            With your permission to remember preferences, we save your colour theme, display/sort
+            choices and last 20 notifications, which can name staff, in this browser. Otherwise they
+            work in memory for the current visit. Rejecting or withdrawing this permission removes
+            those saved copies from local and session storage.
           </li>
+          <li>Google fonts and Google sign-in are separate, optional choices and stay off until you
+            allow them. Google fonts sends your IP address to Google to download typefaces; without
+            it we use device fonts. Google sign-in loads Google’s service, which may use cookies and
+            receive device/account information. You can use email/password sign-in instead.
+            Choosing Allow Google sign-in enables only that service.</li>
+          <li>Accept all allows these three optional features; Reject all keeps them off. Cookie
+            settings is available on every page to save individual choices or withdraw permission.
+            We remember the choice, its version and decision/expiry times on this browser for 180 days,
+            then ask again. Invalid or older-version choices are not treated as permission.
+            An earlier Got it acknowledgement is not consent.</li>
+          <li>Withdrawing permission stops future optional storage and font loading. If Google sign-in
+            has already loaded, turning it off reloads open Roster tabs that loaded it to stop its code; save unfinished
+            work first. We cannot remove cookies set on Google’s own domains; those can be managed
+            through your browser. Clearing browser data or using another browser requires a new choice.</li>
           <li>We use no analytics, no advertising and no session recording.</li>
         </ul>
       </>
