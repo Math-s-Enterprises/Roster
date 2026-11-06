@@ -2,6 +2,7 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { useAuth } from "@/context/AuthContext";
+import { initializeConsent } from "./lib/cookieConsent";
 
 // CRA's Jest resolver does not follow this installed router's package exports.
 jest.mock("react-router-dom", () => {
@@ -38,6 +39,7 @@ jest.mock("sonner", () => ({ Toaster: () => null }));
 let host, root;
 beforeEach(() => {
   global.IS_REACT_ACT_ENVIRONMENT = true;
+  localStorage.clear(); initializeConsent();
   useAuth.mockReturnValue({ user: null, loading: false });
   window.history.replaceState({}, "", "/");
   document.title = "Roster";
@@ -56,6 +58,7 @@ test.each([null, { email: "fictional@example.com" }])("an unknown nested URL sta
   await act(async () => root.render(<App />));
   expect(window.location.pathname).toBe("/reports/does-not-exist");
   expect(host.querySelector("h1").textContent).toBe("Page not found");
+  expect(host.querySelector(".cookie-banner")).not.toBeNull();
   expect(document.activeElement).toBe(host.querySelector("h1"));
   expect(document.title).toBe("Page not found | Roster");
   expect(document.documentElement.getAttribute("data-theme")).toBe("light");

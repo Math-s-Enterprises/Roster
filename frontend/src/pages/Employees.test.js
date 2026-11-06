@@ -124,6 +124,26 @@ test("the add-people setup action opens a new form, not an existing employee", a
   expect(api.put).not.toHaveBeenCalled();
 });
 
+test("an hourly rate with cents is valid and saves without rounding to half euros", async () => {
+  mockSetupParams.set("setup", "details");
+  const employee = { employee_id: "martin", name: "Martin", role: "Crew", age: 25,
+    hourly_rate: 15, max_weekly_hours: 40, departments: ["Shop Floor"], is_active: true,
+    employment_type: "hourly" };
+  api.get.mockImplementation(path => Promise.resolve({ data: path === "/employees" ? [employee]
+    : path === "/shop" ? { departments: ["Shop Floor"] }
+      : path === "/shop/hierarchy" ? { hierarchy: ["Crew"] } : [] }));
+  api.put.mockImplementation((path, data) => Promise.resolve({ data }));
+  await act(async () => root.render(<Employees />));
+  const input = host.querySelector('[data-testid="emp-rate"]');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "16.15");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(input.checkValidity()).toBe(true);
+  await click(host.querySelector('[data-testid="btn-save-employee"]'));
+  expect(api.put).toHaveBeenCalledWith("/employees/martin", expect.objectContaining({ hourly_rate: 16.15 }));
+});
+
 test.each(["weekly", ""])("pay review opens the contract pay field, not an hourly rate (period=%s)", async period => {
   mockSetupParams.set("setup", "details");
   api.get.mockImplementation(path => Promise.resolve({ data: path === "/employees" ? [{

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { readConsent, saveConsent, useConsent } from "@/lib/cookieConsent";
 
 const GSI_SRC = "https://accounts.google.com/gsi/client";
 
@@ -39,6 +40,8 @@ function loadGoogleScript() {
  * checks its signature.
  */
 export default function GoogleSignInButton({ clientId, onCredential, disabled }) {
+  const consent = useConsent();
+  const allowed = consent?.google === true;
   const containerRef = useRef(null);
   const callbackRef = useRef(onCredential);
   const [error, setError] = useState(null);
@@ -49,7 +52,7 @@ export default function GoogleSignInButton({ clientId, onCredential, disabled })
   }, [onCredential]);
 
   useEffect(() => {
-    if (!clientId || !containerRef.current) return;
+    if (!clientId || !allowed || !containerRef.current) return;
     let cancelled = false;
 
     loadGoogleScript()
@@ -72,9 +75,15 @@ export default function GoogleSignInButton({ clientId, onCredential, disabled })
     return () => {
       cancelled = true;
     };
-  }, [clientId]);
+  }, [clientId, allowed]);
 
   if (!clientId) return null;
+
+  if (!allowed) return <div className="google-consent">
+    <button type="button" className="btn btn-secondary" disabled={disabled}
+      onClick={() => saveConsent({ ...readConsent(), google: true })}>Allow Google sign-in</button>
+    <p>This loads Google’s sign-in service, which may use cookies. You can use email and password without it.</p>
+  </div>;
 
   if (error) {
     return <p className="text-xs text-red-400 text-center">{error}</p>;

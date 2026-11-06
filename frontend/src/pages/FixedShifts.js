@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { api, DAYS, DAY_LABELS, DAY_SHORT, errorMessage, shiftHours } from "@/lib/api";
 import { toast } from "sonner";
+import { readPreference, writePreference } from "@/lib/cookieConsent";
 import { AlertTriangle, ChevronDown, Plus, X } from "lucide-react";
 
 /**
@@ -61,7 +62,7 @@ export default function FixedShifts() {
   // The chosen view is remembered per browser; the narrow override is not
   // stored, so widening the window restores the grid rather than stranding
   // someone in the list forever.
-  const [view, setView] = useState(() => (localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid"));
+  const [view, setView] = useState(() => (readPreference(VIEW_KEY) === "list" ? "list" : "grid"));
   const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < 900);
 
   const [empId, setEmpId] = useState("");
@@ -79,7 +80,7 @@ export default function FixedShifts() {
 
   const chooseView = (next) => {
     setView(next);
-    localStorage.setItem(VIEW_KEY, next);
+    writePreference(VIEW_KEY, next);
   };
 
   const load = useCallback(async () => {

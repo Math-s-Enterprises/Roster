@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { readPreference, writePreference } from "@/lib/cookieConsent";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Menu, Wand2, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -95,8 +96,8 @@ function Shell() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [counts, setCounts] = useState({});
-  // Light is the default; an existing dark choice survives sign-out and reload.
-  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light");
+  // Light is the default; remembering a dark choice across visits needs preferences allowed.
+  const [theme, setTheme] = useState(() => readPreference(THEME_KEY) === "dark" ? "dark" : "light");
   const [rosterFlag, setRosterFlag] = useState(null);
   const [shop, setShop] = useState(null);
   const [department, setDepartment] = useState(
@@ -167,7 +168,7 @@ function Shell() {
 
   useEffect(() => {
     applyTheme(theme);
-    localStorage.setItem(THEME_KEY, theme);
+    writePreference(THEME_KEY, theme);
   }, [theme]);
 
   const signOut = async () => {

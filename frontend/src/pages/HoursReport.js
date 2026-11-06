@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Calendar, Download, Printer, Search } from "lucide-react";
 
 import { api, errorMessage, fmtHours, fmtMoney } from "@/lib/api";
+import { readPreference, writePreference } from "@/lib/cookieConsent";
 
 /**
  * Hours and wages - payroll report (handoff: Hours and wages).
@@ -94,7 +95,7 @@ export default function HoursReport() {
 
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
-  const [sort, setSort] = useState(() => localStorage.getItem(SORT_KEY) || "az");
+  const [sort, setSort] = useState(() => readPreference(SORT_KEY) || "az");
   const [visible, setVisible] = useState(PAGE);
   const [detailFor, setDetailFor] = useState(null);
 
@@ -126,7 +127,7 @@ export default function HoursReport() {
 
   useEffect(() => { load(); }, [load]);
 
-  const chooseSort = (key) => { setSort(key); localStorage.setItem(SORT_KEY, key); };
+  const chooseSort = (key) => { setSort(key); writePreference(SORT_KEY, key); };
 
   const breaksPaid = data ? data.breaks_are_paid !== false : true;
   const rows = useMemo(() => data?.rows || [], [data]);

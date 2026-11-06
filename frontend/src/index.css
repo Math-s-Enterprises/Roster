@@ -16,12 +16,11 @@
 /* Archivo is the Holidays handoff's typeface, and Inter 800 is its fallback
    weight - .hol-page asks for Archivo first, so Inter 800 is only rendered
    if Archivo fails to arrive, and a browser downloads only the faces it
-   actually paints.
+   actually paints. ConsentServices loads the font stylesheet only after permission.
    Substituting Inter was the first attempt: one typeface, one request. The
    shop owner asked for the handoff's own font, which is the right call -
    Archivo is a squarer, more geometric face and the design leans on that at
    weight 800. */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=Archivo:wght@400;500;600;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -338,7 +337,11 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 @media print {
   @page { size: A4 landscape; margin: 10mm; }
 
-  .no-print, aside, nav { display: none !important; }
+  .no-print, .nv-burger, .nv-backdrop, aside, nav { display: none !important; }
+  /* Keep only the sheet and its ancestors; extension hosts may sit anywhere outside it. */
+  body:has(#print-sheet) *:not(#print-sheet):not(#print-sheet *):not(:has(#print-sheet)) {
+    display: none !important;
+  }
   main { padding: 0 !important; }
   /* The shell is a two-column grid. Hiding the sidebar takes it out of the
      flow, which drops <main> into the first track - the 258px sidebar
@@ -2386,7 +2389,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
    dedicated print sheet is shown instead. */
 @media print {
   .wr-page {
-    background: var(--t-strong) !important;
+    background: #ffffff !important;
     color: #111111 !important;
     margin: 0 !important;
     min-height: 0 !important;

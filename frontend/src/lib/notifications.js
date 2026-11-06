@@ -2,6 +2,7 @@ import React, {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from "react";
 import { useSonner } from "sonner";
+import { readConsent, useConsent } from "@/lib/cookieConsent";
 
 /**
  * A short memory for the pop-up messages.
@@ -44,7 +45,7 @@ import { useSonner } from "sonner";
  * and some concern sick leave, so the list is still treated as personal data:
  *   - It is kept per signed-in user, so another account on the same browser
  *     never sees it.
- *   - It stays on this device, in localStorage, until it is cleared.
+ *   - It is saved on this device only with permission to remember preferences.
  * The cost of keeping it past sign-out is that on a shared computer it stays in
  * that browser until cleared. Anyone sharing a computer can press "Clear all"
  * first. The Privacy Policy says this.
@@ -59,11 +60,11 @@ const KINDS = ["success", "error", "warning", "info"];
 // --- storage ---------------------------------------------------------------
 
 /**
- * Always localStorage, whatever the sign-in is stored in, so the list is looked for
- * in the same place before and after a sign-out. Null if storage is blocked
- * (private browsing): then the list lives in memory for the session.
+ * With preferences allowed, always localStorage whatever the sign-in store.
+ * Otherwise the list lives in memory for this visit, including private browsing.
  */
 function storeFor() {
+  if (!readConsent()?.preferences) return null;
   try {
     return localStorage;
   } catch {
@@ -188,6 +189,7 @@ const NONE = { items: [], unread: 0, markAllRead() {}, clear() {} };
 const NotificationsContext = createContext(NONE);
 
 export function NotificationsProvider({ userId, children }) {
+  const consent = useConsent();
   const key = userId ? `${KEY_PREFIX}${userId}` : null;
   const [loadedFor, setLoadedFor] = useState(key);
   const [state, setState] = useState(() => readState(key));
@@ -200,7 +202,7 @@ export function NotificationsProvider({ userId, children }) {
     setState(readState(key));
   }
 
-  useEffect(() => { writeState(key, state); }, [key, state]);
+  useEffect(() => { writeState(key, state); }, [key, state, consent?.preferences]);
 
   const record = useCallback((entries) => {
     setState((current) => ({

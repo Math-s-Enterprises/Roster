@@ -1,3 +1,5 @@
+import { saveConsent } from "./lib/cookieConsent";
+
 jest.mock("react-dom/client", () => ({ createRoot: () => ({ render: jest.fn() }) }));
 jest.mock("@/App", () => () => null);
 jest.mock("@tanstack/react-query", () => ({ QueryClient: jest.fn(), QueryClientProvider: () => null }));
@@ -10,6 +12,7 @@ afterEach(() => {
 test.each([[null, "light"], ["light", "light"], ["dark", null]])(
   "startup applies saved preference %s before mounting the app", (saved, expected) => {
     localStorage.clear();
+    saveConsent({ preferences: true });
     document.documentElement.removeAttribute("data-theme");
     if (saved) localStorage.setItem("roster_theme", saved);
     const listener = jest.spyOn(document, "addEventListener").mockImplementation(() => {});
