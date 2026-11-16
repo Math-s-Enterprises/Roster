@@ -7,6 +7,7 @@ from app import db
 from app.services.compliance import audit, blocking
 from app.services.scheduler import violates_minor_curfew
 from ml.migrate_employee_age_groups import migrate
+from ml.who_is_placeholder import run as report_placeholders
 from tests.test_api import EMPLOYEE, auth, register
 
 
@@ -82,3 +83,32 @@ def test_generation_and_approval_use_the_same_curfew_for_all_groups(group, restr
     assert bool(curfew) == restricted
     if group is None:
         assert "confirm it in Employees" in curfew[0]["message"]
+
+
+def test_placeholder_diagnostic_prints_counts_only(monkeypatch, capsys):
+    mock_db = AsyncMongoMockClient().test
+    for name in ("users", "shops", "employees"):
+        monkeypatch.setattr(db, name, mock_db[name])
+
+    async def run():
+        await mock_db.users.insert_one({"user_id": "owner", "email": "owner@example.test"})
+        await mock_db.shops.insert_one({"owner_id": "owner", "shop_id": "shop", "name": "Private Shop"})
+        employee = {"shop_id": "shop", "name": "Private Employee", "hourly_rate": 16.15,
+                    "max_weekly_hours": 39.5, "age_group": "18_plus", "imported": True}
+        await mock_db.employees.insert_many([
+            employee,
+            {**employee, "details_confirmed": True},
+            {**employee, "past_staff": True},
+            {**employee, "is_active": False},
+            {**employee, "shop_id": "another-shop"},
+        ])
+        await report_placeholders("owner@example.test")
+
+    asyncio.run(run())
+    assert capsys.readouterr().out.splitlines() == [
+        "2 active staff. 1 flagged for review.",
+        "Open Employees to review individual records.",
+    ]
+
+    with pytest.raises(SystemExit, match="^Account not found[.]$"):
+        asyncio.run(report_placeholders("missing@example.test"))
