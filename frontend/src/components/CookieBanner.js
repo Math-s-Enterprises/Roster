@@ -1,36 +1,57 @@
-import React, { useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import { LegalLink } from "@/components/LegalConsent";
-import { saveConsent, useConsent } from "@/lib/cookieConsent";
+import { readConsent, saveConsent, useConsent } from "@/lib/cookieConsent";
 import "@/styles/cookie-banner.css";
 
 const OFF = { preferences: false, fonts: false, google: false };
 const ON = { preferences: true, fonts: true, google: true };
+const CookieSettingsContext = createContext(null);
+export const useCookieSettings = () => useContext(CookieSettingsContext);
+
+export function CookieConsentProvider({ children }) {
+  const [sidebarTrigger, setSidebarTrigger] = useState(null);
+  const [settingsRequest, setSettingsRequest] = useState(null);
+  const openSettings = useCallback(trigger => setSettingsRequest({ trigger }), []);
+  return <CookieSettingsContext.Provider value={{ setSidebarTrigger, openSettings }}>
+    {children}
+    <CookieBanner sidebarTrigger={sidebarTrigger} settingsRequest={settingsRequest} />
+  </CookieSettingsContext.Provider>;
+}
 const OPTIONS = [
   { key: "preferences", title: "Remember preferences", description: "Save your theme, display choices and recent notifications on this device. Without this, they work only for the current visit." },
   { key: "fonts", title: "Google fonts", description: "Download Roster’s typefaces from Google. Google receives your IP address. Otherwise, your device’s fonts are used." },
   { key: "google", title: "Google sign-in", description: "Load Google’s sign-in service, which may use cookies and receive device and account information. Email sign-in works without it." },
 ];
 
-export default function CookieBanner() {
+export default function CookieBanner({ sidebarTrigger = null, settingsRequest = null }) {
   const consent = useConsent();
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState(OFF);
   const settingsButton = useRef(null);
   const heading = useRef(null);
-  const openSettings = () => {
-    setDraft(consent || OFF); setExpanded(true);
+  const returnFocus = useRef(null);
+  const openSettings = useCallback(trigger => {
+    returnFocus.current = trigger;
+    setDraft(readConsent() || OFF); setExpanded(true);
     requestAnimationFrame(() => heading.current?.focus());
-  };
-  const cancel = () => { setExpanded(false); requestAnimationFrame(() => settingsButton.current?.focus()); };
+  }, []);
+  useEffect(() => {
+    if (settingsRequest) openSettings(settingsRequest.trigger);
+  }, [settingsRequest, openSettings]);
+  const restoreFocus = () => requestAnimationFrame(() => {
+    const target = returnFocus.current?.isConnected ? returnFocus.current : settingsButton.current;
+    target?.focus();
+  });
+  const cancel = () => { setExpanded(false); restoreFocus(); };
   const choose = choices => {
     saveConsent(choices);
     setExpanded(false);
-    requestAnimationFrame(() => settingsButton.current?.focus());
+    restoreFocus();
   };
 
-  if (consent && !expanded) return <button ref={settingsButton} type="button"
-    className="cookie-settings-link no-print" onClick={openSettings}>Cookie settings</button>;
+  if (consent && !expanded) return sidebarTrigger ? null : <button ref={settingsButton} type="button"
+    className="cookie-settings-link no-print" onClick={event => openSettings(event.currentTarget)}>Cookie settings</button>;
 
   return (
     <section className="cookie-banner no-print" aria-labelledby="cookie-banner-title">
@@ -66,7 +87,7 @@ export default function CookieBanner() {
         {expanded ? <div className="cookie-banner-settings-actions">
           <button type="button" className="cookie-save" onClick={() => choose(draft)}>Save choices</button>
           <button type="button" onClick={cancel}>Cancel</button>
-        </div> : <button ref={settingsButton} type="button" className="cookie-customize" aria-expanded="false" aria-controls="cookie-preferences" onClick={openSettings}>Cookie settings</button>}
+        </div> : <button ref={settingsButton} type="button" className="cookie-customize" aria-expanded="false" aria-controls="cookie-preferences" onClick={event => openSettings(event.currentTarget)}>Cookie settings</button>}
       </footer>
     </section>
   );

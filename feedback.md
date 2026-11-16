@@ -2267,3 +2267,103 @@ again within six months. This is a working implementation for the services
 currently in this app, not a legal certification or support for future trackers
 automatically. Live Google-account sign-in and other browser engines were not
 tested. All four changes remain uncommitted, unpushed and undeployed.
+
+## 46. Account actions belong under one flat sidebar Settings row
+
+First change in the next batch. The user found the persistent bottom-right
+Cookie settings control distracting and requested Settings in the left sidebar,
+containing Change password, Delete account, Sign out and Cookie settings.
+He reviewed a visual proposal before authorizing implementation. He rejected
+the padded, rounded trigger in both themes: Settings must look like an ordinary
+navigation row, not a boxed button. Account details and the theme switch stay.
+
+AppLayout now uses the installed dropdown-menu component with a flat nv-item
+trigger. Its menu has those four actions in the requested order, a red deletion
+label, keyboard navigation, Escape and outside dismissal, and no-print styling.
+The existing password/deletion dialogs and sign-out handler are reused unchanged.
+The menu is positioned above the account block so it does not obscure the name
+or theme switch, and its position is measured when opened rather than assuming
+one footer height. Viewport collision handling remains with the dropdown.
+
+CookieConsentProvider keeps the existing consent controls global. AppLayout
+registers its Settings trigger while mounted, suppressing only the duplicate
+floating link. Selecting Cookie settings opens the real panel with its saved
+choices. Saving or cancelling returns focus to Settings. Public routes and the
+404 page retain a fallback cookie control because they have no sidebar.
+The initial unanswered/expired consent banner still appears. No consent rules,
+storage categories, expiry or account backend behavior changed.
+
+The regression caught a real focus race: the dropdown's close auto-focus stole
+focus back after the consent heading received it. Only the cookie action now
+suppresses that automatic return; ordinary dismissal still restores the trigger.
+Tests wait for the existing animation-frame focus restoration before opening
+another menu. New checks cover the four entries, dialog dispatch without API
+writes, Escape focus, cookie reopening/rejection/focus, first-visit consent,
+sign-out fallback and the existing theme persistence flow.
+
+Browser evidence uses the actual dev bundle with fictional API responses in an
+ignored local fixture. Desktop light/dark and 320px mobile fit without horizontal
+overflow; at 320x640 the menu bottom was 461 and account top 469. The trigger has
+zero border/radius and a transparent resting background. Cookie controls receive
+focus and return it correctly, the existing confirmation forms open without
+submission, and sign-out restores the public cookie link. No real account,
+password, staff or roster was changed. The fixture initially hit a cross-origin
+script policy and was corrected to serve the copied bundle on the same origin.
+The browser screenshot optimizer lacked its Windows sharp module, but raw PNGs
+were saved and visually inspected. These are tool/fixture limits, not app changes.
+
+All 110 frontend tests, CSS variable checks, 19 leave-run checks and the production
+build passed. Evidence is in the ignored 2026-11-06-settings browse folder.
+Backend tests were not rerun for this frontend-only change. Keep the change
+uncommitted until the user finishes the new batch; do not push or deploy it.
+
+## 47. Collect age groups instead of exact employee ages
+
+The user asked to minimise employee data. The Add and Edit employee forms now
+require a choice of Under 16, 16–17, or 18 or over. The employee CSV and new
+scheduling evidence use the age group. Managers update it when staff move
+into another group.
+
+New imports and restored records without age information stay unconfirmed.
+Legacy imports still carrying the unreviewed default of 25 are also
+unconfirmed. Other valid legacy ages map to their group on read. The employee
+profile and setup checklist flag unconfirmed staff. Until confirmation, they
+use the same 08:00–19:00 window as under-16 staff. Generation, shift checks,
+approval and sick cover share the backend check, and approval keeps it as a
+hard block. Existing decisions are not rewritten by this change.
+
+Saving a confirmed group removes the old exact age from that employee record.
+To clean up all older employee records, run
+`python ml/migrate_employee_age_groups.py` from the backend directory for a dry
+run against the intended database. Use `--commit` to apply it. The script
+converts and removes the exact age in one update, preserves a previously
+selected group, and can be rerun. Old roster decision snapshots can still hold
+exact ages at rest, but roster responses hide them. The employee migration has
+only been exercised on mock data.
+
+Regression checks cover the boundaries at 16 and 18, legacy conversion and
+repeat runs, the import review prompt, API removal and redaction of exact ages,
+the shared scheduling restrictions and the required dropdown. This is change
+two in the local batch with the sidebar Settings work.
+
+## 48. Review leave before generating a draft
+
+The user approved an Astryx-informed reminder with the week and roster group,
+three questions, and Go back and Generate draft actions. Dashboard Generate
+roster now opens that review on the roster page. Generate and Regenerate on
+the roster page open the same dialog. Rebalance stays on its existing path,
+and regenerating with pinned shifts still explains what will be discarded.
+
+The dialog fetches live leave for the exact week and group. Weekly lookup
+filters in the database before reading the results because the general leave
+list is capped and can omit older bookings. The summary counts each active
+staff member once, merges adjacent days, clips summaries to the displayed
+week, and distinguishes an empty week from a failed load. Review leave opens
+the matching week and group in Holidays. The URL group scopes its requests
+without replacing the manager's selected sidebar group.
+
+Cancel and Escape send no scheduler request. The confirm action uses the
+existing generation path, so automatic constraints and resulting coverage gaps
+are still handled there. Tests exercise group and date boundaries, range
+merging, the empty and failed summaries, and explicit confirmation. This is
+change three in the uncommitted batch.

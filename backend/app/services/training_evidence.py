@@ -17,9 +17,10 @@ import json
 import re
 from pathlib import Path
 from collections import Counter
+from app.services.age_groups import age_group
 
 
-EMPLOYEE_FIELDS = set("employee_id role departments department_roles age max_weekly_hours preferred_days_off is_active past_staff availability employment_type contract_span_hours contract_span_tolerance is_student term_time_max_hours summer_break".split())
+EMPLOYEE_FIELDS = set("employee_id role departments department_roles max_weekly_hours preferred_days_off is_active past_staff availability employment_type contract_span_hours contract_span_tolerance is_student term_time_max_hours summer_break".split())
 SHOP_FIELDS = set("shop_id hours min_shift_hours max_shift_hours max_working_days roles departments multi_department open_24h shift_templates role_hierarchy min_rest_hours strict_days_off breaks_are_paid overstaff_tolerance".split())
 SHIFT_FIELDS = set("employee_id day start end pinned extra fixed locked sick paid_holiday unpaid_holiday temp_override".split())
 DECISION_SHIFT_FIELDS = SHIFT_FIELDS | {
@@ -31,6 +32,29 @@ DECISION_SHIFT_FIELDS = SHIFT_FIELDS | {
 
 def select(record, fields):
     return deepcopy({k: v for k, v in record.items() if k in fields})
+
+
+def redact_legacy_ages(roster):
+    """Keep exact ages from old solver evidence out of roster responses."""
+    def redact(snapshot):
+        if not snapshot or not any("age" in e for e in snapshot.get("employees", [])):
+            return snapshot
+        return {
+            **snapshot,
+            "employees": [
+                {key: value for key, value in employee.items() if key != "age"}
+                for employee in snapshot["employees"]
+            ],
+        }
+
+    generation = roster.get("training_context")
+    approval = roster.get("training_approval")
+    public = dict(roster)
+    if generation:
+        public["training_context"] = redact(generation)
+    if approval and approval.get("context"):
+        public["training_approval"] = {**approval, "context": redact(approval["context"])}
+    return public
 
 
 def digest(value):
@@ -126,7 +150,10 @@ def context(shop, employees, holidays, fixed_shifts, rules, *, week_start=None):
     payload = {
         "schema_version": 2,
         "shop": select(shop, SHOP_FIELDS),
-        "employees": [select(e, EMPLOYEE_FIELDS) for e in _ordered(employees, "employee_id")],
+        "employees": [
+            {**select(e, EMPLOYEE_FIELDS), "age_group": age_group(e)}
+            for e in _ordered(employees, "employee_id")
+        ],
         "holidays": [select(h, {
             "holiday_id", "employee_id", "date", "end_date", "scope",
             "hours_per_day",

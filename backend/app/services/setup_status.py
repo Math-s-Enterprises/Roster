@@ -28,12 +28,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from app.services import availability as avail
-
-# What the importer writes when the spreadsheet does not say. Anyone still
-# carrying all three is a placeholder rather than a real pay record.
-IMPORT_DEFAULT_RATE = 13.0
-IMPORT_DEFAULT_AGE = 25
-IMPORT_DEFAULT_MAX_HOURS = 40.0
+from app.services.age_groups import age_group
 
 
 def _name_list(people: List[Dict[str, Any]], limit: int = 4) -> str:
@@ -48,20 +43,9 @@ def _name_list(people: List[Dict[str, Any]], limit: int = 4) -> str:
 
 
 def _on_import_defaults(employee: Dict[str, Any]) -> bool:
-    """Whether this record still holds values nobody has looked at.
-
-    A saved edit sets `details_confirmed`, and that settles it. Comparing
-    values is only a fallback for records written before the flag existed:
-    it cannot distinguish a placeholder from somebody who genuinely is 25, on
-    the default rate, working 40 hours - and for them the step could never be
-    completed, which is a checklist that lies to the person following it.
-    """
-    if employee.get("details_confirmed"):
-        return False
-    return (
-        float(employee.get("hourly_rate") or 0) == IMPORT_DEFAULT_RATE
-        and int(employee.get("age") or 0) == IMPORT_DEFAULT_AGE
-        and float(employee.get("max_weekly_hours") or 0) == IMPORT_DEFAULT_MAX_HOURS
+    """Imported pay needs review even if the employee has a known age group."""
+    return age_group(employee) is None or bool(
+        employee.get("imported") and not employee.get("details_confirmed")
     )
 
 
@@ -139,9 +123,9 @@ def build_steps(
         },
         {
             "id": "details",
-            "title": "Check pay and ages",
-            "why": "A spreadsheet has no wages or dates of birth, so imported staff "
-                   "start on placeholders. Age decides what the law allows; pay "
+            "title": "Check pay and age groups",
+            "why": "Confirm the age group and check the pay for anyone added from an import. "
+                   "The age group guides scheduling restrictions, and pay "
                    "decides whether the cost on each roster means anything.",
             "done": len(active) > 0 and not placeholders,
             # An empty team must not read "All reviewed" - technically true of
@@ -153,7 +137,7 @@ def build_steps(
             # done. Four names is the whole job.
             "detail": (
                 "Nobody to review yet" if not active
-                else _name_list(placeholders) + " still on placeholder pay and age"
+                else _name_list(placeholders) + " still to review"
                 if placeholders else "All reviewed"
             ),
             "who": [

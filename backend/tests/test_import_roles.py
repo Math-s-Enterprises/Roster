@@ -76,7 +76,7 @@ def test_an_unconfigured_reviewed_role_is_refused_before_any_employee_or_history
 def test_existing_employee_role_is_shown_and_preserved_when_file_disagrees(client):
     headers = setup(client)
     employee = client.post("/api/employees", headers=headers, json={
-        "name": "Alex", "role": "Customer Service", "age": 25,
+        "name": "Alex", "role": "Customer Service", "age_group": "18_plus",
         "hourly_rate": 13, "max_weekly_hours": 40,
     }).json()
     preview = upload(client, headers, "Shop Assistant")
@@ -92,7 +92,7 @@ def test_mapping_cannot_attach_another_shops_employee_to_imported_shifts(client)
     headers = setup(client)
     other = auth(register(client, email="other@example.com"))
     employee = client.post("/api/employees", headers=other, json={
-        "name": "Alex", "role": "Customer Service", "age": 25,
+        "name": "Alex", "role": "Customer Service", "age_group": "18_plus",
         "hourly_rate": 13, "max_weekly_hours": 40,
     }).json()
     preview = upload(client, headers)
@@ -107,7 +107,7 @@ def test_reviewed_group_role_does_not_change_employee_role_in_another_group(clie
     headers = setup(client)
     client.put("/api/shop", headers=headers, json={"departments": ["Shop Floor", "Deli"]})
     employee = client.post("/api/employees", headers=headers, json={
-        "name": "Alex", "role": "Customer Service", "age": 25,
+        "name": "Alex", "role": "Customer Service", "age_group": "18_plus",
         "hourly_rate": 13, "max_weekly_hours": 40,
     }).json()
     deli = {**headers, "X-Roster-Group": "Deli"}

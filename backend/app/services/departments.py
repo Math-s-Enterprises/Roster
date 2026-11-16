@@ -10,6 +10,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Optional
 
+from app.services.age_groups import age_group
 
 DEFAULT_DEPARTMENT = "Shop Floor"
 
@@ -47,6 +48,8 @@ def effective_shop(shop: Dict[str, Any], department: Optional[str]) -> Dict[str,
 def employee_for(employee: Dict[str, Any], department: str) -> Dict[str, Any]:
     """Employee with the job title they hold in this roster group."""
     result = dict(employee)
+    result["age_group"] = age_group(employee)
+    result.pop("age", None)
     result["role"] = (employee.get("department_roles") or {}).get(
         department, employee.get("role", ""),
     )

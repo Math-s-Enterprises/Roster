@@ -325,7 +325,7 @@ export default function Dashboard() {
             type="button"
             data-testid="btn-generate-roster"
             className="db-btn db-btn-1"
-            onClick={() => navigate(`/roster?week=${nextOpenWeek}`)}
+            onClick={() => navigate(`/roster?week=${nextOpenWeek}&review=generate`)}
           >
             <Wand2 size={15} strokeWidth={1.8} /> Generate roster
           </button>
@@ -384,7 +384,7 @@ export default function Dashboard() {
                       <button key={person.employee_id} type="button" className="db-link"
                         data-testid={`setup-person-${step.id}-${person.employee_id}`}
                         onClick={() => reviewPerson(person, step.id)}>
-                        Review {person.name}{step.id === "employment" ? "'s employment type" : "'s pay and age"}
+                        Review {person.name}{step.id === "employment" ? "'s employment type" : "'s pay and age group"}
                       </button>
                     ))}
                   </div>
@@ -475,7 +475,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 className="db-btn db-btn-1"
-                onClick={() => navigate(`/roster?week=${nextOpenWeek}`)}
+                onClick={() => navigate(`/roster?week=${nextOpenWeek}&review=generate`)}
               >
                 <Wand2 size={15} strokeWidth={1.8} /> Generate roster
               </button>
@@ -619,7 +619,7 @@ export default function Dashboard() {
       </div>
 
       <p className="db-note">
-        <strong>Generate roster</strong> builds a draft for the next week with no roster yet
+        <strong>Generate roster</strong> opens the review for the next week with no roster yet
         {nextOpenWeek ? `, currently the week of ${fmtWeek(nextOpenWeek)}` : ""}. It never overwrites an
         approved roster: reopening one starts a new version and says so.
       </p>

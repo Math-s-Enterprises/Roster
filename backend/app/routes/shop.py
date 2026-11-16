@@ -12,6 +12,7 @@ from app import db
 from app.models import (
     ContactApply, EmployeeIn, FixedShiftIn, HolidayIn, LeaveRequest, ShopUpdate,
 )
+from app.services.age_groups import age_group
 from app.services.scheduler import (
     DAYS, shift_paid_hours, shop_breaks_paid, violates_minor_curfew,
 )
@@ -479,6 +480,8 @@ async def list_employees(
 
 @router.post("/employees", status_code=status.HTTP_201_CREATED)
 async def create_employee(payload: EmployeeIn, scope: ShopScope = CurrentScope):
+    if payload.age_group is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Choose an age group for this employee.")
     unknown = set(payload.departments) - set(department_names(scope.shop))
     if unknown:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
@@ -506,17 +509,11 @@ async def update_employee(
                             "Unknown roster group(s): " + ", ".join(sorted(unknown)))
     if not payload.departments:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Choose at least one roster group.")
-    # Saving an employee records that somebody looked at this record.
-    #
-    # The setup checklist used to work out whether pay and age had been
-    # reviewed by comparing them against the importer's defaults. That cannot
-    # tell a placeholder from somebody who really is 25, really is on the
-    # default rate and really does work 40 hours - so their step could never
-    # be ticked, however many times it was edited. Provenance answers the
-    # actual question; the values never could.
     existing = await scope.employees.find_one({"employee_id": employee_id})
     if not existing:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
+    if payload.age_group is None and age_group(existing) is not None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Choose an age group for this employee.")
     data = payload.model_dump()
     roles = dict(existing.get("department_roles") or {})
     roles.update(data.get("department_roles") or {})
@@ -527,9 +524,16 @@ async def update_employee(
     }
     if scope.department != department_names(scope.base_shop)[0]:
         data["role"] = existing.get("role") or data["role"]
-    modified = await scope.employees.update_one(
+    unset = ()
+    if payload.age_group is None:
+        # A status change for an unconfirmed employee must not erase a concurrent confirmation.
+        data.pop("age_group")
+    else:
+        data["details_confirmed"] = True
+        unset = ("age",)
+    await scope.employees.update_one(
         {"employee_id": employee_id},
-        {**data, "details_confirmed": True},
+        data, unset=unset,
     )
     saved = await scope.employees.find_one({"employee_id": employee_id})
     return employee_for(saved, scope.department)
@@ -626,11 +630,27 @@ async def apply_contacts(
 # Holidays / leave
 # ---------------------------------------------------------------------------
 @router.get("/holidays")
-async def list_holidays(scope: ShopScope = CurrentScope):
+async def list_holidays(
+    scope: ShopScope = CurrentScope, week_start: date | None = Query(None),
+):
     employee_ids = {
         employee["employee_id"] for employee in await scope.employees.find(limit=1000)
         if scope.department in (employee.get("departments") or [DEFAULT_DEPARTMENT])
     }
+    if week_start is not None:
+        start = week_start.isoformat()
+        try:
+            end = (week_start + timedelta(days=6)).isoformat()
+        except OverflowError:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid leave week.") from None
+        query = {
+            "date": {"$lte": end},
+            "$and": [
+                {"$or": [{"date": {"$gte": start}}, {"end_date": {"$gte": start}}]},
+                {"$or": [{"scope": "shop"}, {"employee_id": {"$in": list(employee_ids)}}]},
+            ],
+        }
+        return [holiday async for holiday in scope.holidays.stream(query).sort("date", 1)]
     return [
         holiday for holiday in await scope.holidays.find(sort=[("date", -1)])
         if holiday.get("scope") == "shop"

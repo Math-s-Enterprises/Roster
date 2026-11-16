@@ -30,11 +30,11 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 
 from app.services import availability as avail
 from app.services import compliance
+from app.services.age_groups import curfew_reason
 from app.services.scheduler import (
     ABSOLUTE_MAX_SHIFT_HOURS,
     DAYS,
     MAX_WORKING_DAYS,
-    MINOR_AGE,
     MIN_REST_HOURS,
     paid_hours,
     shift_duration_minutes,
@@ -231,8 +231,8 @@ def validate_shifts(
 
         if violates_minor_curfew(employee, start, end):
             verdict.blocking.append(
-                f"{name} is under {MINOR_AGE}. Their shift on {day} "
-                f"({start}–{end}) breaks the 08:00–19:00 curfew."
+                f"{name}'s shift on {day} ({start}–{end}) is outside 08:00–19:00 "
+                f"({curfew_reason(employee)})."
             )
             continue
 

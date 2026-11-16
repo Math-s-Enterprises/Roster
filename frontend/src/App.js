@@ -24,7 +24,7 @@ import LearningReport from "@/pages/LearningReport";
 import Pricing from "@/pages/Pricing";
 import { PaymentCancel, PaymentSuccess } from "@/pages/PaymentResult";
 import NotFound from "@/pages/NotFound";
-import CookieBanner from "@/components/CookieBanner";
+import { CookieConsentProvider } from "@/components/CookieBanner";
 import ConsentServices from "@/components/ConsentServices";
 
 /**
@@ -59,6 +59,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <CookieConsentProvider>
         <Routes>
           <Route
             path="/login"
@@ -113,9 +114,9 @@ export default function App() {
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
-        <CookieBanner />
         <ConsentServices />
         <Toaster theme="dark" position="top-right" richColors />
+        </CookieConsentProvider>
       </BrowserRouter>
     </AuthProvider>
   );

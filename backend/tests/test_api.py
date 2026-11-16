@@ -238,7 +238,7 @@ def test_garbage_token_is_rejected(client):
 # ---------------------------------------------------------------------------
 EMPLOYEE = {
     "name": "Alex Employee", "email": "alex@example.com", "role": "Cashier",
-    "age": 25, "hourly_rate": 15.0, "max_weekly_hours": 40,
+    "age_group": "18_plus", "hourly_rate": 15.0, "max_weekly_hours": 40,
 }
 
 
@@ -1123,11 +1123,13 @@ class TestSetupStatus:
         token = register(client)
         _seed_imported_week(client, token, "2026-03-02")
         employee = client.get("/api/employees", headers=auth(token)).json()[0]
+        assert employee["age_group"] is None
+        assert "age" not in employee
 
-        # Saved with the SAME values the importer wrote.
+        # Pay and hours can match the import defaults once the manager has reviewed them.
         saved = client.put(f"/api/employees/{employee['employee_id']}", json={
             "name": employee["name"], "role": employee["role"],
-            "age": 25, "hourly_rate": 13.0, "max_weekly_hours": 40.0,
+            "age_group": "18_plus", "hourly_rate": 13.0, "max_weekly_hours": 40.0,
         }, headers=auth(token))
         assert saved.status_code == 200, saved.text
 
@@ -1146,7 +1148,7 @@ class TestSetupStatus:
         assert "1 person" in steps["team"]["detail"]
 
     def test_placeholder_pay_is_flagged_until_reviewed(self, client):
-        """Imported staff land on €13.00, age 25, 40h - none of it real."""
+        """Imported staff need a pay review and a confirmed age group."""
         token = register(client)
         _seed_imported_week(client, token, "2026-03-02")
         _, steps = self._steps(client, token)
@@ -1160,7 +1162,7 @@ class TestSetupStatus:
         employee = client.get("/api/employees", headers=auth(token)).json()[0]
         updated = client.put(f"/api/employees/{employee['employee_id']}", json={
             "name": employee["name"], "email": employee["email"],
-            "role": employee["role"], "age": 31, "hourly_rate": 14.5,
+            "role": employee["role"], "age_group": "18_plus", "hourly_rate": 14.5,
             "max_weekly_hours": 37.5,
         }, headers=auth(token))
         assert updated.status_code == 200, updated.text
@@ -1375,7 +1377,7 @@ class TestLearningSummary:
 
         saved = client.put(f"/api/employees/{employee['employee_id']}", json={
             "name": employee["name"], "role": employee["role"],
-            "age": 31, "hourly_rate": 14.5, "max_weekly_hours": 37.5,
+            "age_group": "18_plus", "hourly_rate": 14.5, "max_weekly_hours": 37.5,
         }, headers=auth(token))
         assert saved.status_code == 200, saved.text
 
@@ -1894,10 +1896,11 @@ def test_shop_can_choose_exact_supervisory_roles(client):
     assert hierarchy["supervisory"] == ["Captain"]
 
 
-def test_underage_employee_is_rejected(client):
+@pytest.mark.parametrize("age_group", [None, "20", "16_18"])
+def test_new_employee_requires_a_valid_age_group(client, age_group):
     token = register(client)
     response = client.post(
-        "/api/employees", json={**EMPLOYEE, "age": 11}, headers=auth(token)
+        "/api/employees", json={**EMPLOYEE, "age_group": age_group}, headers=auth(token)
     )
     assert response.status_code == 422
 

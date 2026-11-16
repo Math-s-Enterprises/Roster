@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef } from "react";
+import React, { useId } from "react";
 import { CURRENCY } from "@/lib/api";
 
 /**
@@ -61,12 +61,6 @@ export function fmtSalary(amount) {
 /** A worked-out figure: always pence, so 700 reads as 700.00 beside 692.31. */
 const fmtDerived = (amount) => `${CURRENCY}${group(amount, 2)}`;
 
-/** A salary as a short phrase for a summary line - "€3,000 a month" - or null until both parts are given. */
-export function paySummary(period, salary) {
-  if (weeklyEquivalent(period, salary) == null) return null;
-  return `${fmtSalary(salary)} a ${period === "monthly" ? "month" : "week"}`;
-}
-
 /** The label and value for an employee's pay tile, or null when they have no salary. */
 export function salaryTile(employee) {
   if (!employee || !employee.contract_pay_period || !(Number(employee.contract_salary) > 0)) return null;
@@ -76,24 +70,8 @@ export function salaryTile(employee) {
   };
 }
 
-export default function ContractPay({ period, salary, paidHours, onChange, focusSignal = 0, onFocused }) {
+export default function ContractPay({ period, salary, paidHours, onChange }) {
   const helpId = useId();
-  const firstRadioRef = useRef(null);
-  const salaryRef = useRef(null);
-  // The latest values, read when the form asks for focus, so that effect only runs on a request.
-  const periodRef = useRef(period);
-  periodRef.current = period;
-  const onFocusedRef = useRef(onFocused);
-  onFocusedRef.current = onFocused;
-
-  // The form asks for this when it refused to save because the pay is what is missing: go
-  // to the first thing that is - the choice of weekly or monthly, or, once that is made, the
-  // salary - so a keyboard user lands on it and a mouse user has it scrolled into view.
-  useEffect(() => {
-    if (!focusSignal) return;
-    (periodRef.current ? salaryRef : firstRadioRef).current?.focus();
-    onFocusedRef.current?.();
-  }, [focusSignal]);
   const chosen = CONTRACT_PAY_PERIODS.find((p) => p.key === period);
   const weekly = weeklyEquivalent(period, salary);
   const hourly = hourlyEquivalent(period, salary, paidHours);
@@ -113,32 +91,33 @@ export default function ContractPay({ period, salary, paidHours, onChange, focus
   }
 
   return (
-    <fieldset className="space-y-2 min-w-0" data-testid="contract-pay" style={{ border: 0, padding: 0, margin: 0 }}>
-      <legend className="text-[11px] esp-ink-mute mb-1 p-0">Contract pay</legend>
-      <div className="flex items-center gap-5">
-        {CONTRACT_PAY_PERIODS.map((p) => (
-          <label key={p.key} className="flex items-center gap-2 cursor-pointer text-sm">
-            <input
-              type="radio"
-              name="contract_pay_period"
-              value={p.key}
-              ref={p.key === CONTRACT_PAY_PERIODS[0].key ? firstRadioRef : undefined}
-              data-testid={`emp-pay-${p.key}`}
-              checked={period === p.key}
-              onChange={() => onChange({ contract_pay_period: p.key })}
-              required
-              className="shrink-0"
-              style={{ minHeight: 0, accentColor: "var(--primary)" }}
-            />
-            {p.label}
-          </label>
-        ))}
+    <fieldset className="employee-editor-grid min-w-0" data-testid="contract-pay">
+      <legend className="mb-2 text-sm font-semibold">Contract pay</legend>
+      <div className="min-w-0">
+        <div className="mb-1 text-[13px] font-semibold esp-ink-body">Pay period</div>
+        <div className="flex min-h-9 items-center gap-4 flex-wrap">
+          {CONTRACT_PAY_PERIODS.map((p) => (
+            <label key={p.key} className="flex items-center gap-2 cursor-pointer text-sm">
+              <input
+                type="radio"
+                name="contract_pay_period"
+                value={p.key}
+                data-testid={`emp-pay-${p.key}`}
+                checked={period === p.key}
+                onChange={() => onChange({ contract_pay_period: p.key })}
+                required
+                className="shrink-0"
+                style={{ minHeight: 0, accentColor: "var(--primary)" }}
+              />
+              {p.label}
+            </label>
+          ))}
+        </div>
       </div>
       <label className="block">
         <div className="text-[11px] esp-ink-mute mb-1">{label}</div>
         <input
           data-testid="emp-salary"
-          ref={salaryRef}
           type="number"
           inputMode="decimal"
           min="0.01"
@@ -152,7 +131,7 @@ export default function ContractPay({ period, salary, paidHours, onChange, focus
           className="w-full px-3 py-2.5 rounded-lg font-mono"
         />
       </label>
-      <p id={helpId} className="text-[11px]" data-testid="contract-pay-help" style={{ color: "var(--ink-mute-2)" }}>
+      <p id={helpId} className="col-span-full text-xs" data-testid="contract-pay-help" style={{ color: "var(--ink-mute-2)" }}>
         {help}
       </p>
     </fieldset>

@@ -46,19 +46,20 @@ from typing import Any, Dict, List, Optional
 
 from app.services import availability as avail
 from app.services import hierarchy, rule_parser
+from app.services.age_groups import curfew_reason
 from app.services.scheduler import (
     ABSOLUTE_MAX_SHIFT_HOURS,
     covers_closing,
     DAYS,
     MAX_WORKING_DAYS,
     MIN_REST_HOURS,
-    MINOR_AGE,
     paid_hours,
     shift_duration_minutes,
     shift_paid_hours,
     shift_span_hours,
     shift_week_span,
     to_minutes,
+    violates_minor_curfew,
 )
 
 # Breaches that stand whatever the manager says. See the module docstring.
@@ -415,14 +416,10 @@ def audit(
                     f"{name}'s {shift['day']} shift is {hours:.1f}h, over the "
                     f"{ABSOLUTE_MAX_SHIFT_HOURS}h maximum for one shift.")
 
-            if int(employee.get("age") or 99) < MINOR_AGE:
-                start_m, end_m = to_minutes(shift["start"]), to_minutes(shift["end"])
-                overnight = end_m <= start_m
-                if overnight or start_m < 8 * 60 or end_m > 19 * 60:
-                    add(employee, "minor_curfew",
-                        f"{name} is under {MINOR_AGE} and is rostered "
-                        f"{shift['start']}-{shift['end']} on {shift['day']}. "
-                        f"Under-16s cannot work before 08:00 or after 19:00.")
+            if violates_minor_curfew(employee, shift["start"], shift["end"]):
+                add(employee, "minor_curfew",
+                    f"{name}'s {shift['day']} shift ({shift['start']}-{shift['end']}) "
+                    f"is outside 08:00–19:00 ({curfew_reason(employee)}).")
 
             date_iso = date_for.get(shift["day"])
             if date_iso and date_iso in blocked.get(employee_id, set()):

@@ -18,12 +18,12 @@ from tests.test_api import (
 
 def test_context_keeps_constraints_without_contact_details_or_mutable_references():
     employee = {"employee_id": "e", "email": "private@example.com", "name": "Private",
-                "hourly_rate": 99, "availability": {"earliest_start": "09:00"},
+                "hourly_rate": 99, "age": 17, "availability": {"earliest_start": "09:00"},
                 "contract_span_hours": 40}
     captured = context({"shop_id": "s", "roster_recipients": [{"email": "private"}]},
                        [employee], [], [{"days": ["mon"], "start": "09:00"}], [])
     employee["availability"]["earliest_start"] = "12:00"
-    assert captured["employees"][0] == {"employee_id": "e", "availability": {"earliest_start": "09:00"}, "contract_span_hours": 40}
+    assert captured["employees"][0] == {"employee_id": "e", "age_group": "16_17", "availability": {"earliest_start": "09:00"}, "contract_span_hours": 40}
     assert captured["shop"] == {"shop_id": "s"}
     assert captured["fixed_shifts"][0]["days"] == ["mon"]
 
@@ -219,7 +219,7 @@ def test_unchanged_clean_approval_is_usable_evidence(client):
                       headers=auth(token)).status_code == 200
     client.post("/api/employees", json={
         "name": "Alex", "email": "alex@e.com", "role": "Cashier",
-        "age": 25, "hourly_rate": 15, "max_weekly_hours": 40,
+        "age_group": "18_plus", "hourly_rate": 15, "max_weekly_hours": 40,
     }, headers=auth(token))
     generated = client.post(
         "/api/roster/generate", json={"week_start": _future_monday()},

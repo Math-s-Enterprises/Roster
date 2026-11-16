@@ -82,7 +82,9 @@ api.interceptors.request.use((config) => {
   const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   const rosterGroup = localStorage.getItem(ROSTER_GROUP_KEY);
-  if (rosterGroup) config.headers["X-Roster-Group"] = rosterGroup;
+  if (rosterGroup && !config.headers.has("X-Roster-Group")) {
+    config.headers.set("X-Roster-Group", rosterGroup);
+  }
   return config;
 });
 
@@ -124,7 +126,7 @@ const FIELD_LABELS = {
   min_shift_hours: "Minimum shift length",
   max_shift_hours: "Maximum shift length",
   min_rest_hours: "Rest between shifts",
-  age: "Age",
+  age_group: "Age group",
   name: "Name",
   email: "Email",
   role: "Role",

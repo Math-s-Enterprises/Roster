@@ -1,7 +1,9 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { readPreference, writePreference } from "@/lib/cookieConsent";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { Menu, Wand2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Cookie, KeyRound, LogOut, Menu, Trash2, Wand2, X } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useCookieSettings } from "@/components/CookieBanner";
 import { useAuth } from "@/context/AuthContext";
 import { api, mondayOf, ROSTER_GROUP_KEY, SHOP_CHANGED } from "@/lib/api";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
@@ -94,6 +96,15 @@ function Shell() {
   const [notesOpen, setNotesOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOffset, setSettingsOffset] = useState(8);
+  const settingsTrigger = useRef(null);
+  const cookieFocusPending = useRef(false);
+  const { setSidebarTrigger, openSettings: openCookieSettings } = useCookieSettings();
+  useEffect(() => {
+    setSidebarTrigger(settingsTrigger.current);
+    return () => setSidebarTrigger(null);
+  }, [setSidebarTrigger]);
   const [open, setOpen] = useState(false);
   const [counts, setCounts] = useState({});
   // Light is the default; remembering a dark choice across visits needs preferences allowed.
@@ -295,32 +306,45 @@ function Shell() {
                 <span className="nv-theme-opt" data-on={theme !== "light"}>Dark</span>
               </span>
             </button>
-            <button
-              type="button"
-              data-testid="btn-change-password"
-              className="nv-acc-btn"
-              onClick={() => setPasswordOpen(true)}
-            >
-              Change password
-            </button>
-            <button
-              type="button"
-              data-testid="btn-logout"
-              className="nv-acc-btn"
-              data-primary="true"
-              onClick={signOut}
-            >
-              Sign out
-            </button>
           </div>
-          <button
-            type="button"
-            data-testid="btn-delete-account"
-            className="nv-acc-delete"
-            onClick={() => setDeleteOpen(true)}
-          >
-            Delete account
-          </button>
+          <DropdownMenu open={settingsOpen} onOpenChange={next => {
+            if (next) {
+              const trigger = settingsTrigger.current;
+              // Keep account details and the theme switch visible beneath the menu.
+              setSettingsOffset(trigger.getBoundingClientRect().top - trigger.closest(".nv-account").getBoundingClientRect().top + 8);
+            }
+            setSettingsOpen(next);
+          }} modal={false}>
+            <DropdownMenuTrigger asChild>
+              <button ref={settingsTrigger} type="button" data-testid="btn-settings" className="nv-item nv-settings no-print">
+                <span>Settings</span><ChevronDown size={16} aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="start" sideOffset={settingsOffset} collisionPadding={12}
+              className="nv-settings-menu no-print" aria-label="Settings"
+              onCloseAutoFocus={event => {
+                // Consent moves focus to its heading instead of back to the closed menu.
+                if (cookieFocusPending.current) { event.preventDefault(); cookieFocusPending.current = false; }
+              }}>
+              <DropdownMenuLabel className="nv-settings-title">Settings</DropdownMenuLabel>
+              <DropdownMenuItem data-testid="btn-change-password" className="nv-settings-action" onSelect={() => setPasswordOpen(true)}>
+                <KeyRound aria-hidden="true" /><span>Change password</span><ChevronRight className="nv-settings-arrow" aria-hidden="true" />
+              </DropdownMenuItem>
+              <DropdownMenuItem data-testid="btn-delete-account" className="nv-settings-action nv-settings-danger" onSelect={() => setDeleteOpen(true)}>
+                <Trash2 aria-hidden="true" /><span>Delete account</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem data-testid="btn-logout" className="nv-settings-action" onSelect={signOut}>
+                <LogOut aria-hidden="true" /><span>Sign out</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="nv-settings-separator" />
+              <DropdownMenuItem data-testid="btn-cookie-settings" className="nv-settings-action" onSelect={() => {
+                cookieFocusPending.current = true;
+                openCookieSettings(settingsTrigger.current);
+              }}>
+                <Cookie aria-hidden="true" /><span>Cookie settings</span><ChevronRight className="nv-settings-arrow" aria-hidden="true" />
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {passwordOpen && <ChangePasswordModal onClose={() => setPasswordOpen(false)} />}
           {deleteOpen && <DeleteAccountModal onClose={() => setDeleteOpen(false)} />}
         </div>

@@ -30,8 +30,8 @@ import { LEGAL } from "@/components/legalDetails";
 // The version belongs to the wording, so it lives with it, and is not shown. It is
 // kept so that, when the app starts recording who accepted what, there is a version
 // to record. The date IS shown: both documents promise that it changes when they do.
-export const LEGAL_VERSION = "2.4";
-export const LEGAL_UPDATED = "5 November 2026";
+export const LEGAL_VERSION = "2.5";
+export const LEGAL_UPDATED = "14 November 2026";
 
 // The two details, trimmed. Empty means "not given yet": a visible blank is shown.
 const COMPANY = String(LEGAL.company || "").trim();
@@ -111,7 +111,7 @@ const PRIVACY = [
         <ul>
           <li>Name, and email address if you add one.</li>
           <li>Job title, roster group, and whether they are still active.</li>
-          <li>Age (13 or over). It is used for young-worker rules, such as the under-16 curfew check.</li>
+          <li>Age group (under 16, 16–17, or 18 or over) for scheduling checks such as the under-16 curfew.</li>
           <li>Pay: an hourly rate, or a weekly or monthly salary for full-time contract staff.</li>
           <li>
             Whether they are on a full-time contract, a student or hourly, and their contract hours.
@@ -266,9 +266,9 @@ const PRIVACY = [
     title: "Young people.",
     body: (
       <>
-        Roster is for businesses: an account holder must be 18 or over. Employers can add staff aged 13
-        and over, because age is needed for the young-worker rules. Employers are responsible for
-        employing young people lawfully.
+        Roster is for businesses: an account holder must be 18 or over. The employee age group
+        supports young-worker scheduling checks. Employers are responsible for checking that
+        each employee can lawfully work.
       </>
     ),
   },

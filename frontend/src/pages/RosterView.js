@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorMessage, refusalReasons, DAY_LABELS, DAY_SHORT, DAYS, mondayOf, fmtHours, fmtMoney, roleClass, shiftHours, shiftPaidHours, dateForDay, fmtDayDate, externalShiftsByCell } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import GenerateReviewDialog from "@/components/GenerateReviewDialog";
 import RosterPrintSheet from "@/components/RosterPrintSheet";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -119,6 +120,8 @@ export default function RosterView() {
   const [shop, setShop] = useState(null);
   const [department, setDepartment] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [generateReview, setGenerateReview] = useState(null);
+  const generateTrigger = useRef(null);
   const [rosters, setRosters] = useState([]);
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [dispatching, setDispatching] = useState(false);
@@ -147,6 +150,19 @@ export default function RosterView() {
   // unapproved, or another version was picked), close it rather than leave a
   // live Send button sitting on a draft.
   const approved = Boolean(roster?.approved);
+  const reviewTarget = JSON.stringify([week, department, rosterParam]);
+  useEffect(() => {
+    setGenerateReview(current => current === reviewTarget ? current : null);
+  }, [reviewTarget]);
+  useEffect(() => {
+    if (searchParams.get("review") !== "generate" || loading || loadError ||
+        (weekParam && mondayOf(weekParam) !== week)) return;
+    if (generateTrigger.current && !approved) setGenerateReview(reviewTarget);
+    const next = new URLSearchParams(searchParams);
+    next.delete("review");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, loading, loadError, weekParam, week, approved, reviewTarget]);
+
   useEffect(() => {
     if (!approved) {
       setDispatchOpen(false);
@@ -1089,8 +1105,9 @@ export default function RosterView() {
                 </button>
               )}
               <button
+                ref={generateTrigger}
                 data-testid="btn-generate"
-                onClick={() => generate(false)}
+                onClick={() => setGenerateReview(reviewTarget)}
                 disabled={generating || overLimit}
                 className={pinnedCount > 0 ? "wr-btn wr-btn-2" : "wr-btn wr-btn-1"}
                 title={pinnedCount > 0 ? "Start over, discarding your pinned shifts" : undefined}
@@ -1578,6 +1595,20 @@ export default function RosterView() {
         </>
       )}
 
+      {!approved && generateReview === reviewTarget && (
+        <GenerateReviewDialog
+          week={week}
+          department={department}
+          pinnedCount={pinnedCount}
+          trigger={generateTrigger.current}
+          onClose={() => setGenerateReview(null)}
+          onGenerate={() => {
+            setGenerateReview(null);
+            generate(false);
+          }}
+        />
+      )}
+
       {editShift && (
         <ShiftModal
           shift={editShift}
@@ -1971,7 +2002,7 @@ function SickCoverModal({ rosterId, shift, onClose, onDone }) {
           {options.candidates.length === 0 && (
             <p className="text-[13px] py-3" style={{ color: "var(--ink-mute)" }}>
               Nobody can take this shift, everyone is either on leave, already
-              working those hours, or under 16 and curfew-bound.
+              working those hours, or restricted by their age group.
             </p>
           )}
         </div>
@@ -2097,8 +2128,9 @@ function ShiftModal({ shift, employee, onClose, onSave, onDelete, onUnpin, isNew
     : shift.unpaid_holiday ? "unpaid_holiday"
       : shift.sick ? "sick" : null;
 
-  const under16 = employee?.age < 16;
-  const conflict = under16 && (start < "08:00" || end > "19:00");
+  const unconfirmed = employee && !employee.age_group;
+  const limited = employee?.age_group === "under_16" || unconfirmed;
+  const conflict = limited && (start < "08:00" || end > "19:00" || end <= start);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4" onClick={onClose}>
@@ -2170,7 +2202,10 @@ function ShiftModal({ shift, employee, onClose, onSave, onDelete, onUnpin, isNew
 
             {conflict && (
               <div className="status-danger mt-4 p-3 text-[13px] flex items-center gap-2">
-                <AlertTriangle size={13} /> Under-16 curfew: shift must be within 08:00–19:00.
+                <AlertTriangle size={13} />
+                {unconfirmed
+                  ? "Confirm the age group in Employees to roster outside 08:00–19:00."
+                  : "Under-16 curfew: shift must be within 08:00–19:00."}
               </div>
             )}
 

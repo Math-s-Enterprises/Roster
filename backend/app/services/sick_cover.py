@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.services import availability as avail
 from app.services import hierarchy
+from app.services.age_groups import curfew_reason
 from app.services.scheduler import (
     ABSOLUTE_MAX_SHIFT_HOURS,
     DAYS,
@@ -199,7 +200,7 @@ def _hard_block(
         return "no longer working here"
 
     if violates_minor_curfew(employee, start, end):
-        return "under-16 curfew"
+        return curfew_reason(employee)
 
     if span > ABSOLUTE_MAX_SHIFT_HOURS:
         return "longer than the maximum shift"

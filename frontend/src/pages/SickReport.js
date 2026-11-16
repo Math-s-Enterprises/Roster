@@ -542,7 +542,7 @@ export default function SickReport() {
               <div className="sk-emptyrow">No sick leave recorded in {activeYear}.</div>
             ) : usedRows.slice(0, visibleUsed).map((r) => {
               const employee = empMap[r.employee_id];
-              const minor = employee?.age != null && employee.age < 18;
+              const minor = ["under_16", "16_17"].includes(employee?.age_group);
               return (
                 <div className="sk-row-used sk-data" role="row" key={r.employee_id}>
                   <div role="cell" style={{ minWidth: 0 }}>
