@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
+from app.services.age_groups import AgeGroup
 from app.services.contract_pay import hourly_equivalent
 
 DayKey = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -234,7 +235,7 @@ class EmployeeIn(BaseModel):
     # says so, rather than reporting a successful send to nowhere.
     email: Optional[EmailStr] = None
     role: str
-    age: int = Field(ge=13, le=100)
+    age_group: Optional[AgeGroup]
     hourly_rate: float = Field(ge=0)
     max_weekly_hours: float = Field(40, gt=0, le=168)
     preferred_days_off: List[DayKey] = []

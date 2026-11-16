@@ -3976,8 +3976,7 @@ label.ss-label-tight { letter-spacing: .04em; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .nv-acc-acts { display: flex; gap: 16px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
-/* Bordered rather than plain text, so it reads as a control with a state
-   rather than a third link sitting beside two actions. */
+/* The theme switch keeps its visible state beside the flat Settings row. */
 /* Both modes are named and the thumb slides to whichever is on, so the
    control shows its state and its alternative at once - a single label
    left you guessing whether it named the current mode or the next one. */
@@ -4015,12 +4014,29 @@ label.ss-label-tight { letter-spacing: .04em; }
   user-select: none;
 }
 .nv-theme-opt[data-on="true"] { color: var(--t-on-accent); }
-.nv-acc-btn {
-  border: 0; background: none; padding: 0;
-  font-family: inherit; font-size: 14.5px; font-weight: 600;
-  color: var(--t-muted); cursor: pointer;
+.nv-settings {
+  width: calc(100% + 44px); margin: 10px -22px -10px;
+  min-height: 44px; border: 0; border-radius: 0; background: transparent;
+  font-family: inherit; text-align: left; cursor: pointer;
 }
-.nv-acc-btn[data-primary="true"] { color: var(--t-accent); font-weight: 700; }
+.nv-settings svg { transform: rotate(180deg); }
+.nv-settings[data-state="open"] svg { transform: none; }
+.nv-settings-menu {
+  width: 258px; max-width: calc(100vw - 24px); padding: 0;
+  background: var(--t-canvas); color: var(--t-ink);
+  border: 1px solid var(--t-hairline); border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .22);
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+.nv-settings-title { padding: 14px 16px; font-size: 16px; border-bottom: 1px solid var(--t-hairline); }
+.nv-settings-action {
+  min-height: 48px; padding: 12px 16px; gap: 12px; border-radius: 0;
+  color: var(--t-body2); font-size: 14px; cursor: pointer;
+}
+.nv-settings-action[data-highlighted] { background: var(--t-hover); color: var(--t-ink); }
+.nv-settings-danger, .nv-settings-danger[data-highlighted] { color: var(--t-danger); }
+.nv-settings-arrow { margin-left: auto; }
+.nv-settings-separator { margin: 0; background: var(--t-hairline); }
 
 .nv-main { min-width: 0; padding: 1.5rem; }
 @media (min-width: 1024px) { .nv-main { padding: 2.5rem; } }
@@ -4406,17 +4422,6 @@ label.ss-label-tight { letter-spacing: .04em; }
 }
 .ss-embed :focus-visible { outline: none; box-shadow: 0 0 0 3px var(--t-focus); }
 .ss-embed .ss-table { padding: 0; }
-
-/* Delete account (components/DeleteAccountModal.js) -------------------------------------
-   A quiet link under the account buttons, not a fourth button beside Sign out: something
-   this permanent should not sit where a thumb lands by habit. It turns red on hover and
-   focus so it reads as what it is only when it is being aimed at. */
-.nv-acc-delete {
-  display: block; margin-top: 14px; padding: 0; border: 0; background: none;
-  font-family: inherit; font-size: 13px; font-weight: 600;
-  color: var(--t-muted); cursor: pointer;
-}
-.nv-acc-delete:hover, .nv-acc-delete:focus-visible { color: var(--t-danger); }
 
 /* Activity expanded past its usual rows (pages/Dashboard.js) ------------------------------
    The two columns are stretched on purpose so the divider between them runs the full height,

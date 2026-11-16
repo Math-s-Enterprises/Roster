@@ -37,7 +37,6 @@ from app.services.shop_service import ensure_shop  # noqa: E402
 
 DEFAULT_RATE = 13.0
 DEFAULT_MAX_WEEKLY_HOURS = 40.0
-DEFAULT_AGE = 25
 
 
 def map_role(raw: str | None, shop: dict | None = None) -> str:
@@ -152,7 +151,7 @@ async def run(path: str, email: str, commit: bool, year: int) -> None:
             "name": name,
             "email": placeholder_email(name, shop_id),
             "role": map_role(roles[name], shop),
-            "age": DEFAULT_AGE,
+            "age_group": None,
             "hourly_rate": DEFAULT_RATE,
             "max_weekly_hours": DEFAULT_MAX_WEEKLY_HOURS,
             "preferred_days_off": [],

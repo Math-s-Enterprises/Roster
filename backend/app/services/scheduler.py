@@ -35,6 +35,7 @@ from app.services import hierarchy
 from app.services import hours_target
 from app.services import rule_parser
 from app.services import slot_owners
+from app.services.age_groups import age_group, curfew_reason
 
 DAYS: Tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
@@ -448,7 +449,7 @@ def segments_for_day(shop: Dict[str, Any], open_m: int, close_m: int) -> List[Se
 # Constraint checks
 # ---------------------------------------------------------------------------
 def violates_minor_curfew(employee: Dict[str, Any], start: str, end: str) -> bool:
-    if employee.get("age", 99) >= MINOR_AGE:
+    if age_group(employee) in ("16_17", "18_plus"):
         return False
     if _crosses_midnight(start, end):
         return True  # a minor may never work an overnight shift
@@ -1198,7 +1199,7 @@ class _RosterBuilder:
         # Statutory curfew - never relaxed.
         if violates_minor_curfew(employee, segment.start, segment.end):
             self._note_exclusion(
-                employee_id, f"Under {MINOR_AGE}: outside permitted hours."
+                employee_id, f"Outside 08:00–19:00: {curfew_reason(employee)}."
             )
             return False
 
@@ -1762,7 +1763,7 @@ class _RosterBuilder:
         if not avail.check_availability(employee, day, start, end).allowed:
             return "not available"
         if violates_minor_curfew(employee, start, end):
-            return "under-16 curfew"
+            return curfew_reason(employee)
         if self._rest_breach(employee_id, day, start, end) is not None:
             return "too little rest since their last shift"
         span = shift_duration_minutes(start, end) / 60
@@ -2158,7 +2159,7 @@ class _RosterBuilder:
         if self._rest_breach(employee_id, day, start, end) is not None:
             return "too little rest before or after"
         if violates_minor_curfew(employee, start, end):
-            return "outside the hours a minor may work"
+            return curfew_reason(employee)
         if not avail.check_availability(employee, day, start, end).allowed:
             return "not available"
         return None
@@ -2326,8 +2327,8 @@ class _RosterBuilder:
 
             if violates_minor_curfew(employee, start, end):
                 self.result.critical_issues.append(
-                    f"{employee['name']} is under {MINOR_AGE} and their fixed shift on {day} "
-                    f"({start}-{end}) breaks the curfew, skipped."
+                    f"{employee['name']}'s fixed shift on {day} ({start}-{end}) "
+                    f"is outside 08:00–19:00 ({curfew_reason(employee)}), skipped."
                 )
                 continue
 
@@ -4314,7 +4315,7 @@ class _RosterBuilder:
             return f"{who} would be on for {span:g}h, over the {max_shift:g}h limit"
 
         if violates_minor_curfew(employee, new_start, new_end):
-            return f"{who} is under 16 and cannot work those hours"
+            return f"{who} cannot work those hours ({curfew_reason(employee)})"
 
         # ELEVEN HOURS OF REST, WHICH THE REST OF THIS PASS ONLY CLAIMED TO
         # CHECK.

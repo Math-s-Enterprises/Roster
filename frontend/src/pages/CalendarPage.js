@@ -50,7 +50,8 @@
  *
  * `node check-leave-runs.js` (yarn check:runs) pins the run rules.
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, errorMessage, DAYS, DAY_SHORT, mondayOf } from "@/lib/api";
 import { toast } from "sonner";
 import { CalendarPlus, Download, Plus, X } from "lucide-react";
@@ -63,7 +64,7 @@ import ShiftWarningModal from "@/components/ShiftWarningModal";
 const isoOf = (d) =>
   `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}-${`${d.getDate()}`.padStart(2, "0")}`;
 const parseIso = (iso) => new Date(`${iso}T00:00:00`);
-const addDays = (iso, n) => {
+export const addDays = (iso, n) => {
   const d = parseIso(iso);
   d.setDate(d.getDate() + n);
   return isoOf(d);
@@ -77,7 +78,7 @@ const fmtDay = (iso) =>
   });
 
 /** "Wed 2 Sep" for one day, "Thu 17 – Sun 20 Sep" for a run. */
-function fmtRange(start, end) {
+export function fmtRange(start, end) {
   if (start === end) return fmtDay(start);
   const a = parseIso(start);
   const b = parseIso(end);
@@ -324,10 +325,17 @@ function groupRuns(runs, labelFor) {
 /* ========================================================================= */
 
 export default function CalendarPage() {
+  const [params] = useSearchParams();
+  const requestedWeek = params.get("week");
+  const reviewWeek = /^\d{4}-\d{2}-\d{2}$/.test(requestedWeek || "") &&
+    addDays(requestedWeek, 0) === requestedWeek ? requestedWeek : null;
+  const reviewGroup = reviewWeek ? params.get("group") : null;
+  const request = useMemo(() => reviewGroup ? { headers: { "X-Roster-Group": reviewGroup } } : undefined, [reviewGroup]);
   const [hols, setHols] = useState([]);
+  const [weeklyLeave, setWeeklyLeave] = useState(null);
   const [emps, setEmps] = useState([]);
   const [shop, setShop] = useState(null);
-  const [view, setView] = useState("upcoming30");
+  const [view, setView] = useState(reviewWeek ? "week" : "upcoming30");
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [expanded, setExpanded] = useState([]);
@@ -335,15 +343,30 @@ export default function CalendarPage() {
 
   const today = useMemo(todayIso, []);
 
-  const load = async () => {
-    const [h, e, s] = await Promise.all([
-      api.get("/holidays"), api.get("/employees"), api.get("/shop"),
-    ]);
-    setHols(h.data);
-    setEmps(e.data);
-    setShop(s.data);
-  };
-  useEffect(() => { load(); }, []);
+  const load = useCallback(async (signal) => {
+    const config = { ...request, signal };
+    try {
+      const [h, e, s, weekly] = await Promise.all([
+        api.get("/holidays", config), api.get("/employees", config), api.get("/shop", config),
+        reviewWeek && api.get("/holidays", { ...config, params: { week_start: reviewWeek } }),
+      ]);
+      if (signal?.aborted) return;
+      setHols(h.data);
+      setEmps(e.data);
+      setShop(s.data);
+      setWeeklyLeave(weekly ? { week: reviewWeek, group: reviewGroup, records: weekly.data } : null);
+    } catch (err) {
+      if (signal?.aborted) return;
+      setWeeklyLeave({ week: reviewWeek, group: reviewGroup, error: true });
+      toast.error(errorMessage(err, "Could not load leave."));
+    }
+  }, [request, reviewWeek, reviewGroup]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setView(reviewWeek ? "week" : "upcoming30");
+    load(controller.signal);
+    return () => controller.abort();
+  }, [load, reviewWeek]);
 
   const nameOf = useMemo(() => {
     const byId = new Map(emps.map((e) => [e.employee_id, e.name]));
@@ -417,12 +440,22 @@ export default function CalendarPage() {
     );
   }, [offToday]);
 
-  const rows = view === "past" ? pastRuns
+  const weekResult = weeklyLeave?.week === reviewWeek && weeklyLeave?.group === reviewGroup ? weeklyLeave : null;
+  const weekRuns = useMemo(() => {
+    if (!weekResult?.records) return [];
+    // Keep full booking runs editable even when they extend beyond the selected week.
+    const records = new Map([...hols, ...weekResult.records].map(record => [record.holiday_id, record]));
+    const end = addDays(reviewWeek, 6);
+    return buildRuns([...records.values()], nameOf)
+      .filter(run => run.start <= end && run.end >= reviewWeek);
+  }, [weekResult, nameOf, hols, reviewWeek]);
+  const rows = view === "week" ? weekRuns : view === "past" ? pastRuns
     : view === "allUpcoming" ? upcomingRuns : within30;
   const groups = useMemo(
     () => groupRuns(rows, (start) =>
-      view === "past" ? pastGroup(start, today) : upcomingGroup(start, today)),
-    [rows, view, today],
+      view === "week" ? `Week of ${fmtDay(reviewWeek)}`
+        : view === "past" ? pastGroup(start, today) : upcomingGroup(start, today)),
+    [rows, view, today, reviewWeek],
   );
 
   /* ---- past-view statistics -------------------------------------------- */
@@ -611,10 +644,12 @@ export default function CalendarPage() {
         <div className="flex items-baseline justify-between gap-5 flex-wrap"
              style={{ marginBottom: 14 }}>
           <h2 className="hol-h2">
-            {view === "past" ? "Leave already taken" : "Booked leave"}
+            {view === "week" ? `Leave for ${shop?.current_department || reviewGroup || "this roster group"}`
+              : view === "past" ? "Leave already taken" : "Booked leave"}
           </h2>
           <div className="flex gap-1" role="group" aria-label="Which leave to show">
             {[
+              ...(reviewWeek ? [["week", "Selected week"]] : []),
               ["upcoming30", "Next 30 days"],
               ["allUpcoming", "All upcoming"],
               ["past", "Past"],
@@ -643,7 +678,9 @@ export default function CalendarPage() {
           onEdit={setEditing}
           onDelete={setDeleting}
           emptyMessage={
-            view === "past" ? "No leave has been taken yet."
+            view === "week" ? weekResult?.error ? "Could not load leave for this week."
+              : weekResult ? "No leave recorded for this week." : "Loading leave…"
+              : view === "past" ? "No leave has been taken yet."
               : view === "allUpcoming" ? "No leave is booked."
                 : "No leave booked in the next 30 days."
           }
@@ -696,6 +733,7 @@ export default function CalendarPage() {
       {addOpen && (
         <LeaveModal
           employees={emps}
+          request={request}
           onClose={() => setAddOpen(false)}
           onSaved={() => { setAddOpen(false); load(); }}
         />
@@ -704,6 +742,7 @@ export default function CalendarPage() {
         <LeaveModal
           employees={emps}
           run={editing}
+          request={request}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }}
         />
@@ -711,6 +750,7 @@ export default function CalendarPage() {
       {deleting && (
         <DeleteRunDialog
           run={deleting}
+          request={request}
           onClose={() => setDeleting(null)}
           onDone={() => { setDeleting(null); load(); }}
         />
@@ -940,7 +980,7 @@ function LeaveTable({ groups, expanded, onToggleRun, onEdit, onDelete, emptyMess
    there is no endpoint to split it - so that case is offered whole-absence
    deletion only, and says why rather than showing a control that would fail.
 ------------------------------------------------------------------------- */
-function DeleteRunDialog({ run, onClose, onDone }) {
+function DeleteRunDialog({ run, request, onClose, onDone }) {
   const perDay = run.entries.length > 1;
   const [selected, setSelected] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -954,7 +994,7 @@ function DeleteRunDialog({ run, onClose, onDone }) {
       // Sequential rather than parallel: a partial failure should leave a
       // comprehensible state, not a scatter of half-deleted days.
       for (const entry of entries) {
-        await api.delete(`/holidays/${entry.holiday_id}`);
+        await api.delete(`/holidays/${entry.holiday_id}`, request);
       }
       toast.success(entries.length === 1 ? "Removed" : `Removed ${entries.length} days`);
       onDone();
@@ -1026,7 +1066,7 @@ function DeleteRunDialog({ run, onClose, onDone }) {
    the per-day paid picker, even for a one-day booking, so the manager can
    change which dates use entitlement without deleting and recreating leave.
 ------------------------------------------------------------------------- */
-function LeaveModal({ employees, run, onClose, onSaved }) {
+function LeaveModal({ employees, run, request, onClose, onSaved }) {
   const editing = Boolean(run);
   // Every holiday edit uses the atomic booking endpoint. It releases the
   // exact records being edited before checking entitlement, and it is the
@@ -1106,11 +1146,11 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
       });
     }
     const query = params.toString();
-    api.get(`/holiday-balance/${empId}${query ? `?${query}` : ""}`)
+    api.get(`/holiday-balance/${empId}${query ? `?${query}` : ""}`, request)
       .then((r) => { if (!cancelled) setBalance(r.data); })
       .catch(() => { if (!cancelled) setBalance(null); });
     return () => { cancelled = true; };
-  }, [empId, scope, hoursPerDay, rebook, run]);
+  }, [empId, scope, hoursPerDay, rebook, run, request]);
 
   const maxPaidDays = balance?.max_payable_days ?? null;
   const requestedHours = hoursPerDay
@@ -1153,7 +1193,7 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
           date, end_date: endDate || null, label,
           scope, employee_id: scope === "shop" ? null : empId,
           confirm_staffing_shortage: confirmedShortage,
-        });
+        }, request);
         toast.success("Leave updated");
       } else if (rebook) {
         // Re-book in one server operation. The existing ids release their
@@ -1165,7 +1205,7 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
           paid_dates: paidDates, label: label || "Holiday",
           replace_holiday_ids: run.entries.map((entry) => entry.holiday_id).filter(Boolean),
           confirm_staffing_shortage: confirmedShortage,
-        });
+        }, request);
         toast.success(
           `${r.data.employee}: ${r.data.paid_days} paid day(s) = ${r.data.paid_hours_total}h` +
           (r.data.unpaid_days ? `, ${r.data.unpaid_days} unpaid` : ""),
@@ -1180,9 +1220,9 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
           date, end_date: endDate || date, label,
           scope: keep.scope,
           employee_id: keep.scope === "shop" ? null : empId,
-        });
+        }, request);
         for (const extra of rest) {
-          await api.delete(`/holidays/${extra.holiday_id}`);
+          await api.delete(`/holidays/${extra.holiday_id}`, request);
         }
         toast.success("Leave updated");
       } else if (scope === "leave-week") {
@@ -1190,7 +1230,7 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
           employee_id: empId, start_date: leaveFrom, end_date: leaveTo,
           paid_dates: paidDates, label: label || "Holiday",
           confirm_staffing_shortage: confirmedShortage,
-        });
+        }, request);
         toast.success(
           `${r.data.employee}: ${r.data.paid_days} paid day(s) = ${r.data.paid_hours_total}h` +
           (r.data.unpaid_days ? `, ${r.data.unpaid_days} unpaid` : ""),
@@ -1200,7 +1240,7 @@ function LeaveModal({ employees, run, onClose, onSaved }) {
           date, end_date: endDate || null, label, scope,
           employee_id: scope === "sick" ? empId : null,
           confirm_staffing_shortage: confirmedShortage,
-        });
+        }, request);
         toast.success("Added");
       }
       onSaved();

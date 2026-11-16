@@ -84,8 +84,13 @@ class ScopedCollection:
         await self._collection.insert_one(dict(payload))
         return payload
 
-    async def update_one(self, extra: Dict[str, Any], changes: Dict[str, Any]) -> int:
-        result = await self._collection.update_one(self._filter(extra), {"$set": changes})
+    async def update_one(
+        self, extra: Dict[str, Any], changes: Dict[str, Any], *, unset: tuple[str, ...] = (),
+    ) -> int:
+        update = {"$set": changes}
+        if unset:
+            update["$unset"] = dict.fromkeys(unset, "")
+        result = await self._collection.update_one(self._filter(extra), update)
         return result.modified_count
 
     async def upsert(self, extra: Dict[str, Any], changes: Dict[str, Any]) -> None:

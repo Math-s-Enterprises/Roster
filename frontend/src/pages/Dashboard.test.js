@@ -65,6 +65,12 @@ test("reset stays out of the primary actions and cancelling or Escape never dele
   expect(api.post).not.toHaveBeenCalled();
 });
 
+test("Generate roster opens the review for the dashboard's next week", async () => {
+  await act(async () => root.render(<Dashboard />));
+  await act(async () => host.querySelector('[data-testid="btn-generate-roster"]').click());
+  expect(mockNavigate).toHaveBeenCalledWith(expect.stringMatching(/^\/roster\?week=\d{4}-\d{2}-\d{2}&review=generate$/));
+});
+
 test("reset requires exact confirmation, keeps errors visible and blocks duplicate requests", async () => {
   await act(async () => root.render(<Dashboard />));
   await openReset();
@@ -110,7 +116,7 @@ const setupSteps = [
   { id: "shop", title: "Set up your shop", action: { label: "Open setup", path: "/onboarding" } },
   { id: "history", title: "Import past rosters", action: { label: "Import rosters", path: "/import" } },
   { id: "team", title: "Add anyone the import missed", action: { label: "Add people", path: "/employees" } },
-  { id: "details", title: "Check pay and ages", detail: "Jane still on placeholder pay and age",
+  { id: "details", title: "Check pay and age groups", detail: "Jane still to review",
     who: [{ employee_id: "jane", name: "Jane" }], action: { label: "Review team", path: "/employees" } },
   { id: "employment", title: "Set employment types", detail: "Jane without a type",
     who: [{ employee_id: "jane", name: "Jane" }], action: { label: "Set types", path: "/employees" } },
@@ -147,7 +153,7 @@ test("unfinished setup shows ordered guidance, named employee tasks and precise 
   expect(host.querySelector("#db-setup-steps").hidden).toBe(false);
   expect(host.querySelectorAll("#db-setup-steps li")).toHaveLength(7);
   expect(host.querySelector('[data-testid="setup-step-shop"]').textContent).toContain("Start here");
-  expect(host.textContent).toContain("Jane still on placeholder pay and age");
+  expect(host.textContent).toContain("Jane still to review");
   expect(host.textContent).toContain("Jane without a type");
   for (const [id, path] of [["shop", "/onboarding#shop-name"], ["team", "/employees?setup=team"],
     ["history", "/import"], ["roster", "/roster"]]) {

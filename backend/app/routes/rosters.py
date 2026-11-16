@@ -21,6 +21,7 @@ from app.services import availability as avail
 from app.services import compliance, corrections, llm, mailer, sick_cover
 from app.services import demand as demand_service
 from app.services import training_evidence
+from app.services.age_groups import curfew_reason
 from app.services import departments as department_service
 from app.services.demand import build_profile
 from app.services.hierarchy import sort_employees
@@ -216,7 +217,7 @@ def _with_current_break_setting(
         shop_week_hours[employee_id] = shop_week_hours.get(employee_id, 0.0) + hours
 
     return {
-        **roster,
+        **training_evidence.redact_legacy_ages(roster),
         "shifts": shifts,
         "total_hours": round(total, 1),
         "labor_cost": round(labor, 2),
@@ -1647,7 +1648,7 @@ async def add_extra_shift(
 
     if violates_minor_curfew(person, payload.start, payload.end):
         reasons.append(
-            f"{person['name']} is under 18, no work before 08:00 or after 19:00."
+            f"{person['name']} cannot work outside 08:00–19:00 ({curfew_reason(person)})."
         )
     if span > ABSOLUTE_MAX_SHIFT_HOURS:
         reasons.append(

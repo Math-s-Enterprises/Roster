@@ -20,7 +20,7 @@ from tests.test_api import EMPLOYEE, auth, register
 BOTH_OR_NEITHER = "Contract pay needs both a period (weekly or monthly) and a salary, or neither."
 
 CONTRACT = {
-    "name": "Aoife Manager", "role": "Manager", "age": 30, "hourly_rate": 15.0,
+    "name": "Aoife Manager", "role": "Manager", "age_group": "18_plus", "hourly_rate": 15.0,
     "max_weekly_hours": 40, "employment_type": "full_time_contract",
 }
 

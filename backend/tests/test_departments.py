@@ -193,7 +193,7 @@ def _employee_payload(name, departments):
         "name": name,
         "email": None,
         "role": "Cashier",
-        "age": 25,
+        "age_group": "18_plus",
         "hourly_rate": 15,
         "max_weekly_hours": 40,
         "preferred_days_off": [],

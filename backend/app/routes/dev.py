@@ -19,19 +19,19 @@ from app.tenancy import ShopScope, CurrentScope
 router = APIRouter(tags=["dev"])
 
 DEMO_EMPLOYEES = [
-    {"name": "Aisha Rahman", "email": "aisha@demo.co", "role": "Manager", "age": 34,
+    {"name": "Aisha Rahman", "email": "aisha@demo.co", "role": "Manager", "age_group": "18_plus",
      "hourly_rate": 28.0, "max_weekly_hours": 40, "preferred_days_off": ["sun"]},
-    {"name": "Marcus Chen", "email": "marcus@demo.co", "role": "Supervisor", "age": 28,
+    {"name": "Marcus Chen", "email": "marcus@demo.co", "role": "Supervisor", "age_group": "18_plus",
      "hourly_rate": 22.0, "max_weekly_hours": 40, "preferred_days_off": ["mon"]},
-    {"name": "Priya Nair", "email": "priya@demo.co", "role": "Cashier", "age": 22,
+    {"name": "Priya Nair", "email": "priya@demo.co", "role": "Cashier", "age_group": "18_plus",
      "hourly_rate": 16.0, "max_weekly_hours": 40, "preferred_days_off": ["tue"]},
-    {"name": "Jordan Lee", "email": "jordan@demo.co", "role": "Cashier", "age": 19,
+    {"name": "Jordan Lee", "email": "jordan@demo.co", "role": "Cashier", "age_group": "18_plus",
      "hourly_rate": 15.5, "max_weekly_hours": 20, "preferred_days_off": ["wed"]},
-    {"name": "Sofia Diaz", "email": "sofia@demo.co", "role": "Floor Assistant", "age": 17,
+    {"name": "Sofia Diaz", "email": "sofia@demo.co", "role": "Floor Assistant", "age_group": "16_17",
      "hourly_rate": 14.0, "max_weekly_hours": 20, "preferred_days_off": ["thu"]},
-    {"name": "Ethan Park", "email": "ethan@demo.co", "role": "Stocker", "age": 24,
+    {"name": "Ethan Park", "email": "ethan@demo.co", "role": "Stocker", "age_group": "18_plus",
      "hourly_rate": 15.0, "max_weekly_hours": 40, "preferred_days_off": ["fri"]},
-    {"name": "Lena Volkov", "email": "lena@demo.co", "role": "Floor Assistant", "age": 15,
+    {"name": "Lena Volkov", "email": "lena@demo.co", "role": "Floor Assistant", "age_group": "under_16",
      "hourly_rate": 12.5, "max_weekly_hours": 20, "preferred_days_off": ["sat"]},
 ]
 

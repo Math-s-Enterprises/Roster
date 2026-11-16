@@ -3,9 +3,14 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, errorMessage, fmtMoney, CURRENCY, DAY_SHORT, DAY_LABELS, DAYS, shiftHours } from "@/lib/api";
 import { toast } from "sonner";
 import ContactImportPanel from "@/components/ContactImportPanel";
-import ContractPay, { paySummary, salaryTile } from "@/components/ContractPay";
+import ContractPay, { salaryTile } from "@/components/ContractPay";
 import ConfirmDialog from "../components/ConfirmDialog";
-import { Plus, Search, ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Sun, X, AlertTriangle } from "lucide-react";
+import { AGE_GROUP_LABELS } from "@/lib/ageGroups";
+import { Plus, Search, ArrowLeft, Sun, X, AlertTriangle } from "lucide-react";
+import { Content } from "@radix-ui/react-dialog";
+import * as Tabs from "@radix-ui/react-tabs";
+import { Dialog, DialogClose, DialogOverlay, DialogPortal, DialogTitle } from "@/components/ui/dialog";
+import "@/styles/employee-editor.css";
 
 /**
  * Employees - split view (handoff: Employees option B).
@@ -17,12 +22,7 @@ import { Plus, Search, ArrowLeft, ChevronDown, ChevronRight, GraduationCap, Sun,
  *
  * WHERE THIS DEPARTS FROM THE HANDOFF, AND WHY
  *
- * 1. Edit opens the existing full modal rather than turning the pane into
- *    five inline fields. The handoff edits role, rate, max hours, age and
- *    off days; the record also carries employment type, contract span and
- *    tolerance, availability windows, term-time caps, summer break, opening
- *    holiday and the active flag. Inline editing as drawn would leave
- *    fifteen fields with nowhere to go.
+ * 1. Edit groups the full employee record into four tabs with one Save action.
  *
  * 2. A shift carries no `source` field, so "fixed template" versus
  *    "AI-filled" is derived: a shift whose day, start and end match one of
@@ -84,7 +84,8 @@ function tagsFor(employee, balance, overBy) {
   if (typeof left === "number" && left < LOW_HOLIDAY_HOURS) {
     tags.push({ tone: "warn", text: `${fmtHours(left)} holiday left` });
   }
-  if (employee.age < 16) tags.push({ tone: "accent", text: "Under 16 · curfew" });
+  if (employee.age_group === "under_16") tags.push({ tone: "accent", text: "Under 16 · curfew" });
+  if (!employee.age_group) tags.push({ tone: "accent", text: "Confirm age group" });
   if (employee.employment_type === "student" || (!employee.employment_type && employee.is_student)) {
     tags.push({ tone: "accent", text: "Student" });
   }
@@ -162,7 +163,7 @@ function roleChoices(ladder, current) {
 // The role starts empty: a dropdown that opened on a default would save that default for
 // anyone who did not touch it, and no default suits every shop (a bakery has no Cashier).
 const emptyForm = {
-  name: "", email: "", role: "", age: 22, hourly_rate: 15,
+  name: "", email: "", role: "", age_group: "", hourly_rate: 15,
   max_weekly_hours: 40, preferred_days_off: [],
   departments: ["Shop Floor"],
   is_active: true,
@@ -183,6 +184,7 @@ function toForm(employee) {
   return {
     ...emptyForm,
     ...employee,
+    age_group: employee.age_group ?? "",
     is_active: employee.is_active !== false,
     preferred_days_off: employee.preferred_days_off || [],
     departments: employee.departments?.length ? employee.departments : ["Shop Floor"],
@@ -245,6 +247,7 @@ function toPayload(form) {
     // fail validation and block the save on an optional field.
     email: (form.email || "").trim() || null,
     role: form.role,
+    age_group: form.age_group,
     // AN EMPTY BOX IS NOT ZERO.
     //
     // `Number("")` is 0, and the API rejects 0 for these with "Input should
@@ -256,7 +259,6 @@ function toPayload(form) {
     // Omitted rather than sent as 0 or null, so the documented default
     // applies (40h) instead of the save failing on a box the manager may
     // not even have meant to touch.
-    age: blankToUndefined(form.age),
     hourly_rate: blankToUndefined(form.hourly_rate),
     max_weekly_hours: blankToUndefined(form.max_weekly_hours),
     preferred_days_off: form.preferred_days_off,
@@ -284,22 +286,10 @@ function toPayload(form) {
   };
 }
 
-/** One-line summary of an availability window, for the employee card. */
-function availabilitySummary(employee) {
-  const a = employee.availability;
-  if (!a) return null;
-  const parts = [];
-  if (a.earliest_start) parts.push(`from ${a.earliest_start}`);
-  if (a.latest_finish) parts.push(`until ${a.latest_finish}`);
-  if (a.available_days?.length && a.available_days.length < 7) {
-    parts.push(a.available_days.map((d) => DAY_SHORT[d]).join("/"));
-  }
-  if (a.preferred_shift && a.preferred_shift !== "any") parts.push(`${a.preferred_shift}s`);
-  if (a.can_work_overnight === false) parts.push("no nights");
-  return parts.length ? parts.join(" · ") : null;
-}
-
-
+const EDITOR_TABS = [
+  ["profile", "Profile"], ["employment", "Employment"],
+  ["availability", "Availability"], ["holidays", "Holidays"],
+];
 
 export default function Employees() {
   const { employeeId } = useParams();
@@ -307,7 +297,9 @@ export default function Employees() {
   const [searchParams] = useSearchParams();
   const setupTask = searchParams.get("setup");
   const setupRequest = useRef(null);
-  const editFormRef = useRef(null);
+  const editorTrigger = useRef(null);
+  const editorTitle = useRef(null);
+  const editorBody = useRef(null);
 
   const [emps, setEmps] = useState([]);
   const [supervisory, setSupervisory] = useState([]);
@@ -326,9 +318,9 @@ export default function Employees() {
 
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(emptyForm);
-  // Bumped when a contract is refused for want of its pay: it opens the sections the pay is in
-  // and sends the cursor there. The pay block clears it once it has done so.
-  const [payFocus, setPayFocus] = useState(0);
+  const [editorTab, setEditorTab] = useState("profile");
+  const [invalidField, setInvalidField] = useState(null);
+  const [savingEmployee, setSavingEmployee] = useState(false);
   const [adjusting, setAdjusting] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [removing, setRemoving] = useState(false);
@@ -456,24 +448,37 @@ export default function Employees() {
     if (setupRequest.current === request) return;
     if (setupTask === "team" && !employeeId) {
       setForm({ ...emptyForm, departments: [shop?.current_department || shop?.departments?.[0] || "Shop Floor"] });
-      setModal("new");
+      setEditorTab("profile");
+      setModal({ mode: "new", entry: setupTask });
     } else if (selected) {
       setForm(toForm(selected));
-      setModal("edit");
+      setEditorTab("employment");
+      setModal({ mode: "edit", entry: setupTask });
     } else return;
     setupRequest.current = request;
   }, [loading, setupTask, employeeId, selected, shop]);
 
   useEffect(() => {
-    if (!modal) return;
-    const field = selector => editFormRef.current?.querySelector(selector);
-    const target = setupTask === "team" ? field('[data-testid="emp-name"]')
-      : setupTask === "details" ? field('[data-testid="emp-rate"]')
-        || (field('[data-testid="contract-pay"] input:checked')
-          ? field('[data-testid="emp-salary"]') : field('[data-testid="emp-pay-weekly"]'))
-      : setupTask === "employment" ? field('[name="employment_type"]:checked') || field('[name="employment_type"]') : null;
-    target?.focus();
-  }, [modal, setupTask]);
+    if (editorBody.current) editorBody.current.scrollTop = 0;
+  }, [editorTab]);
+
+  useEffect(() => {
+    if (!invalidField) return;
+    invalidField.focus();
+    invalidField.reportValidity?.();
+    setInvalidField(null);
+  }, [invalidField]);
+
+  const focusEditor = (event) => {
+    event.preventDefault();
+    editorTrigger.current = document.activeElement;
+    const field = (selector) => editorBody.current?.querySelector(selector);
+    const target = modal.entry === "team" ? field('[data-testid="emp-name"]')
+      : modal.entry === "details" ? field('[data-testid="emp-rate"]')
+        || (form.contract_pay_period ? field('[data-testid="emp-salary"]') : field('[data-testid="emp-pay-weekly"]'))
+      : modal.entry === "employment" ? field('[name="employment_type"]') : null;
+    (target || editorTitle.current)?.focus();
+  };
 
   // Land on somebody rather than an empty pane, and recover if the person
   // in the URL has been deleted or filtered away.
@@ -501,27 +506,30 @@ export default function Employees() {
 
   const submit = async (e) => {
     e.preventDefault();
-    // Everyone has a role, and the server will take an empty one, so the form does not send
-    // it. The browser's own "required" check covers a normal click; this covers the rest, and
-    // says what is wrong and where.
-    if (!(form.role || "").trim()) {
-      toast.error("Choose a role for this employee.");
-      e.currentTarget.elements.role?.focus();
+    if (savingEmployee) return;
+    const editor = e.currentTarget;
+    // All tabs stay mounted so an invalid field in another tab can still block Save.
+    const invalid = editor.querySelector("input:invalid, select:invalid");
+    if (invalid) {
+      setEditorTab(invalid.closest("[data-editor-tab]").dataset.editorTab);
+      setInvalidField(invalid);
       return;
     }
-    // A salaried contract is paid a salary, so the form asks for one rather than
-    // saving a contract with no pay on it. The server still accepts older records
-    // that have none, so they can be opened; it is this screen that asks.
-    if (form.employment_type === "full_time_contract") {
-      if (!form.contract_pay_period || !(Number(form.contract_salary) > 0)) {
-        toast.error("Choose weekly or monthly pay and enter the salary for a full-time contract.");
-        setPayFocus((n) => n + 1);       // open the sections it is in and go to it
-        return;
-      }
+    if (!form.role.trim()) {
+      toast.error("Choose a role for this employee.");
+      setEditorTab("profile");
+      setInvalidField(editor.elements.role);
+      return;
     }
+    if (!form.departments.length) {
+      setEditorTab("profile");
+      setInvalidField(editor.querySelector('[data-testid^="emp-department-"]'));
+      return;
+    }
+    setSavingEmployee(true);
     try {
       const payload = toPayload(form);
-      if (modal === "edit") {
+      if (modal.mode === "edit") {
         await api.put(`/employees/${form.employee_id}`, payload);
         toast.success("Employee updated");
       } else {
@@ -532,6 +540,8 @@ export default function Employees() {
       setModal(null); setForm(emptyForm); load();
     } catch (err) {
       toast.error(errorMessage(err, "Could not save employee"));
+    } finally {
+      setSavingEmployee(false);
     }
   };
 
@@ -611,7 +621,7 @@ export default function Employees() {
 
     const rows = [[
       "Name", "Role", "Manager", "Status", "Hourly rate", "Max weekly hours",
-      "Age", "Employment type", "Guaranteed days off",
+      "Age group", "Employment type", "Guaranteed days off",
       "Hours this week", "Holiday hours left", "Contract salary", "Contract pay period",
     ]];
 
@@ -625,7 +635,7 @@ export default function Employees() {
         e.is_active === false ? "Inactive" : "Active",
         Number(e.hourly_rate || 0).toFixed(2),
         e.max_weekly_hours ?? "",
-        e.age ?? "",
+        AGE_GROUP_LABELS[e.age_group] || "Unconfirmed",
         e.employment_type || (e.is_student ? "student" : ""),
         (e.preferred_days_off || []).map((d) => DAY_LABELS[d]).join(" / "),
         roster ? hoursThisWeek(e.employee_id).toFixed(1) : "",
@@ -682,7 +692,11 @@ export default function Employees() {
               type="button"
               data-testid={`btn-edit-${selected.employee_id}`}
               className="esp-act esp-act-1"
-              onClick={() => { setForm(toForm(selected)); setModal("edit"); }}
+              onClick={() => {
+                setForm(toForm(selected));
+                setEditorTab("profile");
+                setModal({ mode: "edit" });
+              }}
             >
               Edit
             </button>
@@ -840,7 +854,7 @@ export default function Employees() {
     const overBy = overByFor(e);
     const mark = overBy > 0
       ? { kind: "over", text: `+${fmtHours(overBy)}` }
-      : e.age < 16
+      : e.age_group === "under_16"
         ? { kind: "minor", text: "U16" }
         : { kind: "pos", text: positions[e.employee_id] };
     return (
@@ -901,7 +915,8 @@ export default function Employees() {
                 ...emptyForm,
                 departments: [shop?.current_department || shop?.departments?.[0] || "Shop Floor"],
               });
-              setModal("new");
+              setEditorTab("profile");
+              setModal({ mode: "new" });
             }}
           >
             <Plus size={15} strokeWidth={2} /> Add employee
@@ -999,392 +1014,391 @@ export default function Employees() {
         is usually the better switch. Inactive employees are listed separately and are not generated onto new rosters.
       </p>
       {modal && (
-        <Modal onClose={() => setModal(null)}>
-          <form ref={editFormRef} onSubmit={submit} className="space-y-4">
-            <h2 className="text-2xl font-light mb-4">
-              {modal === "edit" ? "Edit" : "New"} employee
-            </h2>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Name">
-                <input data-testid="emp-name" required value={form.name}
-                  onChange={(e) => set({ name: e.target.value })}
-                  className="w-full px-3 py-2.5 rounded-lg" />
-              </Field>
-              {/* Not required: staff read from a spreadsheet arrive without
-                  one, and demanding it here would block the manager from
-                  correcting their pay. Dispatch names anyone it cannot
-                  reach rather than pretending to send. */}
-              <Field label="Email">
-                <input data-testid="emp-email" type="email" value={form.email || ""}
-                  onChange={(e) => set({ email: e.target.value })}
-                  placeholder="Optional, needed to email their roster"
-                  className="w-full px-3 py-2.5 rounded-lg" />
-              </Field>
-              <Field label="Role">
-                {ladder.length > 0 ? (
-                  /* A real dropdown, not a text box with suggestions: the browser filters a
-                     suggestion list by what is already typed, so it showed next to nothing
-                     until you cleared the box. This always shows the whole ladder. */
-                  <select data-testid="emp-role" name="role" required value={form.role || ""}
-                    onChange={(e) => set({ role: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-lg">
-                    <option value="" disabled>Choose a role</option>
-                    {roleChoices(ladder, form.role).map((choice) => (
-                      <option key={choice.value} value={choice.value}>{choice.label}</option>
-                    ))}
-                  </select>
-                ) : (
-                  /* No roles set up anywhere yet: typing is the only way, so keep it. */
-                  <input data-testid="emp-role" name="role" required value={form.role || ""}
-                    onChange={(e) => set({ role: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-lg"
-                    placeholder="Type a role (e.g. Barista, Cook)" />
-                )}
-              </Field>
-              <Field label="Age">
-                <input data-testid="emp-age" type="number" min={13} max={80} required value={form.age}
-                  onChange={(e) => set({ age: Number(e.target.value) })}
-                  className="w-full px-3 py-2.5 rounded-lg font-mono" />
-              </Field>
-              {/* A salaried contract is paid a salary, not by the hour. Its pay is entered under
-                  Employment type, in the contract's own block, so choosing the contract leads
-                  straight into it; this line only reports what has been set. */}
-              {form.employment_type !== "full_time_contract" ? (
-                <Field label={`Hourly rate (${CURRENCY})`}>
-                  <input data-testid="emp-rate" type="number" min={0} step="0.01" required value={form.hourly_rate}
-                    onChange={(e) => set({ hourly_rate: Number(e.target.value) })}
-                    className="w-full px-3 py-2.5 rounded-lg font-mono" />
-                </Field>
-              ) : (
-                <Field label="Pay">
-                  <div data-testid="emp-pay-summary" className="px-3 py-2.5 text-sm font-mono"
-                    style={{ color: paySummary(form.contract_pay_period, form.contract_salary) ? "var(--ink)" : "var(--ink-mute-2)" }}>
-                    {paySummary(form.contract_pay_period, form.contract_salary) || "Set under Employment type, below"}
-                  </div>
-                </Field>
-              )}
-              <Field label="Contracted weekly hours">
-                <input data-testid="emp-max" type="number" min={1} max={168} step="0.5" required
-                  value={form.max_weekly_hours}
-                  onChange={(e) => set({ max_weekly_hours: Number(e.target.value) })}
-                  className="w-full px-3 py-2.5 rounded-lg font-mono" />
-              </Field>
-            </div>
-            <p className="text-[11px] esp-ink-faint -mt-1">
-              Contracted hours are paid hours. Unpaid breaks sit on top, so a
-              40h contract is rostered as roughly 44–45h of shift time.
-            </p>
-
-            <Field label="Roster groups">
-              <div className="flex gap-2 flex-wrap">
-                {(shop?.departments?.length ? shop.departments : ["Shop Floor"]).map((department) => {
-                  const on = (form.departments || []).includes(department);
-                  return (
-                    <button
-                      type="button"
-                      key={department}
-                      aria-pressed={on}
-                      data-testid={`emp-department-${department}`}
-                      onClick={() => set({
-                        departments: on
-                          ? form.departments.filter((name) => name !== department)
-                          : [...(form.departments || []), department],
-                      })}
-                      className={`px-3 py-1.5 rounded-full text-xs ${on ? "neon-btn" : "glass-solid esp-ink-body"}`}
-                    >
-                      {department}
-                    </button>
-                  );
-                })}
-              </div>
-              {(form.departments || []).length === 0 && (
-                <p className="text-[11px] mt-2" style={{ color: "var(--danger)" }}>
-                  Choose at least one roster group.
-                </p>
-              )}
-            </Field>
-
-            <Field label="Preferred days off">
-              <div className="flex gap-2 flex-wrap">
-                {DAYS.map((d) => {
-                  const on = form.preferred_days_off.includes(d);
-                  return (
-                    <button
-                      type="button" key={d}
-                      onClick={() => set({
-                        preferred_days_off: on
-                          ? form.preferred_days_off.filter((x) => x !== d)
-                          : [...form.preferred_days_off, d],
-                      })}
-                      className={`px-3 py-1.5 rounded-full text-xs ${on ? "neon-btn" : "glass-solid esp-ink-body"}`}
-                    >
-                      {DAY_SHORT[d]}
-                    </button>
-                  );
-                })}
-              </div>
-            </Field>
-
-            {/* ---------------- Advanced availability ---------------- */}
-            <Section
-              title="Advanced options"
-              subtitle="Availability limits and employment status"
-              testId="section-advanced"
-              badge={availabilitySummary({ availability: form.availability })}
-            >
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Earliest start">
-                  <input data-testid="avail-earliest" type="time"
-                    value={form.availability.earliest_start || ""}
-                    onChange={(e) => setAvail({ earliest_start: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-lg font-mono" />
-                </Field>
-                <Field label="Latest finish">
-                  <input data-testid="avail-latest" type="time"
-                    value={form.availability.latest_finish || ""}
-                    onChange={(e) => setAvail({ latest_finish: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-lg font-mono" />
-                </Field>
-              </div>
-
-              <Field label="Preferred shift">
-                <select data-testid="avail-shift"
-                  value={form.availability.preferred_shift || "any"}
-                  onChange={(e) => setAvail({ preferred_shift: e.target.value })}
-                  className="w-full px-3 py-2.5 rounded-lg">
-                  <option value="any">Any</option>
-                  <option value="morning">Morning</option>
-                  <option value="afternoon">Afternoon</option>
-                  <option value="evening">Evening</option>
-                </select>
-              </Field>
-              <p className="text-[11px] esp-ink-faint -mt-2">
-                A preference, not a limit, it is followed where possible but
-                will not be allowed to leave the shop unattended.
-              </p>
-
-              <Field label="Days they can work at all">
-                <div className="flex gap-2 flex-wrap">
-                  {DAYS.map((d) => {
-                    const days = form.availability.available_days;
-                    const on = !days || days.includes(d);
-                    return (
-                      <button
-                        type="button" key={d}
-                        onClick={() => {
-                          const current = days || [...DAYS];
-                          const next = on
-                            ? current.filter((x) => x !== d)
-                            : [...current, d];
-                          // Back to all seven means "no restriction", which is
-                          // stored as null rather than a full list.
-                          setAvail({
-                            available_days: next.length === 7 ? null : next,
-                          });
-                        }}
-                        className={`px-3 py-1.5 rounded-full text-xs ${on ? "neon-btn" : "glass-solid esp-ink-faint line-through"}`}
-                      >
-                        {DAY_SHORT[d]}
-                      </button>
-                    );
-                  })}
-                </div>
-              </Field>
-              <p className="text-[11px] esp-ink-faint -mt-2">
-                Unlike preferred days off, a day switched off here is a hard
-                no, they are never rostered on it.
-              </p>
-
-              <Toggle
-                testId="avail-overnight"
-                checked={form.availability.can_work_overnight !== false}
-                onChange={(v) => setAvail({ can_work_overnight: v })}
-                label="Can work overnight shifts"
-              />
-
-              <Toggle
-                testId="emp-active"
-                checked={form.is_active !== false}
-                onChange={(v) => set({ is_active: v })}
-                label="Active"
-                hint="Turn off for leavers. They keep their history but are never rostered."
-              />
-            </Section>
-
-            {/* ---------------- Employment ---------------- */}
-            <Section
-              title="Employment type"
-              subtitle="How this person's hours are governed"
-              testId="section-employment"
-              defaultOpen={setupTask === "employment" || form.employment_type === "full_time_contract"}
-              openSignal={payFocus}
-              icon={GraduationCap}
-              badge={EMPLOYMENT_TYPES.find((t) => t.key === form.employment_type)?.label}
-            >
-              <div className="space-y-2">
-                {EMPLOYMENT_TYPES.map((type) => (
-                  <label key={type.key} className="flex items-start gap-2.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="employment_type"
-                      data-testid={`emp-type-${type.key}`}
-                      checked={form.employment_type === type.key}
-                      onChange={() => set({ employment_type: type.key })}
-                      className="mt-1 shrink-0"
-                      style={{ minHeight: 0, accentColor: "var(--primary)" }}
-                    />
-                    <span className="min-w-0">
-                      <span className="text-sm block">{type.label}</span>
-                      <span className="text-[11px] block" style={{ color: "var(--ink-mute-2)" }}>
-                        {type.hint}
-                      </span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-
-              {form.employment_type === "full_time_contract" && (
-                <div className="pt-3 border-t" style={{ borderColor: "var(--hairline-cool)" }}>
-                  {/* The contract's pay comes first, straight after choosing the contract. */}
-                  <ContractPay
-                    period={form.contract_pay_period}
-                    salary={form.contract_salary}
-                    paidHours={form.max_weekly_hours}
-                    onChange={set}
-                    focusSignal={payFocus}
-                    onFocused={() => setPayFocus(0)}
-                  />
-                  <div className="grid grid-cols-2 gap-3 mt-4">
-                    <Field label="Contracted hours on the floor">
-                      <input data-testid="emp-contract-span" type="number" min={1} max={168} step="0.5"
-                        value={form.contract_span_hours}
-                        onChange={(e) => set({ contract_span_hours: e.target.value })}
-                        placeholder={`${DEFAULT_CONTRACT_SPAN}`}
-                        className="w-full px-3 py-2.5 rounded-lg font-mono" />
-                    </Field>
-                    <Field label="May fall short by">
-                      <input data-testid="emp-contract-tolerance" type="number" min={0} max={24} step="0.5"
-                        value={form.contract_span_tolerance}
-                        onChange={(e) => set({ contract_span_tolerance: e.target.value })}
-                        placeholder={`${DEFAULT_CONTRACT_TOLERANCE}`}
-                        className="w-full px-3 py-2.5 rounded-lg font-mono" />
-                    </Field>
-                  </div>
-                  <p className="text-[11px] mt-2" style={{ color: "var(--ink-mute-2)" }}>
-                    Clock in to clock out, breaks included, not paid hours. They
-                    must land between{" "}
-                    <span style={{ color: "var(--ink)" }}>
-                      {(Number(form.contract_span_hours || DEFAULT_CONTRACT_SPAN)
-                        - Number(form.contract_span_tolerance ?? DEFAULT_CONTRACT_TOLERANCE)).toFixed(1)}h
-                      {" and "}
-                      {Number(form.contract_span_hours || DEFAULT_CONTRACT_SPAN).toFixed(1)}h
-                    </span>
-                    . A week broken by holiday or sickness is allowed to come in under.
-                  </p>
-
-                  {/* A large tolerance does not look wrong - it looks like a
-                      number in a box. Saying what it COSTS is the only way it
-                      gets noticed, because the sentence above already showed
-                      the band and was read past. */}
-                  {Number(form.contract_span_tolerance || 0) > TOLERANCE_WORTH_QUESTIONING && (
-                    <div className="status-warn p-3 mt-3 text-[11px]">
-                      Falling short by up to{" "}
-                      {Number(form.contract_span_tolerance).toFixed(1)}h is a
-                      wide margin, roughly{" "}
-                      {(Number(form.contract_span_tolerance) / 8).toFixed(1)} shifts.
-                      A week as low as{" "}
-                      {(Number(form.contract_span_hours || DEFAULT_CONTRACT_SPAN)
-                        - Number(form.contract_span_tolerance)).toFixed(1)}h
-                      {" "}will pass without a word, so you will not be told when
-                      they are under their contract. Usually this should be an
-                      hour or two.
+        <Dialog open onOpenChange={(open) => { if (!open && !savingEmployee) setModal(null); }}>
+          <DialogPortal>
+            <DialogOverlay className="employee-editor-overlay" />
+            <Content className="employee-editor" aria-describedby={undefined}
+              onOpenAutoFocus={focusEditor}
+              onCloseAutoFocus={(event) => {
+                event.preventDefault();
+                editorTrigger.current?.focus();
+              }}
+              onPointerDownOutside={(event) => event.preventDefault()}>
+              <form noValidate onSubmit={submit} className="employee-editor-form">
+                <Tabs.Root value={editorTab} onValueChange={setEditorTab} className="employee-editor-tabs">
+                  <header>
+                    <div className="employee-editor-heading">
+                      {modal.mode === "edit" && (
+                        <span className="employee-editor-avatar" aria-hidden="true">
+                          {selected?.name?.trim().charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                      <div className="min-w-0">
+                        <DialogTitle ref={editorTitle} tabIndex={-1}>
+                          {modal.mode === "edit" ? "Edit" : "New"} employee
+                        </DialogTitle>
+                        {modal.mode === "edit" && <p>{selected?.name}</p>}
+                      </div>
+                      <DialogClose type="button" aria-label="Close dialog" disabled={savingEmployee}
+                        className="employee-editor-close">
+                        <X size={17} />
+                      </DialogClose>
                     </div>
-                  )}
-                </div>
-              )}
+                    <Tabs.List aria-label="Employee sections" className="employee-editor-tablist">
+                      {EDITOR_TABS.map(([id, label]) => (
+                        <Tabs.Trigger key={id} value={id} type="button">{label}</Tabs.Trigger>
+                      ))}
+                    </Tabs.List>
+                  </header>
+                  <div className="employee-editor-body" ref={editorBody}>
+                    <Tabs.Content value="profile" data-editor-tab="profile" forceMount>
+                      <div className="employee-editor-grid">
+                        <Field label="Name">
+                          <input data-testid="emp-name" required value={form.name}
+                            onChange={(e) => set({ name: e.target.value })}
+                            className="w-full px-3 py-2.5 rounded-lg" />
+                        </Field>
+                        {/* Not required: staff read from a spreadsheet arrive without
+                            one, and demanding it here would block the manager from
+                            correcting their pay. Dispatch names anyone it cannot
+                            reach rather than pretending to send. */}
+                        <Field label="Email">
+                          <input data-testid="emp-email" type="email" value={form.email || ""}
+                            onChange={(e) => set({ email: e.target.value })}
+                            placeholder="Optional"
+                            className="w-full px-3 py-2.5 rounded-lg" />
+                        </Field>
+                        <Field label="Role">
+                          {ladder.length > 0 ? (
+                            /* A real dropdown, not a text box with suggestions: the browser filters a
+                               suggestion list by what is already typed, so it showed next to nothing
+                               until you cleared the box. This always shows the whole ladder. */
+                            <select data-testid="emp-role" name="role" required value={form.role || ""}
+                              onChange={(e) => set({ role: e.target.value })}
+                              className="w-full px-3 py-2.5 rounded-lg">
+                              <option value="" disabled>Choose a role</option>
+                              {roleChoices(ladder, form.role).map((choice) => (
+                                <option key={choice.value} value={choice.value}>{choice.label}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            /* No roles set up anywhere yet: typing is the only way, so keep it. */
+                            <input data-testid="emp-role" name="role" required value={form.role || ""}
+                              onChange={(e) => set({ role: e.target.value })}
+                              className="w-full px-3 py-2.5 rounded-lg"
+                              placeholder="Type a role (e.g. Barista, Cook)" />
+                          )}
+                        </Field>
+                        <Field label="Age group">
+                          <select aria-label="Age group" data-testid="emp-age-group" required value={form.age_group}
+                            onChange={(e) => set({ age_group: e.target.value })}
+                            className="w-full px-3 py-2.5 rounded-lg">
+                            <option value="" disabled>Choose an age group</option>
+                            {Object.entries(AGE_GROUP_LABELS).map(([value, label]) =>
+                              <option key={value} value={value}>{label}</option>)}
+                          </select>
+                          {form.age_group === "under_16" && <span className="text-xs">Roster supports employees aged 13 or over.</span>}
+                        </Field>
+                      </div>
+                      {form.age_group === "under_16" && (
+                        <div className="mt-3 text-xs ui-warn flex items-center gap-2">
+                          <AlertTriangle size={12} />
+                          Under-16 curfew will apply: no shifts before 08:00 or after 19:00.
+                        </div>
+                      )}
+                      <div className="employee-editor-section">
+                        <fieldset className="min-w-0">
+                          <legend className="mb-2 text-sm font-semibold">Roster groups</legend>
+                          <div className="flex gap-2 flex-wrap">
+                            {(shop?.departments?.length ? shop.departments : ["Shop Floor"]).map((department) => {
+                              const on = (form.departments || []).includes(department);
+                              return (
+                                <button
+                                  type="button"
+                                  key={department}
+                                  aria-pressed={on}
+                                  data-testid={`emp-department-${department}`}
+                                  onClick={() => set({
+                                    departments: on
+                                      ? form.departments.filter((name) => name !== department)
+                                      : [...(form.departments || []), department],
+                                  })}
+                                  className={`px-3 py-1.5 rounded-full text-xs ${on ? "neon-btn" : "glass-solid esp-ink-body"}`}
+                                >
+                                  {department}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {(form.departments || []).length === 0 && (
+                            <p role="alert" className="text-xs mt-2 text-[var(--t-danger)]">
+                              Choose at least one roster group.
+                            </p>
+                          )}
+                        </fieldset>
+                      </div>
+                    </Tabs.Content>
 
-              {form.employment_type === "student" && (
-                <>
-                  <Field label="Term-time maximum weekly hours">
-                    <input data-testid="emp-term-hours" type="number" min={1} max={168} step="0.5"
-                      value={form.term_time_max_hours}
-                      onChange={(e) => set({ term_time_max_hours: e.target.value })}
-                      placeholder={`Defaults to ${form.max_weekly_hours}h`}
-                      className="w-full px-3 py-2.5 rounded-lg font-mono" />
-                  </Field>
+                    <Tabs.Content value="employment" data-editor-tab="employment" forceMount>
+                      <div className="employee-editor-grid">
+                        <Field label="Employment type">
+                          <select name="employment_type" value={form.employment_type}
+                            className="w-full px-3 py-2.5 rounded-lg"
+                            onChange={(e) => set({ employment_type: e.target.value })}>
+                            {EMPLOYMENT_TYPES.map((type) => (
+                              <option key={type.key} value={type.key}>{type.label}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Contracted weekly hours">
+                          <input data-testid="emp-max" type="number" min={1} max={168} step="0.5" required
+                            value={form.max_weekly_hours}
+                            onChange={(e) => set({ max_weekly_hours: Number(e.target.value) })}
+                            className="w-full px-3 py-2.5 rounded-lg font-mono" />
+                        </Field>
+                      </div>
+                      <p className="employee-editor-hint">
+                        {EMPLOYMENT_TYPES.find((type) => type.key === form.employment_type)?.hint}
+                      </p>
+                      <p className="employee-editor-hint">
+                        Contracted hours are paid hours. Unpaid breaks sit on top, so a
+                        40h contract is rostered as roughly 44–45h of shift time.
+                      </p>
+                      {form.employment_type !== "full_time_contract" && (
+                        <div className="employee-editor-section">
+                          <Field label={`Hourly rate (${CURRENCY})`}>
+                            <input data-testid="emp-rate" type="number" min={0} step="0.01" required value={form.hourly_rate}
+                              onChange={(e) => set({ hourly_rate: Number(e.target.value) })}
+                              className="w-full px-3 py-2.5 rounded-lg font-mono" />
+                          </Field>
+                        </div>
+                      )}
+                      {form.employment_type === "full_time_contract" && (
+                        <div className="employee-editor-section">
+                          {/* The contract's pay comes first, straight after choosing the contract. */}
+                          <ContractPay
+                            period={form.contract_pay_period}
+                            salary={form.contract_salary}
+                            paidHours={form.max_weekly_hours}
+                            onChange={set}
+                          />
+                          <div className="employee-editor-grid employee-editor-section">
+                            <Field label="Contracted hours on the floor">
+                              <input data-testid="emp-contract-span" type="number" min={1} max={168} step="0.5"
+                                value={form.contract_span_hours}
+                                onChange={(e) => set({ contract_span_hours: e.target.value })}
+                                placeholder={`${DEFAULT_CONTRACT_SPAN}`}
+                                className="w-full px-3 py-2.5 rounded-lg font-mono" />
+                            </Field>
+                            <Field label="May fall short by">
+                              <input data-testid="emp-contract-tolerance" type="number" min={0} max={24} step="0.5"
+                                value={form.contract_span_tolerance}
+                                onChange={(e) => set({ contract_span_tolerance: e.target.value })}
+                                placeholder={`${DEFAULT_CONTRACT_TOLERANCE}`}
+                                className="w-full px-3 py-2.5 rounded-lg font-mono" />
+                            </Field>
+                          </div>
+                          <p className="text-[11px] mt-2" style={{ color: "var(--ink-mute-2)" }}>
+                            Clock in to clock out, breaks included, not paid hours. They
+                            must land between{" "}
+                            <span style={{ color: "var(--ink)" }}>
+                              {(Number(form.contract_span_hours || DEFAULT_CONTRACT_SPAN)
+                                - Number(form.contract_span_tolerance ?? DEFAULT_CONTRACT_TOLERANCE)).toFixed(1)}h
+                              {" and "}
+                              {Number(form.contract_span_hours || DEFAULT_CONTRACT_SPAN).toFixed(1)}h
+                            </span>
+                            . A week broken by holiday or sickness is allowed to come in under.
+                          </p>
 
-                  <div className="pt-2 border-t esp-line-soft">
-                    <div className="text-[11px] esp-ink-mute uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                      <Sun size={12} /> Summer break availability
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Break starts">
-                        <input data-testid="summer-start" type="date"
-                          value={form.summer_break.start_date || ""}
-                          onChange={(e) => setSummer({ start_date: e.target.value })}
+                          {/* A large tolerance does not look wrong - it looks like a
+                              number in a box. Saying what it COSTS is the only way it
+                              gets noticed, because the sentence above already showed
+                              the band and was read past. */}
+                          {Number(form.contract_span_tolerance || 0) > TOLERANCE_WORTH_QUESTIONING && (
+                            <div className="status-warn p-3 mt-3 text-[11px]">
+                              Falling short by up to{" "}
+                              {Number(form.contract_span_tolerance).toFixed(1)}h is a
+                              wide margin, roughly{" "}
+                              {(Number(form.contract_span_tolerance) / 8).toFixed(1)} shifts.
+                              A week as low as{" "}
+                              {(Number(form.contract_span_hours || DEFAULT_CONTRACT_SPAN)
+                                - Number(form.contract_span_tolerance)).toFixed(1)}h
+                              {" "}will pass without a word, so you will not be told when
+                              they are under their contract. Usually this should be an
+                              hour or two.
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {form.employment_type === "student" && (
+                        <>
+                          <Field label="Term-time maximum weekly hours">
+                            <input data-testid="emp-term-hours" type="number" min={1} max={168} step="0.5"
+                              value={form.term_time_max_hours}
+                              onChange={(e) => set({ term_time_max_hours: e.target.value })}
+                              placeholder={`Defaults to ${form.max_weekly_hours}h`}
+                              className="w-full px-3 py-2.5 rounded-lg font-mono" />
+                          </Field>
+
+                          <div className="pt-2 border-t esp-line-soft">
+                            <div className="text-[11px] esp-ink-mute uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                              <Sun size={12} /> Summer break availability
+                            </div>
+                            <div className="employee-editor-grid">
+                              <Field label="Break starts">
+                                <input data-testid="summer-start" type="date"
+                                  value={form.summer_break.start_date || ""}
+                                  onChange={(e) => setSummer({ start_date: e.target.value })}
+                                  className="w-full px-3 py-2.5 rounded-lg font-mono" />
+                              </Field>
+                              <Field label="Break ends">
+                                <input data-testid="summer-end" type="date"
+                                  value={form.summer_break.end_date || ""}
+                                  onChange={(e) => setSummer({ end_date: e.target.value })}
+                                  className="w-full px-3 py-2.5 rounded-lg font-mono" />
+                              </Field>
+                            </div>
+                            <Field label="Maximum weekly hours during the break">
+                              <input data-testid="summer-hours" type="number" min={1} max={168} step="0.5"
+                                value={form.summer_break.max_weekly_hours}
+                                onChange={(e) => setSummer({ max_weekly_hours: e.target.value })}
+                                placeholder="e.g. 40"
+                                className="w-full px-3 py-2.5 rounded-lg font-mono" />
+                            </Field>
+                            <p className="text-[11px] esp-ink-faint">
+                              Inside these dates the term-time cap lifts and this
+                              figure applies instead.
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </Tabs.Content>
+
+                    <Tabs.Content value="availability" data-editor-tab="availability" forceMount>
+                      <fieldset className="min-w-0">
+                        <legend className="mb-2 text-sm font-semibold">Preferred days off</legend>
+                        <div className="flex gap-2 flex-wrap">
+                          {DAYS.map((d) => {
+                            const on = form.preferred_days_off.includes(d);
+                            return (
+                              <button
+                                type="button" key={d} aria-pressed={on}
+                                onClick={() => set({
+                                  preferred_days_off: on
+                                    ? form.preferred_days_off.filter((x) => x !== d)
+                                    : [...form.preferred_days_off, d],
+                                })}
+                                className={`px-3 py-1.5 rounded-full text-xs ${on ? "neon-btn" : "glass-solid esp-ink-body"}`}
+                              >
+                                {DAY_SHORT[d]}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </fieldset>
+                      <div className="employee-editor-section space-y-3">
+                        <div className="employee-editor-grid">
+                          <Field label="Earliest start">
+                            <input data-testid="avail-earliest" type="time"
+                              value={form.availability.earliest_start || ""}
+                              onChange={(e) => setAvail({ earliest_start: e.target.value })}
+                              className="w-full px-3 py-2.5 rounded-lg font-mono" />
+                          </Field>
+                          <Field label="Latest finish">
+                            <input data-testid="avail-latest" type="time"
+                              value={form.availability.latest_finish || ""}
+                              onChange={(e) => setAvail({ latest_finish: e.target.value })}
+                              className="w-full px-3 py-2.5 rounded-lg font-mono" />
+                          </Field>
+                        </div>
+
+                        <Field label="Preferred shift">
+                          <select data-testid="avail-shift"
+                            value={form.availability.preferred_shift || "any"}
+                            onChange={(e) => setAvail({ preferred_shift: e.target.value })}
+                            className="w-full px-3 py-2.5 rounded-lg">
+                            <option value="any">Any</option>
+                            <option value="morning">Morning</option>
+                            <option value="afternoon">Afternoon</option>
+                            <option value="evening">Evening</option>
+                          </select>
+                        </Field>
+                        <p className="text-[11px] esp-ink-faint -mt-2">
+                          A preference, not a limit, it is followed where possible but
+                          will not be allowed to leave the shop unattended.
+                        </p>
+
+                        <fieldset className="min-w-0">
+                          <legend className="mb-2 text-sm font-semibold">Days they can work at all</legend>
+                          <div className="flex gap-2 flex-wrap">
+                            {DAYS.map((d) => {
+                              const days = form.availability.available_days;
+                              const on = !days || days.includes(d);
+                              return (
+                                <button
+                                  type="button" key={d} aria-pressed={on}
+                                  onClick={() => {
+                                    const current = days || [...DAYS];
+                                    const next = on
+                                      ? current.filter((x) => x !== d)
+                                      : [...current, d];
+                                    // Back to all seven means "no restriction", which is
+                                    // stored as null rather than a full list.
+                                    setAvail({
+                                      available_days: next.length === 7 ? null : next,
+                                    });
+                                  }}
+                                  className={`px-3 py-1.5 rounded-full text-xs ${on ? "neon-btn" : "glass-solid esp-ink-faint line-through"}`}
+                                >
+                                  {DAY_SHORT[d]}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </fieldset>
+                        <p className="text-[11px] esp-ink-faint -mt-2">
+                          Unlike preferred days off, a day switched off here is a hard
+                          no, they are never rostered on it.
+                        </p>
+
+                        <Toggle
+                          testId="avail-overnight"
+                          checked={form.availability.can_work_overnight !== false}
+                          onChange={(v) => setAvail({ can_work_overnight: v })}
+                          label="Can work overnight shifts"
+                        />
+                      </div>
+                    </Tabs.Content>
+
+                    <Tabs.Content value="holidays" data-editor-tab="holidays" forceMount>
+                      <Field label="Opening holiday hours">
+                        <input data-testid="emp-opening-holiday" type="number" min={0} step="0.5"
+                          value={form.opening_holiday_hours}
+                          onChange={(e) => set({ opening_holiday_hours: e.target.value })}
+                          placeholder="0"
                           className="w-full px-3 py-2.5 rounded-lg font-mono" />
                       </Field>
-                      <Field label="Break ends">
-                        <input data-testid="summer-end" type="date"
-                          value={form.summer_break.end_date || ""}
-                          onChange={(e) => setSummer({ end_date: e.target.value })}
-                          className="w-full px-3 py-2.5 rounded-lg font-mono" />
-                      </Field>
-                    </div>
-                    <Field label="Maximum weekly hours during the break">
-                      <input data-testid="summer-hours" type="number" min={1} max={168} step="0.5"
-                        value={form.summer_break.max_weekly_hours}
-                        onChange={(e) => setSummer({ max_weekly_hours: e.target.value })}
-                        placeholder="e.g. 40"
-                        className="w-full px-3 py-2.5 rounded-lg font-mono" />
-                    </Field>
-                    <p className="text-[11px] esp-ink-faint">
-                      Inside these dates the term-time cap lifts and this
-                      figure applies instead.
-                    </p>
+                      <p className="text-[11px] esp-ink-faint">
+                        Set this once, when you first add someone. From then on the
+                        balance is earned from hours actually worked, at 12.07%.
+                        Later corrections belong in Adjust, which records a reason.
+                      </p>
+                    </Tabs.Content>
                   </div>
-                </>
-              )}
-            </Section>
-
-            {/* ---------------- Holiday ---------------- */}
-            <Section
-              title="Holiday entitlement"
-              subtitle="Balance carried in from your previous system"
-              testId="section-holiday"
-              badge={form.opening_holiday_hours !== "" ? `${form.opening_holiday_hours}h` : null}
-            >
-              <Field label="Opening holiday hours">
-                <input data-testid="emp-opening-holiday" type="number" min={0} step="0.5"
-                  value={form.opening_holiday_hours}
-                  onChange={(e) => set({ opening_holiday_hours: e.target.value })}
-                  placeholder="0"
-                  className="w-full px-3 py-2.5 rounded-lg font-mono" />
-              </Field>
-              <p className="text-[11px] esp-ink-faint">
-                Set this once, when you first add someone. From then on the
-                balance is earned from hours actually worked, at 12.07%.
-                Later corrections belong in Adjust, which records a reason.
-              </p>
-            </Section>
-
-            {form.age < 16 && (
-              <div className="text-xs ui-warn flex items-center gap-2">
-                <AlertTriangle size={12} />
-                Under-16 curfew will apply: no shifts before 08:00 or after 19:00.
-              </div>
-            )}
-
-            <button
-              data-testid="btn-save-employee"
-              disabled={(form.departments || []).length === 0}
-              className="neon-btn w-full py-3 rounded-full text-sm"
-            >
-              Save
-            </button>
-          </form>
-        </Modal>
+                </Tabs.Root>
+                <footer className="employee-editor-footer">
+                  <DialogClose type="button" className="esp-btn esp-btn-2" disabled={savingEmployee}>Cancel</DialogClose>
+                  <button type="submit" data-testid="btn-save-employee"
+                    disabled={savingEmployee}
+                    className="esp-btn esp-btn-1">
+                    {savingEmployee ? "Saving…" : "Save changes"}
+                  </button>
+                </footer>
+              </form>
+            </Content>
+          </DialogPortal>
+        </Dialog>
       )}
 
       {adjusting && (
@@ -1500,38 +1514,6 @@ const Field = ({ label, children }) => (
     {children}
   </label>
 );
-
-/** A collapsible block of optional settings. */
-function Section({ title, subtitle, badge, icon: Icon, testId, defaultOpen = false, openSignal = 0, children }) {
-  // Closed unless told otherwise: defaultOpen is read once, when the section first appears
-  // (so an existing contract opens with its pay showing), and openSignal opens it later on
-  // request (so a refusal can show the person what is missing).
-  const [open, setOpen] = useState(defaultOpen);
-  useEffect(() => { if (openSignal) setOpen(true); }, [openSignal]);
-  return (
-    <div className="border esp-line rounded-xl overflow-hidden">
-      <button
-        type="button"
-        data-testid={testId}
-        onClick={() => setOpen((o) => !o)}
-        className="w-full px-4 py-3 flex items-center gap-3 text-left esp-hover"
-      >
-        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        {Icon && <Icon size={14} className="esp-ink-mute" />}
-        <div className="flex-1 min-w-0">
-          <div className="text-sm">{title}</div>
-          <div className="text-[11px] esp-ink-faint truncate">{subtitle}</div>
-        </div>
-        {badge && !open && (
-          <span className="text-[10px] px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/30 esp-ink-accent shrink-0">
-            {badge}
-          </span>
-        )}
-      </button>
-      {open && <div className="px-4 pb-4 pt-1 space-y-4">{children}</div>}
-    </div>
-  );
-}
 
 function Toggle({ checked, onChange, label, hint, testId }) {
   return (

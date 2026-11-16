@@ -14,7 +14,7 @@ def _setup(client):
         'departments': ['Shop Floor', 'Deli'], 'supervisory_roles': [],
     }, headers=headers).json()
     person = client.post('/api/employees', json={
-        'name': 'Shared Person', 'email': None, 'role': 'Cashier', 'age': 30,
+        'name': 'Shared Person', 'email': None, 'role': 'Cashier', 'age_group': '18_plus',
         'hourly_rate': 15, 'max_weekly_hours': 40, 'preferred_days_off': [],
         'departments': ['Shop Floor', 'Deli'],
     }, headers=headers)
@@ -163,7 +163,7 @@ def test_non_overlapping_boundary_shifts_are_not_hard_blocked(client, start):
 def test_previous_week_does_not_consume_hours_or_prevent_a_rested_later_shift(client):
     headers, shop_id, eid, monday = _setup(client)
     client.put(f'/api/employees/{eid}', json={
-        'name': 'Shared Person', 'email': None, 'role': 'Cashier', 'age': 30,
+        'name': 'Shared Person', 'email': None, 'role': 'Cashier', 'age_group': '18_plus',
         'hourly_rate': 15, 'max_weekly_hours': 8, 'departments': ['Shop Floor', 'Deli'],
     }, headers=headers)
     response = client.put('/api/shop', json={
@@ -193,7 +193,7 @@ def test_overlap_guard_is_not_tied_to_this_year(client):
 def test_sick_cover_cannot_bypass_a_previous_week_overnight_commitment(client):
     headers, shop_id, eid, monday = _setup(client)
     absent = client.post('/api/employees', json={
-        'name': 'Absent Person', 'role': 'Cashier', 'age': 30, 'hourly_rate': 15,
+        'name': 'Absent Person', 'role': 'Cashier', 'age_group': '18_plus', 'hourly_rate': 15,
         'max_weekly_hours': 40, 'departments': ['Shop Floor'],
     }, headers=headers).json()['employee_id']
     _store(shop_id, eid, 'other', 'Deli', monday - timedelta(days=7), 'sun', '22:00', '06:00')

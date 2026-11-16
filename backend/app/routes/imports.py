@@ -27,7 +27,6 @@ router = APIRouter(prefix="/imports", tags=["imports"])
 
 DEFAULT_RATE = 13.0
 DEFAULT_MAX_WEEKLY_HOURS = 40.0
-DEFAULT_AGE = 25
 
 """Roles are resolved against the shop's own ladder - see hierarchy.match_role.
 
@@ -471,7 +470,7 @@ async def commit_import(
                 "name": name,
                 "email": None,
                 "role": role,
-                "age": DEFAULT_AGE,
+                "age_group": None,
                 "hourly_rate": DEFAULT_RATE,
                 "max_weekly_hours": DEFAULT_MAX_WEEKLY_HOURS,
                 "preferred_days_off": [],
@@ -769,7 +768,7 @@ async def restore_removed_week(
             "name": name,
             "email": None,
             "role": _map_role(entry.get("role"), import_shop),
-            "age": DEFAULT_AGE,
+            "age_group": None,
             "hourly_rate": DEFAULT_RATE,
             "max_weekly_hours": DEFAULT_MAX_WEEKLY_HOURS,
             "preferred_days_off": [],

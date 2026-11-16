@@ -3,9 +3,10 @@ import { createRoot } from "react-dom/client";
 import RosterView from "./RosterView";
 
 const mockParams = new URLSearchParams("week=2026-10-05");
+const mockSetParams = jest.fn();
 jest.mock("react-router-dom", () => ({
-  useSearchParams: () => [mockParams, jest.fn()],
-  Link: ({ children }) => <span>{children}</span>,
+  useSearchParams: () => [mockParams, mockSetParams],
+  Link: ({ children, to }) => <a href={to}>{children}</a>,
 }), { virtual: true });
 jest.mock("@/context/AuthContext", () => ({ useAuth: () => ({ user: {} }) }), { virtual: true });
 jest.mock("@/components/RosterPrintSheet", () => () => null, { virtual: true });
@@ -13,7 +14,7 @@ jest.mock("canvas-confetti", () => jest.fn());
 jest.mock("jspdf", () => jest.fn());
 jest.mock("@/lib/api", () => ({
   ...jest.requireActual("../lib/api"),
-  api: { get: jest.fn() },
+  api: { get: jest.fn(), post: jest.fn() },
 }), { virtual: true });
 const { api } = require("@/lib/api");
 let host, root;
@@ -22,8 +23,75 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockParams.set("week", "2026-10-05");
   mockParams.delete("roster");
+  mockParams.delete("review");
   host = document.createElement("div"); document.body.appendChild(host);
   root = createRoot(host);
+});
+
+test.each([false, true])("roster generation waits for the leave review and an explicit choice (dashboard=%s)", async dashboard => {
+  if (dashboard) mockParams.set("review", "generate");
+  const employees = [
+    { employee_id: "one", name: "Nora Walsh", role: "Cashier", departments: ["Deli"] },
+    { employee_id: "two", name: "Jamie Byrne", role: "Cashier", departments: ["Deli"] },
+    { employee_id: "past", name: "Past Staff", is_active: false },
+  ];
+  const leave = [
+    { employee_id: "one", scope: "employee", date: "2026-10-02", end_date: "2026-10-05" },
+    { employee_id: "one", scope: "unavailable", date: "2026-10-06" },
+    { employee_id: "two", scope: "sick", date: "2026-10-09" },
+    { employee_id: "two", scope: "employee", date: "2026-10-12" },
+    { employee_id: "past", scope: "employee", date: "2026-10-09" },
+    { scope: "shop", date: "2026-10-10" },
+  ];
+  api.get.mockImplementation(path => Promise.resolve({ data: {
+    "/shop": { departments: ["Shop Floor", "Deli"], current_department: "Deli" },
+    "/employees": employees, "/holidays": leave,
+  }[path] || [] }));
+  api.post.mockResolvedValue({ data: { version: "v1.0", shifts: [] } });
+  await act(async () => root.render(<RosterView />));
+  const trigger = host.querySelector('[data-testid="btn-generate"]');
+  if (dashboard) {
+    expect(mockSetParams).toHaveBeenCalledWith(new URLSearchParams("week=2026-10-05"), { replace: true });
+    mockParams.delete("review");
+  } else {
+    await act(async () => trigger.click());
+  }
+  const dialog = document.querySelector('[role="dialog"]');
+  expect(dialog.textContent).toContain("Week of 5 Oct 2026 · Deli");
+  expect(dialog.textContent).toContain("2 staff have leave recorded this week");
+  expect([...dialog.querySelectorAll(".roster-gen-people li")].map(row => row.textContent)).toEqual([
+    "Nora WalshMon 5 – Tue 6 Oct", "Jamie ByrneFri 9 Oct",
+  ]);
+  expect(dialog.querySelector("a").getAttribute("href")).toBe("/calendar?week=2026-10-05&group=Deli");
+  expect(api.get).toHaveBeenCalledWith("/holidays", expect.objectContaining({
+    params: { week_start: "2026-10-05" }, headers: { "X-Roster-Group": "Deli" },
+  }));
+  expect(api.post).not.toHaveBeenCalled();
+  const action = label => [...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent === label);
+  await act(async () => action("Go back").click());
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(api.post).not.toHaveBeenCalled();
+  await act(async () => trigger.click());
+  await act(async () => action("Generate draft").click());
+  expect(api.post).toHaveBeenCalledTimes(1);
+  expect(api.post).toHaveBeenCalledWith("/roster/generate", {
+    week_start: "2026-10-05", department: "Deli", keep_pinned: false, only_day: null,
+  });
+});
+
+test.each([false, true])("the leave review distinguishes an empty week from a failed lookup (failed=%s)", async failed => {
+  api.get.mockImplementation(path => path === "/holidays" && failed
+    ? Promise.reject(new Error("Offline"))
+    : Promise.resolve({ data: path === "/shop" ? { departments: ["Shop Floor"] }
+      : path === "/employees" ? [{ employee_id: "one", name: "Nora Walsh" }] : [] }));
+  await act(async () => root.render(<RosterView />));
+  await act(async () => host.querySelector('[data-testid="btn-generate"]').click());
+  const dialog = document.querySelector('[role="dialog"]');
+  expect(dialog.querySelector('[role="status"]').textContent).toBe(failed
+    ? "Could not check leave for this week."
+    : "No leave recorded for this week.");
+  expect(dialog.querySelector("a").textContent).toBe("Review leave");
+  expect(api.post).not.toHaveBeenCalled();
 });
 afterEach(async () => {
   await act(async () => root.unmount()); host.remove();

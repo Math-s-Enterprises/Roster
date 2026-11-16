@@ -1,0 +1,55 @@
+.roster-gen-overlay { background: rgb(0 0 0 / 48%); }
+.roster-gen-review {
+  position: fixed; inset: 50% auto auto 50%; z-index: 50;
+  transform: translate(-50%, -50%);
+  display: flex; flex-direction: column;
+  width: min(32rem, calc(100% - 2rem)); max-height: calc(100dvh - 2rem);
+  border: 1px solid var(--t-hairline); border-radius: .75rem;
+  background: var(--t-canvas); color: var(--t-ink);
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 28%);
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+.roster-gen-review header { padding: 1.5rem 1.5rem .75rem; }
+.roster-gen-review h2 { margin: 0; font-size: 1.375rem; line-height: 1.25; }
+.roster-gen-review h2:focus { outline: none; }
+.roster-gen-review .roster-gen-context { margin: .5rem 0 0; color: var(--t-body2); }
+.roster-gen-body { min-height: 0; overflow-y: auto; padding: .5rem 1.5rem 1rem; }
+.roster-gen-leave {
+  padding: .875rem 1rem; border: 1px solid var(--t-hairline); border-radius: .5rem;
+  background: var(--t-inset); font-size: .875rem;
+}
+.roster-gen-summary { margin: 0; font-weight: 700; }
+.roster-gen-leave a, .roster-gen-leave button {
+  display: inline-flex; align-items: center; min-height: 2.25rem;
+  color: var(--t-accent); font-weight: 700; text-decoration: underline; text-underline-offset: .15em;
+}
+.roster-gen-leave button { margin-left: 1rem; }
+.roster-gen-people { margin: .25rem 0 0; }
+.roster-gen-people li {
+  display: flex; align-items: baseline; justify-content: space-between; gap: .5rem 1rem;
+  flex-wrap: wrap; padding: .5rem 0; border-top: 1px solid var(--t-hairline);
+  overflow-wrap: anywhere;
+}
+.roster-gen-people li:last-child { padding-bottom: 0; }
+.roster-gen-people span, .roster-gen-prompts { color: var(--t-body2); }
+.roster-gen-prompts {
+  margin: 1rem 0 0; padding-inline-start: 1.125rem; list-style: disc;
+  font-size: .875rem; line-height: 1.6;
+}
+.roster-gen-prompts li + li { margin-top: .375rem; }
+.roster-gen-warning { color: var(--t-warn); margin: .75rem 0 0; font-size: .875rem; }
+.roster-gen-actions {
+  display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .5rem;
+  padding: .875rem 1.5rem 1.25rem; border-top: 1px solid var(--t-hairline);
+}
+.roster-gen-actions button { justify-content: center; min-height: 2.75rem; }
+@media (max-width: 420px) {
+  .roster-gen-review header, .roster-gen-body, .roster-gen-actions { padding-inline: 1rem; }
+  .roster-gen-review header { padding-block: 1rem .5rem; }
+  .roster-gen-body { padding-block: .25rem .625rem; }
+  .roster-gen-leave { padding-block: .625rem; }
+  .roster-gen-people li { flex-direction: column; gap: .125rem; padding-block: .3125rem; }
+  .roster-gen-prompts { margin-top: .75rem; line-height: 1.45; }
+  .roster-gen-actions { flex-direction: column; padding-block: .625rem .75rem; }
+}
+@media print { .roster-gen-overlay, .roster-gen-review { display: none !important; } }

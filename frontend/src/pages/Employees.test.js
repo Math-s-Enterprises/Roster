@@ -35,6 +35,15 @@ afterEach(async () => {
   await act(async () => root.unmount()); host.remove();
 });
 const click = async (button) => act(async () => button.click());
+const editor = () => document.querySelector('[role="dialog"]');
+const activateTab = async (label) => {
+  const tab = [...editor().querySelectorAll('[role="tab"]')].find((item) => item.textContent === label);
+  await act(async () => tab.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true })));
+};
+const type = async (input, value) => act(async () => {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+});
 
 test("employee deletion uses the same app card and offers inactive instead", async () => {
   const onConfirm = jest.fn(), onInactive = jest.fn();
@@ -88,25 +97,22 @@ test("inactive action persists status, separates leavers and allows reactivation
 
 test.each(["details", "employment"])("setup %s opens the named employee's existing form without saving", async task => {
   mockSetupParams.set("setup", task);
-  const employee = { employee_id: "martin", name: "Martin", role: "Crew", age: 25,
+  const employee = { employee_id: "martin", name: "Martin", role: "Crew", age_group: "18_plus",
     hourly_rate: 13, max_weekly_hours: 40, departments: ["Shop Floor"], is_active: true };
   api.get.mockImplementation(path => Promise.resolve({ data: path === "/employees" ? [employee]
     : path === "/shop" ? { departments: ["Shop Floor"] } : path === "/shop/hierarchy" ? { hierarchy: ["Crew"] } : [] }));
   await act(async () => root.render(<Employees />));
-  const dialog = host.querySelector('[role="dialog"]');
+  const dialog = editor();
   expect(dialog).not.toBeNull();
   expect(dialog.querySelector('[data-testid="emp-name"]').value).toBe("Martin");
   if (task === "details") expect(document.activeElement).toBe(dialog.querySelector('[data-testid="emp-rate"]'));
-  else {
-    const types = dialog.querySelectorAll('[name="employment_type"]');
-    expect(types.length).toBeGreaterThan(0);
-    expect(document.activeElement).toBe(dialog.querySelector('[name="employment_type"]:checked'));
-  }
+  else expect(document.activeElement).toBe(dialog.querySelector('select[name="employment_type"]'));
+  expect(dialog.querySelector('[aria-selected="true"]').textContent).toBe("Employment");
   expect(api.put).not.toHaveBeenCalled();
   await click(dialog.querySelector('[aria-label="Close dialog"]'));
-  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(editor()).toBeNull();
   await act(async () => root.render(<Employees />));
-  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(editor()).toBeNull();
 });
 
 test("the add-people setup action opens a new form, not an existing employee", async () => {
@@ -116,17 +122,22 @@ test("the add-people setup action opens a new form, not an existing employee", a
     : path === "/shop" ? { departments: ["Deli"], current_department: "Deli" }
       : path === "/shop/hierarchy" ? {} : [] }));
   await act(async () => root.render(<Employees />));
-  expect(host.querySelector('[role="dialog"] h2').textContent).toBe("New employee");
-  const name = host.querySelector('[data-testid="emp-name"]');
+  expect(editor().querySelector("h2").textContent).toBe("New employee");
+  const name = editor().querySelector('[data-testid="emp-name"]');
   expect(name.value).toBe("");
+  const ageGroup = editor().querySelector('[data-testid="emp-age-group"]');
+  expect(ageGroup.value).toBe("");
+  expect(ageGroup.checkValidity()).toBe(false);
+  expect([...ageGroup.options].slice(1).map(option => option.textContent))
+    .toEqual(["Under 16", "16–17", "18 or over"]);
   expect(document.activeElement).toBe(name);
-  expect(host.querySelector('[data-testid="emp-department-Deli"]').getAttribute("aria-pressed")).toBe("true");
+  expect(editor().querySelector('[data-testid="emp-department-Deli"]').getAttribute("aria-pressed")).toBe("true");
   expect(api.put).not.toHaveBeenCalled();
 });
 
 test("an hourly rate with cents is valid and saves without rounding to half euros", async () => {
   mockSetupParams.set("setup", "details");
-  const employee = { employee_id: "martin", name: "Martin", role: "Crew", age: 25,
+  const employee = { employee_id: "martin", name: "Martin", role: "Crew", age_group: "18_plus",
     hourly_rate: 15, max_weekly_hours: 40, departments: ["Shop Floor"], is_active: true,
     employment_type: "hourly" };
   api.get.mockImplementation(path => Promise.resolve({ data: path === "/employees" ? [employee]
@@ -134,14 +145,14 @@ test("an hourly rate with cents is valid and saves without rounding to half euro
       : path === "/shop/hierarchy" ? { hierarchy: ["Crew"] } : [] }));
   api.put.mockImplementation((path, data) => Promise.resolve({ data }));
   await act(async () => root.render(<Employees />));
-  const input = host.querySelector('[data-testid="emp-rate"]');
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "16.15");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  const input = editor().querySelector('[data-testid="emp-rate"]');
+  await type(input, "16.15");
   expect(input.checkValidity()).toBe(true);
-  await click(host.querySelector('[data-testid="btn-save-employee"]'));
-  expect(api.put).toHaveBeenCalledWith("/employees/martin", expect.objectContaining({ hourly_rate: 16.15 }));
+  await click(editor().querySelector('[data-testid="btn-save-employee"]'));
+  expect(api.put).toHaveBeenCalledWith("/employees/martin", expect.objectContaining({
+    hourly_rate: 16.15, age_group: "18_plus",
+  }));
+  expect(api.put.mock.calls[0][1]).not.toHaveProperty("age");
 });
 
 test.each(["weekly", ""])("pay review opens the contract pay field, not an hourly rate (period=%s)", async period => {
@@ -152,7 +163,37 @@ test.each(["weekly", ""])("pay review opens the contract pay field, not an hourl
   }] : path === "/shop" ? { departments: ["Shop Floor"] }
     : path === "/shop/hierarchy" ? { hierarchy: ["Crew"] } : [] }));
   await act(async () => root.render(<Employees />));
-  expect(host.querySelector('[data-testid="emp-rate"]')).toBeNull();
-  expect(document.activeElement).toBe(host.querySelector(`[data-testid="${period ? "emp-salary" : "emp-pay-weekly"}"]`));
+  expect(editor().querySelector('[data-testid="emp-rate"]')).toBeNull();
+  expect(document.activeElement).toBe(editor().querySelector(`[data-testid="${period ? "emp-salary" : "emp-pay-weekly"}"]`));
   expect(api.put).not.toHaveBeenCalled();
+});
+
+test("one save retains edits across tabs, preserves inactive status and reveals invalid fields", async () => {
+  const employee = { employee_id: "martin", name: "Martin", role: "Crew", age_group: "18_plus",
+    departments: ["Shop Floor"], is_active: false, max_weekly_hours: 40, employment_type: "hourly" };
+  api.get.mockImplementation(path => Promise.resolve({ data: path === "/employees" ? [employee]
+    : path === "/shop" ? { departments: ["Shop Floor"] }
+      : path === "/shop/hierarchy" ? { hierarchy: ["Crew"] } : [] }));
+  api.put.mockResolvedValue({ data: employee });
+  await act(async () => root.render(<Employees />));
+  await click(host.querySelector('[data-testid="btn-edit-martin"]'));
+  expect(editor().querySelector('[data-testid="emp-active"]')).toBeNull();
+  const name = editor().querySelector('[data-testid="emp-name"]');
+  await type(name, "Marty");
+  await activateTab("Holidays");
+  const opening = editor().querySelector('[data-testid="emp-opening-holiday"]');
+  await type(opening, "-1");
+  await activateTab("Profile");
+  expect(editor().querySelector('[aria-selected="true"]').textContent).toBe("Profile");
+  const save = editor().querySelector('[data-testid="btn-save-employee"]');
+  await click(save);
+  expect(api.put).not.toHaveBeenCalled();
+  expect(editor().querySelector('[aria-selected="true"]').textContent).toBe("Holidays");
+  expect(document.activeElement).toBe(opening);
+  await type(opening, "14.5");
+  await click(save);
+  expect(api.put).toHaveBeenCalledTimes(1);
+  expect(api.put).toHaveBeenCalledWith("/employees/martin", expect.objectContaining({
+    name: "Marty", opening_holiday_hours: 14.5, is_active: false,
+  }));
 });
